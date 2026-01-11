@@ -6,7 +6,7 @@
   "minimum-stability": "dev",
   "require": {
     "drupal/core": "^10 || ^11",
-    "drupal/civicrm": "*",
+    "civicrm/civicrm-drupal-8": "^6.6.3",
     "drupal/civicrm_entity": "*"
   }
 }
