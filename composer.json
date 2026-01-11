@@ -1,6 +1,6 @@
 {
   "name": "makehaven/makerspace_member_success",
-  "type": "drupal-module",
+  "type": "drupal-custom-module",
   "description": "Member success console for onboarding, engagement, retention, and recapture.",
   "license": "GPL-2.0-or-later",
   "minimum-stability": "dev",
