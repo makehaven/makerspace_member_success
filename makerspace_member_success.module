@@ -1,0 +1,228 @@
+<?php
+
+/**
+ * @file
+ * Module hooks for Makerspace Member Success.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function makerspace_member_success_help(string $route_name, RouteMatchInterface $route_match): ?string {
+  if ($route_name === 'help.page.makerspace_member_success') {
+    return t('Provides member success dashboards for onboarding, engagement, retention, and recapture.');
+  }
+
+  return NULL;
+}
+
+/**
+ * Implements hook_cron().
+ */
+function makerspace_member_success_cron(): void {
+  /** @var \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $builder */
+  $builder = \Drupal::service('makerspace_member_success.snapshot_builder');
+  $builder->buildDailySnapshots();
+}
+
+/**
+ * Implements hook_views_data().
+ */
+function makerspace_member_success_views_data(): array {
+  $data['ms_member_success_snapshot']['table'] = [
+    'group' => t('Member Success'),
+    'provider' => 'makerspace_member_success',
+    'base' => [
+      'field' => 'id',
+      'title' => t('Member success snapshots'),
+      'help' => t('Member-level success snapshot data.'),
+    ],
+  ];
+
+  $data['ms_member_success_snapshot']['id'] = [
+    'title' => t('Snapshot ID'),
+    'help' => t('Unique snapshot row ID.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['uid'] = [
+    'title' => t('User ID'),
+    'help' => t('Member user ID.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+    'relationship' => [
+      'title' => t('User'),
+      'help' => t('Relate snapshot rows to the user account.'),
+      'base' => 'users_field_data',
+      'base field' => 'uid',
+      'id' => 'standard',
+    ],
+  ];
+
+  $data['ms_member_success_snapshot']['snapshot_date'] = [
+    'title' => t('Snapshot date'),
+    'help' => t('Snapshot date (YYYY-MM-DD).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['snapshot_type'] = [
+    'title' => t('Snapshot type'),
+    'help' => t('Snapshot type (daily, annual).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['stage'] = [
+    'title' => t('Stage'),
+    'help' => t('Member stage (onboarding, engagement, retention, recovery).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['risk_score'] = [
+    'title' => t('Risk score'),
+    'help' => t('Calculated risk score.'),
+    'field' => ['id' => 'numeric'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['risk_reasons'] = [
+    'title' => t('Risk reasons'),
+    'help' => t('Serialized list of risk reason codes.'),
+    'field' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['door_badge_status'] = [
+    'title' => t('Door badge status'),
+    'help' => t('Door badge status.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['serial_number_present'] = [
+    'title' => t('Serial number present'),
+    'help' => t('Whether a card serial number is on file.'),
+    'field' => ['id' => 'boolean'],
+    'filter' => ['id' => 'boolean'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['badge_count_total'] = [
+    'title' => t('Total badges'),
+    'help' => t('Total active badges (excluding door).'),
+    'field' => ['id' => 'numeric'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['badge_count_window'] = [
+    'title' => t('Badges in window'),
+    'help' => t('Badges earned within engagement window.'),
+    'field' => ['id' => 'numeric'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['tenure_bucket'] = [
+    'title' => t('Tenure bucket'),
+    'help' => t('Onboarding, new member, or sustaining member bucket.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['membership_type'] = [
+    'title' => t('Membership Type'),
+    'help' => t('Membership type label.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['last_badge_ts'] = [
+    'title' => t('Last badge time'),
+    'help' => t('Timestamp of last badge.'),
+    'field' => ['id' => 'date'],
+    'filter' => ['id' => 'date'],
+    'sort' => ['id' => 'date'],
+  ];
+
+  $data['ms_member_success_snapshot']['last_visit_ts'] = [
+    'title' => t('Last visit time'),
+    'help' => t('Timestamp of last access log entry.'),
+    'field' => ['id' => 'date'],
+    'filter' => ['id' => 'date'],
+    'sort' => ['id' => 'date'],
+  ];
+
+  $data['ms_member_success_snapshot']['visit_count_30d'] = [
+    'title' => t('Visits (30 days)'),
+    'help' => t('Unique visit days in the last 30 days.'),
+    'field' => ['id' => 'numeric'],
+    'filter' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['payment_failed'] = [
+    'title' => t('Payment failed'),
+    'help' => t('Payment failure flag.'),
+    'field' => ['id' => 'boolean'],
+    'filter' => ['id' => 'boolean'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['payment_pause'] = [
+    'title' => t('Payment paused'),
+    'help' => t('Payment pause flag.'),
+    'field' => ['id' => 'boolean'],
+    'filter' => ['id' => 'boolean'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['orientation_date'] = [
+    'title' => t('Orientation Date'),
+    'help' => t('Date of door badge issuance (approx orientation).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  // Pseudo-field for Action Link
+  $data['ms_member_success_snapshot']['action_link'] = [
+    'title' => t('Member Success Action Link'),
+    'help' => t('Dynamic link to email member with configured template.'),
+    'field' => [
+      'id' => 'member_success_action_link',
+    ],
+  ];
+
+  return $data;
+}
+
+/**
+ * Implements hook_views_query_alter().
+ */
+function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutable $view, \Drupal\views\Plugin\views\query\QueryPluginBase $query): void {
+  if ($view->id() !== 'member_success_queue') {
+    return;
+  }
+  if (!$query instanceof \Drupal\views\Plugin\views\query\Sql) {
+    return;
+  }
+
+  $alias = $query->ensureTable('ms_member_success_snapshot');
+  $query->addWhereExpression(0, "{$alias}.snapshot_date = (SELECT MAX(snapshot_date) FROM {ms_member_success_snapshot} WHERE snapshot_type = :snapshot_type)", [
+    ':snapshot_type' => 'daily',
+  ]);
+}

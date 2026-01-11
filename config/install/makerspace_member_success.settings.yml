@@ -1,0 +1,22 @@
+door_badge_tid: 1519
+badge_one_days: 28
+badge_four_days: 180
+new_member_days: 180
+retention_recency_days:
+  - 30
+  - 60
+  - 90
+payment_risk_fields:
+  - field_payment_failed
+  - field_chargebee_payment_pause
+  - field_member_payment_status
+civicrm_preferred_method_field: preferred_communication_method
+civicrm_do_not_fields:
+  - do_not_phone
+  - do_not_email
+  - do_not_sms
+  - do_not_mail
+outreach_activity_types:
+  - 'Email'
+  - 'Phone Call'
+  - 'SMS'

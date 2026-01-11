@@ -1,0 +1,67 @@
+makerspace_member_success.overview:
+  title: 'Member Success'
+  description: 'Member success queues and insights.'
+  route_name: makerspace_member_success.dashboard
+  parent: system.admin_config
+  weight: 100
+
+makerspace_member_success.settings:
+  title: 'Settings'
+  description: 'Configure member success thresholds and mappings.'
+  route_name: makerspace_member_success.settings
+  parent: makerspace_member_success.overview
+  weight: 100
+
+makerspace_member_success.onboarding:
+  title: '1. Onboarding'
+  route_name: view.member_success_queue.onboarding
+  parent: makerspace_member_success.overview
+  weight: 10
+
+makerspace_member_success.engagement:
+  title: '2. Engagement'
+  route_name: view.member_success_queue.engagement
+  parent: makerspace_member_success.overview
+  weight: 20
+
+makerspace_member_success.retention:
+  title: '3. Retention'
+  route_name: view.member_success_queue.retention
+  parent: makerspace_member_success.overview
+  weight: 30
+
+makerspace_member_success.recovery:
+  title: '4. Recovery'
+  route_name: view.member_success_queue.recovery
+  parent: makerspace_member_success.overview
+  weight: 40
+
+makerspace_member_success.lifecycle:
+  title: 'Full Lifecycle Queue'
+  route_name: view.member_success_queue.lifecycle
+  parent: makerspace_member_success.overview
+  weight: 50
+
+makerspace_member_success.resources:
+  title: 'Related Resources'
+  route_name: '<nolink>'
+  parent: makerspace_member_success.overview
+  weight: 60
+
+makerspace_member_success.resource_chargebee:
+  title: 'Chargebee Dashboard'
+  url: 'https://makehaven.chargebee.com'
+  parent: makerspace_member_success.resources
+  weight: 10
+
+makerspace_member_success.resource_civicrm:
+  title: 'CiviCRM Dashboard'
+  url: '/civicrm'
+  parent: makerspace_member_success.resources
+  weight: 20
+
+makerspace_member_success.resource_report_churn:
+  title: 'Chargebee Churn Report'
+  url: 'https://makehaven.chargebee.com/d/reports/standard/churn_summary'
+  parent: makerspace_member_success.resources
+  weight: 30

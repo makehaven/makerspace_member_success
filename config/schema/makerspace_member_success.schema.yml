@@ -1,0 +1,39 @@
+makerspace_member_success.settings:
+  type: config_object
+  label: 'Makerspace Member Success settings'
+  mapping:
+    door_badge_tid:
+      type: integer
+      label: 'Door badge term ID'
+    badge_one_days:
+      type: integer
+      label: 'Days to earn first additional badge'
+    badge_four_days:
+      type: integer
+      label: 'Days to earn four badges'
+    new_member_days:
+      type: integer
+      label: 'Days considered a new member'
+    retention_recency_days:
+      type: sequence
+      label: 'Retention recency windows (days)'
+      sequence:
+        type: integer
+    payment_risk_fields:
+      type: sequence
+      label: 'Payment risk field machine names'
+      sequence:
+        type: string
+    civicrm_preferred_method_field:
+      type: string
+      label: 'CiviCRM preferred communication method field'
+    civicrm_do_not_fields:
+      type: sequence
+      label: 'CiviCRM do-not contact fields'
+      sequence:
+        type: string
+    outreach_activity_types:
+      type: sequence
+      label: 'CiviCRM activity types for outreach'
+      sequence:
+        type: string

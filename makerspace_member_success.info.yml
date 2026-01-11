@@ -1,0 +1,8 @@
+name: Makerspace Member Success
+type: module
+description: 'Member success console for onboarding, engagement, retention, and recapture.'
+core_version_requirement: ^10 || ^11
+package: Makerspace
+dependencies:
+  - drupal:civicrm
+  - drupal:civicrm_entity

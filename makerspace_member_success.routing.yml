@@ -1,0 +1,15 @@
+makerspace_member_success.settings:
+  path: '/admin/config/makerspace/member-success'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\MemberSuccessSettingsForm'
+    _title: 'Member Success Settings'
+  requirements:
+    _permission: 'administer makerspace member success'
+
+makerspace_member_success.dashboard:
+  path: '/admin/makerspace/member-success/dashboard'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::build'
+    _title: 'Member Success Dashboard'
+  requirements:
+    _permission: 'administer makerspace member success'

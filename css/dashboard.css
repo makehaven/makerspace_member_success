@@ -1,0 +1,183 @@
+/* Dashboard Grid Layout */
+.ms-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.ms-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+/* Card Styles */
+.ms-card {
+  background: var(--gin-bg-layer); /* Gin variable for compatibility */
+  border: 1px solid var(--gin-border-color);
+  border-radius: var(--gin-border-m);
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ms-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Summary Card Specifics */
+.ms-summary-card {
+  text-align: center;
+  border-left: 4px solid transparent;
+}
+
+.ms-summary-card.ms-total { border-left-color: var(--gin-color-primary); }
+.ms-summary-card.ms-risk { border-left-color: var(--gin-color-warning); }
+.ms-summary-card.ms-critical { border-left-color: var(--gin-color-danger); }
+
+.ms-summary-number {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0.5rem 0;
+  color: var(--gin-color-text);
+}
+
+.ms-summary-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  color: var(--gin-color-text-light);
+  font-weight: 600;
+}
+
+/* Stage Card Specifics */
+.ms-stage-card .ms-card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--gin-border-color-layer2);
+}
+
+.ms-stage-icon {
+  font-size: 1.75rem;
+  margin-right: 0.75rem;
+}
+
+.ms-stage-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--gin-color-text);
+}
+
+.ms-stage-desc {
+  color: var(--gin-color-text-light);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+  min-height: 2.5em; /* Align cards */
+}
+
+.ms-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.ms-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--gin-color-text);
+}
+
+.ms-stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--gin-color-text-light);
+}
+
+/* Risk Section */
+.ms-risk-container {
+  background: var(--gin-bg-layer2);
+  border-radius: var(--gin-border-s);
+  padding: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.ms-risk-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.ms-risk-count {
+  font-weight: 700;
+  color: var(--gin-color-danger);
+}
+
+.ms-risk-badge {
+  background: var(--gin-color-danger);
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.ms-progress-track {
+  background: #e0e0e0;
+  border-radius: 4px;
+  height: 6px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ms-progress-fill {
+  background: var(--gin-color-danger);
+  height: 100%;
+}
+
+/* Button */
+.ms-action-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 0.6rem;
+  background: transparent;
+  border: 2px solid var(--gin-color-primary);
+  color: var(--gin-color-primary);
+  border-radius: var(--gin-border-s);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.ms-action-btn:hover {
+  background: var(--gin-color-primary);
+  color: white;
+  text-decoration: none;
+}
+
+/* Fallback variables if Gin is not active */
+:root {
+  --gin-bg-layer: #fff;
+  --gin-bg-layer2: #f6f6f6;
+  --gin-color-text: #222;
+  --gin-color-text-light: #666;
+  --gin-border-color: #ddd;
+  --gin-border-color-layer2: #eee;
+  --gin-color-primary: #0076d6;
+  --gin-color-danger: #d93f3f;
+  --gin-color-warning: #f5ae07;
+  --gin-border-m: 8px;
+  --gin-border-s: 4px;
+}

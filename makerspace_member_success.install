@@ -1,0 +1,244 @@
+<?php
+
+/**
+ * @file
+ * Install file for makerspace_member_success.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+use Drupal\Component\Serialization\Yaml;
+
+function makerspace_member_success_schema() {
+  $schema = [];
+
+  $schema['ms_member_success_snapshot'] = [
+    'description' => 'Member-level success snapshots for onboarding, engagement, and retention.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+      ],
+      'uid' => [
+        'type' => 'int',
+        'not null' => TRUE,
+      ],
+      'snapshot_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => TRUE,
+        'description' => 'YYYY-MM-DD',
+      ],
+      'snapshot_type' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'daily',
+      ],
+      'stage' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'onboarding',
+      ],
+      'risk_score' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'risk_reasons' => [
+        'type' => 'blob',
+        'not null' => FALSE,
+        'serialize' => TRUE,
+      ],
+      'join_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+      ],
+      'orientation_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+      ],
+      'door_badge_status' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => FALSE,
+      ],
+      'serial_number_present' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'badge_count_total' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'badge_count_window' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'tenure_bucket' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+      ],
+      'membership_type' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+      ],
+      'last_badge_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+      'last_visit_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+      'visit_count_30d' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'payment_failed' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'payment_pause' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'payment_status' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+      ],
+      'cancellation_followup' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+      ],
+      'civicrm_do_not_phone' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'civicrm_do_not_email' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'civicrm_do_not_sms' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'civicrm_do_not_mail' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'preferred_outreach_method' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+      ],
+      'last_outreach_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+      'outreach_status' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+      ],
+      'created_at' => [
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'uid_date' => ['uid', 'snapshot_date'],
+      'stage' => ['stage'],
+      'snapshot_type' => ['snapshot_type'],
+      'risk_score' => ['risk_score'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Adds tenure_bucket to member success snapshots.
+ */
+function makerspace_member_success_update_9001(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'tenure_bucket')) {
+    $schema->addField('ms_member_success_snapshot', 'tenure_bucket', [
+      'type' => 'varchar',
+      'length' => 32,
+      'not null' => FALSE,
+    ]);
+  }
+}
+
+/**
+ * Updates view config so lifecycle display + filters exist.
+ */
+function makerspace_member_success_update_9002(): void {
+  $module_path = \Drupal::service('extension.list.module')->getPath('makerspace_member_success');
+  $config_path = DRUPAL_ROOT . '/' . $module_path . '/config/install/views.view.member_success_queue.yml';
+  if (file_exists($config_path)) {
+    $data = Yaml::decode(file_get_contents($config_path));
+    if (is_array($data)) {
+      \Drupal::configFactory()->getEditable('views.view.member_success_queue')
+        ->setData($data)
+        ->save();
+    }
+  }
+}
+
+/**
+ * Updates menu config to expose the Lifecycle link.
+ */
+function makerspace_member_success_update_9003(): void {
+  $module_path = \Drupal::service('extension.list.module')->getPath('makerspace_member_success');
+  $config_path = DRUPAL_ROOT . '/' . $module_path . '/config/install/makerspace_member_success.links.menu.yml';
+  if (file_exists($config_path)) {
+    $data = Yaml::decode(file_get_contents($config_path));
+    if (is_array($data)) {
+      \Drupal::configFactory()->getEditable('makerspace_member_success.links.menu')
+        ->setData($data)
+        ->save();
+    }
+  }
+}
+
+/**
+ * Adds membership_type to member success snapshots.
+ */
+function makerspace_member_success_update_9004(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'membership_type')) {
+    $schema->addField('ms_member_success_snapshot', 'membership_type', [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+    ]);
+  }
+}

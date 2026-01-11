@@ -1,0 +1,16 @@
+services:
+  makerspace_member_success.snapshot_builder:
+    class: Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder
+    arguments:
+      - '@database'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@entity_type.manager'
+      - '@logger.factory'
+      - '@civicrm'
+
+  makerspace_member_success.civicrm_helper:
+    class: Drupal\makerspace_member_success\Service\CiviCrmHelper
+    arguments:
+      - '@civicrm'
+      - '@logger.factory'

@@ -1,0 +1,8 @@
+services:
+  makerspace_member_success.commands:
+    class: \Drupal\makerspace_member_success\Commands\MemberSuccessCommands
+    arguments:
+      - '@makerspace_member_success.snapshot_builder'
+      - '@entity_type.manager'
+    tags:
+      - { name: drush.command }
