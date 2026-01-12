@@ -5,11 +5,11 @@
  * Install file for makerspace_member_success.
  */
 
+use Drupal\Component\Serialization\Yaml;
+
 /**
  * Implements hook_schema().
  */
-use Drupal\Component\Serialization\Yaml;
-
 function makerspace_member_success_schema() {
   $schema = [];
 
@@ -217,16 +217,7 @@ function makerspace_member_success_update_9002(): void {
  * Updates menu config to expose the Lifecycle link.
  */
 function makerspace_member_success_update_9003(): void {
-  $module_path = \Drupal::service('extension.list.module')->getPath('makerspace_member_success');
-  $config_path = DRUPAL_ROOT . '/' . $module_path . '/config/install/makerspace_member_success.links.menu.yml';
-  if (file_exists($config_path)) {
-    $data = Yaml::decode(file_get_contents($config_path));
-    if (is_array($data)) {
-      \Drupal::configFactory()->getEditable('makerspace_member_success.links.menu')
-        ->setData($data)
-        ->save();
-    }
-  }
+  \Drupal::service('router.builder')->rebuild();
 }
 
 /**
