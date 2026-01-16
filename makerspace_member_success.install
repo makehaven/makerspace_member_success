@@ -8,12 +8,29 @@
 use Drupal\Component\Serialization\Yaml;
 
 /**
+ * Implements hook_install().
+ */
+function makerspace_member_success_install(): void {
+  makerspace_member_success_import_view_config();
+  \Drupal::service('router.builder')->rebuild();
+}
+
+/**
  * Implements hook_schema().
  */
 function makerspace_member_success_schema() {
   $schema = [];
+  $table_name = 'ms_member_success_snapshot';
 
-  $schema['ms_member_success_snapshot'] = [
+  // Skip createTable during install if the table already exists from a prior
+  // attempt; still expose schema for updates/uninstall when module is enabled.
+  $schema_api = \Drupal::database()->schema();
+  $module_enabled = \Drupal::moduleHandler()->moduleExists('makerspace_member_success');
+  if ($schema_api->tableExists($table_name) && !$module_enabled) {
+    return $schema;
+  }
+
+  $schema[$table_name] = [
     'description' => 'Member-level success snapshots for onboarding, engagement, and retention.',
     'fields' => [
       'id' => [
@@ -201,16 +218,7 @@ function makerspace_member_success_update_9001(): void {
  * Updates view config so lifecycle display + filters exist.
  */
 function makerspace_member_success_update_9002(): void {
-  $module_path = \Drupal::service('extension.list.module')->getPath('makerspace_member_success');
-  $config_path = DRUPAL_ROOT . '/' . $module_path . '/config/install/views.view.member_success_queue.yml';
-  if (file_exists($config_path)) {
-    $data = Yaml::decode(file_get_contents($config_path));
-    if (is_array($data)) {
-      \Drupal::configFactory()->getEditable('views.view.member_success_queue')
-        ->setData($data)
-        ->save();
-    }
-  }
+  makerspace_member_success_import_view_config();
 }
 
 /**
@@ -232,4 +240,45 @@ function makerspace_member_success_update_9004(): void {
       'not null' => FALSE,
     ]);
   }
+}
+
+/**
+ * Ensures the Member Success view is installed for existing sites.
+ */
+function makerspace_member_success_update_9005(): void {
+  makerspace_member_success_import_view_config();
+  \Drupal::service('router.builder')->rebuild();
+}
+
+/**
+ * Imports the member success queue view config if present.
+ */
+function makerspace_member_success_import_view_config(): void {
+  $existing = \Drupal::config('views.view.member_success_queue');
+  if (!$existing->isNew() && $existing->get('status')) {
+    return;
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('makerspace_member_success');
+  $config_path = DRUPAL_ROOT . '/' . $module_path . '/config/install/views.view.member_success_queue.yml';
+  if (!file_exists($config_path)) {
+    return;
+  }
+
+  $data = Yaml::decode(file_get_contents($config_path));
+  if (!is_array($data)) {
+    return;
+  }
+
+  \Drupal::configFactory()->getEditable('views.view.member_success_queue')
+    ->setData($data)
+    ->save();
+}
+
+/**
+ * Ensures the Member Success view is present/enabled.
+ */
+function makerspace_member_success_update_9006(): void {
+  makerspace_member_success_import_view_config();
+  \Drupal::service('router.builder')->rebuild();
 }

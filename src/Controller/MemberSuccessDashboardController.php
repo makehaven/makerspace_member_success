@@ -4,6 +4,8 @@ namespace Drupal\makerspace_member_success\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Url;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -77,16 +79,32 @@ class MemberSuccessDashboardController extends ControllerBase {
     // Link Critical (50+) to risk_score=1
     // Link At Risk (>0) to risk_score=5
     $summary_html = '<div class="ms-summary-grid">';
-    $summary_html .= $this->renderSummaryCard('Total Members', $summary['total'], 'ms-total', '/admin/makerspace/member-success/lifecycle');
-    $summary_html .= $this->renderSummaryCard('At Risk (>0)', $summary['at_risk'], 'ms-risk', '/admin/makerspace/member-success/lifecycle?risk_score=5');
-    $summary_html .= $this->renderSummaryCard('Critical (50+)', $summary['critical'], 'ms-critical', '/admin/makerspace/member-success/lifecycle?risk_score=1');
+    $summary_html .= $this->renderSummaryCard(
+      'Total Members',
+      $summary['total'],
+      'ms-total',
+      $this->safeRouteUrl('view.member_success_queue.lifecycle')
+    );
+    $summary_html .= $this->renderSummaryCard(
+      'At Risk (>0)',
+      $summary['at_risk'],
+      'ms-risk',
+      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 5])
+    );
+    $summary_html .= $this->renderSummaryCard(
+      'Critical (50+)',
+      $summary['critical'],
+      'ms-critical',
+      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 1])
+    );
     $summary_html .= '</div>';
 
     // Generate HTML for Stage Cards
     $stages_html = '<div class="ms-dashboard-grid">';
     foreach ($stage_defs as $key => $info) {
       $stats = $stages[$key] ?? ['total' => 0, 'risk' => 0];
-      $stages_html .= $this->renderStageCard($key, $info, $stats);
+      $route_name = 'view.member_success_queue.' . $key;
+      $stages_html .= $this->renderStageCard($key, $info, $stats, $this->safeRouteUrl($route_name));
     }
     $stages_html .= '</div>';
 
@@ -117,7 +135,7 @@ class MemberSuccessDashboardController extends ControllerBase {
   /**
    * Renders HTML for a stage card.
    */
-  private function renderStageCard($stage_id, $info, $stats) {
+  private function renderStageCard($stage_id, $info, $stats, $queue_url) {
     $percent_risk = $stats['total'] > 0 ? round(($stats['risk'] / $stats['total']) * 100) : 0;
     
     return '
@@ -145,9 +163,21 @@ class MemberSuccessDashboardController extends ControllerBase {
              </div>
           </div>
 
-          <a href="/admin/makerspace/member-success/' . $stage_id . '" class="ms-action-btn">Manage Queue &rarr;</a>
+          <a href="' . $queue_url . '" class="ms-action-btn">Manage Queue &rarr;</a>
         </div>
       </div>';
+  }
+
+  /**
+   * Builds a route URL, falling back to a safe placeholder if missing.
+   */
+  private function safeRouteUrl(string $route_name, array $query = []): string {
+    try {
+      return Url::fromRoute($route_name, [], ['query' => $query])->toString();
+    }
+    catch (RouteNotFoundException $exception) {
+      return '#';
+    }
   }
 
 }
