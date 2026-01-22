@@ -56,7 +56,7 @@ makerspace_member_success.resource_chargebee:
 
 makerspace_member_success.resource_civicrm:
   title: 'CiviCRM Dashboard'
-  url: '/civicrm'
+  url: 'internal:/civicrm'
   parent: makerspace_member_success.resources
   weight: 20
 
