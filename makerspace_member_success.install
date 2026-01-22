@@ -23,10 +23,11 @@ function makerspace_member_success_schema() {
   $table_name = 'ms_member_success_snapshot';
 
   // Skip createTable during install if the table already exists from a prior
-  // attempt; still expose schema for updates/uninstall when module is enabled.
+  // attempt. We key off system.schema so uninstall can still discover tables.
   $schema_api = \Drupal::database()->schema();
-  $module_enabled = \Drupal::moduleHandler()->moduleExists('makerspace_member_success');
-  if ($schema_api->tableExists($table_name) && !$module_enabled) {
+  $schema_version = \Drupal::keyValue('system.schema')
+    ->get('makerspace_member_success');
+  if ($schema_api->tableExists($table_name) && $schema_version === NULL) {
     return $schema;
   }
 
