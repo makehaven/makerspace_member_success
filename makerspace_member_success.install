@@ -188,6 +188,12 @@ function makerspace_member_success_schema() {
         'type' => 'int',
         'not null' => FALSE,
       ],
+      'is_latest' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
     ],
     'primary key' => ['id'],
     'indexes' => [
@@ -195,10 +201,36 @@ function makerspace_member_success_schema() {
       'stage' => ['stage'],
       'snapshot_type' => ['snapshot_type'],
       'risk_score' => ['risk_score'],
+      'is_latest' => ['is_latest'],
     ],
   ];
 
   return $schema;
+}
+
+/**
+ * Adds is_latest to member success snapshots.
+ */
+function makerspace_member_success_update_9007(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'is_latest')) {
+    $schema->addField('ms_member_success_snapshot', 'is_latest', [
+      'type' => 'int',
+      'size' => 'tiny',
+      'not null' => TRUE,
+      'default' => 0,
+    ]);
+    $schema->addIndex('ms_member_success_snapshot', 'is_latest', ['is_latest'], [
+      'fields' => [
+        'is_latest' => [
+          'type' => 'int',
+          'size' => 'tiny',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+      ],
+    ]);
+  }
 }
 
 /**

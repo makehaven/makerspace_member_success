@@ -66,6 +66,7 @@ class MemberSuccessCommands extends DrushCommands {
       $now_ts = time();
       
       $row = $this->snapshotBuilder->buildSnapshotForUser((int) $uid, $snapshot_date, 'daily', $now_ts);
+      $row['is_latest'] = 1;
       $this->snapshotBuilder->upsertSnapshot($row);
       
       $this->logger()->success(dt('Built snapshot for user @uid.', ['@uid' => $uid]));

@@ -157,6 +157,13 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('civicrm_preferred_method_field') ?? 'preferred_communication_method',
     ];
 
+    $form['advanced']['civicrm_cancellation_followup_field'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('CiviCRM cancellation followup field'),
+      '#description' => $this->t('The machine name of the CiviCRM custom field (e.g., custom_123).'),
+      '#default_value' => $config->get('civicrm_cancellation_followup_field'),
+    ];
+
     $form['advanced']['civicrm_do_not_fields'] = [
       '#type' => 'textarea',
       '#title' => $this->t('CiviCRM do-not fields'),
@@ -194,6 +201,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('template_recovery', $form_state->getValue('template_recovery'))
       ->set('payment_risk_fields', $this->sanitizeList($form_state->getValue('payment_risk_fields')))
       ->set('civicrm_preferred_method_field', trim((string) $form_state->getValue('civicrm_preferred_method_field')))
+      ->set('civicrm_cancellation_followup_field', trim((string) $form_state->getValue('civicrm_cancellation_followup_field')))
       ->set('civicrm_do_not_fields', $this->sanitizeList($form_state->getValue('civicrm_do_not_fields')))
       ->set('outreach_activity_types', $this->sanitizeList($form_state->getValue('outreach_activity_types')))
       ->save();

@@ -46,8 +46,15 @@ class MemberSuccessSnapshotBuilder {
     $uids = $this->loadActiveMemberIds();
     $count = 0;
 
+    // Reset is_latest for this type.
+    $this->database->update('ms_member_success_snapshot')
+      ->fields(['is_latest' => 0])
+      ->condition('snapshot_type', $snapshot_type)
+      ->execute();
+
     foreach ($uids as $uid) {
       $row = $this->buildSnapshotForUser($uid, $snapshot_date, $snapshot_type, $now_ts);
+      $row['is_latest'] = 1;
       $this->upsertSnapshot($row);
       $count++;
     }
@@ -77,6 +84,17 @@ class MemberSuccessSnapshotBuilder {
     $badge_stats = $this->loadBadgeStats($uid, $door_badge_tid, $badge_four_days, $now_ts);
     $visit_stats = $this->loadVisitStats($uid, $now_ts);
     $civi_data = $this->loadCiviCrmData($uid);
+
+    // Fallback: if CiviCRM doesn't have it, check the Drupal field.
+    $cancellation_followup = $civi_data['cancellation_followup'];
+    if (empty($cancellation_followup)) {
+      $cancellation_followup = $this->database->select('user__field_chargebee_followup', 'f')
+        ->fields('f', ['field_chargebee_followup_value'])
+        ->condition('f.entity_id', $uid)
+        ->range(0, 1)
+        ->execute()
+        ->fetchField() ?: NULL;
+    }
 
     $serial_present = $profile['serial_present'] || $user_flags['serial_present'];
     $payment_failed = $user_flags['payment_failed'];
@@ -147,7 +165,7 @@ class MemberSuccessSnapshotBuilder {
       'payment_failed' => $payment_failed ? 1 : 0,
       'payment_pause' => $payment_pause ? 1 : 0,
       'payment_status' => $profile['payment_status'],
-      'cancellation_followup' => NULL,
+      'cancellation_followup' => $cancellation_followup,
       'civicrm_do_not_phone' => $civi_data['do_not_phone'],
       'civicrm_do_not_email' => $civi_data['do_not_email'],
       'civicrm_do_not_sms' => $civi_data['do_not_sms'],
@@ -177,6 +195,7 @@ class MemberSuccessSnapshotBuilder {
       'do_not_sms' => 0,
       'do_not_mail' => 0,
       'preferred_outreach_method' => NULL,
+      'cancellation_followup' => NULL,
     ];
 
     if (!$this->civicrm) {
@@ -197,10 +216,16 @@ class MemberSuccessSnapshotBuilder {
 
       $config = $this->configFactory->get('makerspace_member_success.settings');
       $pref_field = $config->get('civicrm_preferred_method_field') ?? 'preferred_communication_method';
+      $followup_field = $config->get('civicrm_cancellation_followup_field');
+
+      $return_fields = ['do_not_phone', 'do_not_email', 'do_not_sms', 'do_not_mail', $pref_field];
+      if ($followup_field) {
+        $return_fields[] = $followup_field;
+      }
 
       $params = [
         'id' => $contact_id,
-        'return' => ['do_not_phone', 'do_not_email', 'do_not_sms', 'do_not_mail', $pref_field],
+        'return' => $return_fields,
       ];
 
       $contact = civicrm_api3('Contact', 'get', $params);
@@ -211,12 +236,21 @@ class MemberSuccessSnapshotBuilder {
           $pref = reset($pref);
         }
 
+        $followup = NULL;
+        if ($followup_field && isset($data[$followup_field])) {
+          $followup = $data[$followup_field];
+          // Handle pseudo-constants/option labels if needed, 
+          // but usually APIv3 returns values. 
+          // If we want labels, we might need another call or use APIv4.
+        }
+
         return [
           'do_not_phone' => (int) ($data['do_not_phone'] ?? 0),
           'do_not_email' => (int) ($data['do_not_email'] ?? 0),
           'do_not_sms' => (int) ($data['do_not_sms'] ?? 0),
           'do_not_mail' => (int) ($data['do_not_mail'] ?? 0),
           'preferred_outreach_method' => (string) $pref,
+          'cancellation_followup' => $followup,
         ];
       }
     }
@@ -457,6 +491,14 @@ class MemberSuccessSnapshotBuilder {
       'snapshot_date' => $row['snapshot_date'],
       'snapshot_type' => $row['snapshot_type'],
     ];
+
+    if (!empty($row['is_latest'])) {
+      $this->database->update('ms_member_success_snapshot')
+        ->fields(['is_latest' => 0])
+        ->condition('uid', $row['uid'])
+        ->condition('snapshot_type', $row['snapshot_type'])
+        ->execute();
+    }
 
     $fields = $row;
     unset($fields['uid'], $fields['snapshot_date'], $fields['snapshot_type']);

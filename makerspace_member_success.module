@@ -190,6 +190,38 @@ function makerspace_member_success_views_data(): array {
     'sort' => ['id' => 'standard'],
   ];
 
+  $data['ms_member_success_snapshot']['payment_status'] = [
+    'title' => t('Payment status'),
+    'help' => t('Payment status label.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['cancellation_followup'] = [
+    'title' => t('Cancellation Followup'),
+    'help' => t('Status of cancellation outreach.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['created_at'] = [
+    'title' => t('Created at'),
+    'help' => t('Timestamp when the snapshot was created.'),
+    'field' => ['id' => 'date'],
+    'filter' => ['id' => 'date'],
+    'sort' => ['id' => 'date'],
+  ];
+
+  $data['ms_member_success_snapshot']['is_latest'] = [
+    'title' => t('Is latest'),
+    'help' => t('Whether this is the most recent snapshot for the user.'),
+    'field' => ['id' => 'boolean'],
+    'filter' => ['id' => 'boolean'],
+    'sort' => ['id' => 'standard'],
+  ];
+
   $data['ms_member_success_snapshot']['orientation_date'] = [
     'title' => t('Orientation Date'),
     'help' => t('Date of door badge issuance (approx orientation).'),
@@ -222,7 +254,5 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
   }
 
   $alias = $query->ensureTable('ms_member_success_snapshot');
-  $query->addWhereExpression(0, "{$alias}.snapshot_date = (SELECT MAX(snapshot_date) FROM {ms_member_success_snapshot} WHERE snapshot_type = :snapshot_type)", [
-    ':snapshot_type' => 'daily',
-  ]);
+  $query->addWhere(0, "{$alias}.is_latest", 1);
 }

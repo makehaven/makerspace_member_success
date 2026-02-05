@@ -46,14 +46,22 @@ class MemberSuccessDashboardController extends ControllerBase {
     // 1. Fetch Summary Stats
     $query = $this->database->select('ms_member_success_snapshot', 's');
     $query->condition('snapshot_type', 'daily');
+    $query->condition('is_latest', 1);
     $query->addExpression('COUNT(uid)', 'total');
     $query->addExpression('SUM(CASE WHEN risk_score > 0 THEN 1 ELSE 0 END)', 'at_risk');
     $query->addExpression('SUM(CASE WHEN risk_score >= 50 THEN 1 ELSE 0 END)', 'critical');
     $summary = $query->execute()->fetchAssoc();
 
+    if (empty($summary['total'])) {
+      return [
+        '#markup' => $this->t('No member success snapshots found. Please run "drush ms-build" to generate data.'),
+      ];
+    }
+
     // 2. Fetch Stage Stats
     $query = $this->database->select('ms_member_success_snapshot', 's');
     $query->condition('snapshot_type', 'daily');
+    $query->condition('is_latest', 1);
     $query->fields('s', ['stage']);
     $query->addExpression('COUNT(uid)', 'count');
     $query->addExpression('SUM(CASE WHEN risk_score >= 20 THEN 1 ELSE 0 END)', 'actionable_risk');
@@ -163,7 +171,7 @@ class MemberSuccessDashboardController extends ControllerBase {
              </div>
           </div>
 
-          <a href="' . $queue_url . '" class="ms-action-btn">Manage Queue &rarr;</a>
+          <a href="' . $queue_url . '" class="ms-action-btn stretched-link">Manage Queue &rarr;</a>
         </div>
       </div>';
   }

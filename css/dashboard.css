@@ -15,6 +15,7 @@
 
 /* Card Styles */
 .ms-card {
+  position: relative;
   background: var(--gin-bg-layer); /* Gin variable for compatibility */
   border: 1px solid var(--gin-border-color);
   border-radius: var(--gin-border-m);
