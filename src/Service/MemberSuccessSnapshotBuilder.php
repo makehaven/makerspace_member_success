@@ -85,6 +85,15 @@ class MemberSuccessSnapshotBuilder {
     $visit_stats = $this->loadVisitStats($uid, $now_ts);
     $civi_data = $this->loadCiviCrmData($uid);
 
+    // Load previous snapshot to preserve outreach tracking fields
+    $previous = $this->database->select('ms_member_success_snapshot', 'ms')
+      ->fields('ms', ['outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts'])
+      ->condition('uid', $uid)
+      ->condition('is_latest', 1)
+      ->condition('snapshot_type', 'daily')
+      ->execute()
+      ->fetchAssoc();
+
     // Fallback: if CiviCRM doesn't have it, check the Drupal field.
     $cancellation_followup = $civi_data['cancellation_followup'];
     if (empty($cancellation_followup)) {
@@ -106,7 +115,9 @@ class MemberSuccessSnapshotBuilder {
     }
 
     $stage = 'onboarding';
-    if ($payment_failed || $payment_pause) {
+    // Only payment FAILED goes to recovery (needs action)
+    // Payment paused is OK (planned break) - member stays in normal lifecycle
+    if ($payment_failed) {
       $stage = 'recovery';
     }
     elseif ($door_badge['status'] === 'active' && $serial_present) {
@@ -142,6 +153,7 @@ class MemberSuccessSnapshotBuilder {
       'badge_count_window' => $badge_stats['count_window'],
       'last_visit_ts' => $visit_stats['last_visit_ts'],
       'tenure_bucket' => $tenure_bucket,
+      'join_date' => $profile['join_date'],
     ], $badge_one_days, $badge_four_days, $recency_days, $now_ts);
 
     return [
@@ -171,8 +183,12 @@ class MemberSuccessSnapshotBuilder {
       'civicrm_do_not_sms' => $civi_data['do_not_sms'],
       'civicrm_do_not_mail' => $civi_data['do_not_mail'],
       'preferred_outreach_method' => $civi_data['preferred_outreach_method'],
-      'last_outreach_ts' => NULL,
-      'outreach_status' => NULL,
+      // Preserve outreach tracking from previous snapshot (set by LogContactForm)
+      'last_outreach_ts' => $previous['last_outreach_ts'] ?? NULL,
+      'outreach_status' => $previous['outreach_status'] ?? ($stage === 'recovery' ? 'pending' : NULL),
+      'last_contact_date' => $previous['last_contact_date'] ?? NULL,
+      'next_followup_date' => $previous['next_followup_date'] ?? NULL,
+      'contact_count' => $previous['contact_count'] ?? 0,
       'created_at' => $now_ts,
     ];
   }
@@ -440,19 +456,46 @@ class MemberSuccessSnapshotBuilder {
     $score = 0;
     $reasons = [];
 
-    if (!empty($data['payment_failed']) || !empty($data['payment_pause'])) {
+    // Payment failed = CRITICAL (need immediate action)
+    if (!empty($data['payment_failed'])) {
       $score += 50;
-      $reasons[] = 'payment_issue';
+      $reasons[] = 'payment_failed';
     }
 
+    // Payment paused = NOT a problem (member chose to pause, has resume date)
+    // Don't flag paused members - they're intentionally on hold
+    // if (!empty($data['payment_pause'])) {
+    //   // No score added - paused is OK
+    // }
+
     if ($data['stage'] === 'onboarding') {
-      if (($data['door_badge_status'] ?? NULL) !== 'active') {
-        $score += 20;
-        $reasons[] = 'door_badge_pending';
+      // Calculate days since join to determine if in grace period
+      $days_since_join = 0;
+      if (!empty($data['join_date'])) {
+        $join_ts = strtotime($data['join_date'] . ' 00:00:00');
+        if ($join_ts) {
+          $days_since_join = (int) floor(($now_ts - $join_ts) / 86400);
+        }
       }
-      if (empty($data['serial_present'])) {
-        $score += 10;
-        $reasons[] = 'missing_serial';
+
+      // 2-week grace period - only flag members who have been waiting 14+ days
+      // TODO: Future enhancement - also check if orientation is scheduled in CiviCRM
+      //       via Calendly integration. If scheduled, extend grace period until
+      //       scheduled date + 3 days.
+      $grace_period_days = 14;
+      $in_grace_period = $days_since_join < $grace_period_days;
+
+      if (!$in_grace_period) {
+        // After grace period, flag if door badge not active
+        if (($data['door_badge_status'] ?? NULL) !== 'active') {
+          $score += 20;
+          $reasons[] = 'door_badge_pending';
+        }
+        // And flag if missing serial number
+        if (empty($data['serial_present'])) {
+          $score += 10;
+          $reasons[] = 'missing_serial';
+        }
       }
     }
 

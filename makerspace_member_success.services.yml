@@ -14,3 +14,16 @@ services:
     arguments:
       - '@civicrm'
       - '@logger.factory'
+
+  makerspace_member_success.activity_logger:
+    class: Drupal\makerspace_member_success\Service\CiviCrmActivityLogger
+    arguments:
+      - '@config.factory'
+      - '@logger.factory'
+      - '@current_user'
+      - '@civicrm'
+
+  makerspace_member_success.recovery_metrics:
+    class: Drupal\makerspace_member_success\Service\RecoveryMetrics
+    arguments:
+      - '@database'

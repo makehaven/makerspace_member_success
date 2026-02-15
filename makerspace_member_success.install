@@ -184,6 +184,24 @@ function makerspace_member_success_schema() {
         'length' => 64,
         'not null' => FALSE,
       ],
+      'last_contact_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date of last contact attempt (YYYY-MM-DD)',
+      ],
+      'next_followup_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date when member should reappear in queue (YYYY-MM-DD)',
+      ],
+      'contact_count' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Number of outreach attempts made',
+      ],
       'created_at' => [
         'type' => 'int',
         'not null' => FALSE,
@@ -202,6 +220,7 @@ function makerspace_member_success_schema() {
       'snapshot_type' => ['snapshot_type'],
       'risk_score' => ['risk_score'],
       'is_latest' => ['is_latest'],
+      'next_followup_date' => ['next_followup_date'],
     ],
   ];
 
@@ -314,4 +333,134 @@ function makerspace_member_success_import_view_config(): void {
 function makerspace_member_success_update_9006(): void {
   makerspace_member_success_import_view_config();
   \Drupal::service('router.builder')->rebuild();
+}
+
+/**
+ * Adds outreach tracking fields for automatic queue sleep periods.
+ */
+function makerspace_member_success_update_9008(): void {
+  $schema = \Drupal::database()->schema();
+
+  // Add last_contact_date (DATE format YYYY-MM-DD)
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'last_contact_date')) {
+    $schema->addField('ms_member_success_snapshot', 'last_contact_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date of last contact attempt (YYYY-MM-DD)',
+    ]);
+  }
+
+  // Add next_followup_date (DATE format YYYY-MM-DD)
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'next_followup_date')) {
+    $schema->addField('ms_member_success_snapshot', 'next_followup_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date when member should reappear in queue (YYYY-MM-DD)',
+    ]);
+
+    // Add index for filtering sleeping members
+    $schema->addIndex('ms_member_success_snapshot', 'next_followup_date', ['next_followup_date'], [
+      'fields' => [
+        'next_followup_date' => [
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => FALSE,
+        ],
+      ],
+    ]);
+  }
+
+  // Add contact_count
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'contact_count')) {
+    $schema->addField('ms_member_success_snapshot', 'contact_count', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+      'description' => 'Number of outreach attempts made',
+    ]);
+  }
+}
+
+/**
+ * Creates outreach log table for recovery metrics tracking.
+ */
+function makerspace_member_success_update_9009(): void {
+  $schema = \Drupal::database()->schema();
+
+  if (!$schema->tableExists('ms_member_outreach_log')) {
+    $table_schema = [
+      'description' => 'Log of all member outreach contact attempts for analytics',
+      'fields' => [
+        'id' => [
+          'type' => 'serial',
+          'not null' => TRUE,
+        ],
+        'uid' => [
+          'type' => 'int',
+          'not null' => TRUE,
+          'description' => 'Member user ID',
+        ],
+        'contact_date' => [
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'description' => 'Date contact was attempted (YYYY-MM-DD)',
+        ],
+        'contact_method' => [
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+          'description' => 'phone, email, in_person, other',
+        ],
+        'outcome' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => TRUE,
+          'description' => 'Contact outcome',
+        ],
+        'notes' => [
+          'type' => 'text',
+          'not null' => FALSE,
+          'description' => 'Staff notes about conversation',
+        ],
+        'followup_status' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'New followup status set',
+        ],
+        'staff_uid' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'Staff member who made contact',
+        ],
+        'civicrm_activity_id' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'CiviCRM activity ID if created',
+        ],
+        'sleep_days' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'Sleep period applied (days)',
+        ],
+        'created_at' => [
+          'type' => 'int',
+          'not null' => TRUE,
+          'description' => 'Unix timestamp',
+        ],
+      ],
+      'primary key' => ['id'],
+      'indexes' => [
+        'idx_uid' => ['uid'],
+        'idx_contact_date' => ['contact_date'],
+        'idx_outcome' => ['outcome'],
+        'idx_created_at' => ['created_at'],
+      ],
+    ];
+
+    $schema->createTable('ms_member_outreach_log', $table_schema);
+  }
 }

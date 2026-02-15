@@ -13,3 +13,15 @@ makerspace_member_success.dashboard:
     _title: 'Member Success Dashboard'
   requirements:
     _permission: 'administer makerspace member success'
+
+makerspace_member_success.log_contact:
+  path: '/admin/makerspace/member-success/log-contact/{user}'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\LogContactForm'
+    _title: 'Log Member Contact'
+  requirements:
+    _permission: 'administer makerspace member success'
+  options:
+    parameters:
+      user:
+        type: entity:user

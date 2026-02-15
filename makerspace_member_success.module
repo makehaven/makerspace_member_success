@@ -239,6 +239,85 @@ function makerspace_member_success_views_data(): array {
     ],
   ];
 
+  // Pseudo-field for Risk Reasons Display
+  $data['ms_member_success_snapshot']['risk_reasons_display'] = [
+    'title' => t('Why Actionable'),
+    'help' => t('Shows risk score and reason codes explaining why member needs attention.'),
+    'field' => [
+      'id' => 'risk_reasons_field',
+    ],
+  ];
+
+  // Pseudo-field for Stage Context
+  $data['ms_member_success_snapshot']['stage_context'] = [
+    'title' => t('Stage Info'),
+    'help' => t('Shows contextual information relevant to the lifecycle stage (days waiting, badges, last visit, etc.).'),
+    'field' => [
+      'id' => 'stage_context_field',
+    ],
+  ];
+
+  // Pseudo-field for Last Access
+  $data['ms_member_success_snapshot']['last_access_display'] = [
+    'title' => t('Last Access'),
+    'help' => t('Shows last access time from access control logs.'),
+    'field' => [
+      'id' => 'last_access_field',
+    ],
+  ];
+
+  // Pseudo-field for Days Waiting (onboarding)
+  $data['ms_member_success_snapshot']['days_waiting'] = [
+    'title' => t('Days Waiting'),
+    'help' => t('Shows number of days since member joined (color-coded by urgency).'),
+    'field' => [
+      'id' => 'days_waiting_field',
+    ],
+  ];
+
+  // Pseudo-field for Member Name with IDs
+  $data['ms_member_success_snapshot']['member_name_with_ids'] = [
+    'title' => t('Member Name with IDs'),
+    'help' => t('Shows member name with CiviCRM and Chargebee IDs below.'),
+    'field' => [
+      'id' => 'member_name_with_ids_field',
+    ],
+  ];
+
+  // Pseudo-field for Payment Risk
+  $data['ms_member_success_snapshot']['payment_risk_badges'] = [
+    'title' => t('Payment Risk Badges'),
+    'help' => t('Shows payment failed/paused badges (properly conditional).'),
+    'field' => [
+      'id' => 'payment_risk_field',
+    ],
+  ];
+
+  // Outreach tracking fields
+  $data['ms_member_success_snapshot']['last_contact_date'] = [
+    'title' => t('Last Contact'),
+    'help' => t('Date of last outreach contact attempt.'),
+    'field' => ['id' => 'date'],
+    'sort' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+  ];
+
+  $data['ms_member_success_snapshot']['contact_count'] = [
+    'title' => t('Attempts'),
+    'help' => t('Number of outreach attempts made.'),
+    'field' => ['id' => 'numeric'],
+    'sort' => ['id' => 'standard'],
+    'filter' => ['id' => 'numeric'],
+  ];
+
+  $data['ms_member_success_snapshot']['next_followup_date'] = [
+    'title' => t('Next Follow-up'),
+    'help' => t('Date when member will reappear in queue.'),
+    'field' => ['id' => 'date'],
+    'sort' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+  ];
+
   return $data;
 }
 
@@ -255,4 +334,196 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
 
   $alias = $query->ensureTable('ms_member_success_snapshot');
   $query->addWhere(0, "{$alias}.is_latest", 1);
+
+  // Hide members in sleep period (next_followup_date > today)
+  // OR where outreach_status indicates permanent resolution
+  $today = date('Y-m-d');
+  $group = $query->setWhereGroup('AND');
+
+  // Create an OR condition: show if no next_followup OR next_followup <= today
+  $or_group = $query->setWhereGroup('OR', $group);
+  $query->addWhere($or_group, "{$alias}.next_followup_date", NULL, 'IS NULL');
+  $query->addWhere($or_group, "{$alias}.next_followup_date", $today, '<=');
+
+  // Also hide if outreach_status is permanently resolved
+  $resolved_statuses = ['confirmed_cancellation', 'outreach_exhausted'];
+  $query->addWhere($group, "{$alias}.outreach_status", $resolved_statuses, 'NOT IN');
+}
+
+/**
+ * Implements hook_views_pre_render().
+ */
+function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable $view) {
+  if ($view->id() !== 'member_success_queue') {
+    return;
+  }
+
+  // Add helpful header text to each queue display
+  $guidance = [];
+
+  // Add dashboard link for all queue displays
+  $dashboard_link = '<div class="mb-2"><a href="/admin/makerspace/member-success/dashboard" class="btn btn-sm btn-outline-secondary">← Back to Dashboard</a></div>';
+
+  // Add risk code legend (shown on all queues)
+  $legend = '<div class="alert alert-light border mb-2">' .
+    '<strong>Risk Codes:</strong> ' .
+    '<span class="badge bg-danger">🔴 50+</span> Critical | ' .
+    '<span class="badge bg-warning text-dark">20-49</span> Actionable | ' .
+    '<strong>PAY</strong>=Payment Issue | ' .
+    '<strong>DOOR</strong>=Door Badge Pending | ' .
+    '<strong>KEY</strong>=Missing Serial | ' .
+    '<strong>NO-BADGE</strong>=0 Badges (30d) | ' .
+    '<strong>STALLED</strong>=&lt;4 Badges (90d) | ' .
+    '<strong>ABSENT</strong>=No Visits (30d+)' .
+    '</div>';
+
+  switch ($view->current_display) {
+    case 'onboarding':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-info mb-3">' .
+          '<h5>🏁 Onboarding Queue - Help New Members Get Started</h5>' .
+          '<p><strong>What makes someone actionable here?</strong> Members flagged ONLY if:</p>' .
+          '<ul>' .
+          '<li>✅ <strong>14+ days since signup</strong> (2-week grace period for scheduling/completing orientation)</li>' .
+          '<li>AND 🔴 Door badge not active (+20 points) - Haven\'t completed orientation quiz</li>' .
+          '<li>OR 🟡 Missing key card serial (+10 points) - Haven\'t picked up or registered key</li>' .
+          '</ul>' .
+          '<p><strong>Grace Period:</strong> New members (< 14 days) are NOT flagged - they need time to schedule orientation.</p>' .
+          '<p><strong>Priority:</strong> Members waiting longest (20+ days) shown first. These are genuinely stuck!</p>' .
+          '<p><strong>Your Goal:</strong> Get them through orientation and set up with their key/badge.</p>' .
+          '<p class="mb-0"><strong>Actions:</strong> Pending Door Badge → Quiz help email | Needs Key → Pickup email | Recent signup → Monitor, they\'re on track</p>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+
+    case 'engagement':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-info mb-3">' .
+          '<h5>🚀 Engagement Queue - Help Members Explore & Build Skills</h5>' .
+          '<p><strong>What makes someone actionable here?</strong> Risk score ≥20 means:</p>' .
+          '<ul>' .
+          '<li>🔴 0 badges after 30 days (+20 points) - Activated but haven\'t used any tools</li>' .
+          '<li>🟠 Less than 4 badges after 90 days (+20 points) - Started but stalled out</li>' .
+          '</ul>' .
+          '<p><strong>Priority:</strong> Most stalled members (0 badges) shown first. Early intervention builds habits!</p>' .
+          '<p><strong>Your Goal:</strong> Get them earning badges and attending workshops.</p>' .
+          '<p class="mb-0"><strong>Actions:</strong> Stalled (0 badges) → Workshop email | Low engagement (<4 badges) → Project ideas call | Active → Great job!</p>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+
+    case 'retention':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-info mb-3">' .
+          '<h5>❤️ Retention Queue - Keep Long-Term Members Engaged</h5>' .
+          '<p><strong>What makes someone actionable here?</strong> Risk score ≥20 means:</p>' .
+          '<ul>' .
+          '<li>🟤 No visits in 30+ days (+20 points) - Stopped coming to space</li>' .
+          '</ul>' .
+          '<p><strong>Priority:</strong> Longest absence shown first. Checking in shows we care!</p>' .
+          '<p><strong>Your Goal:</strong> Re-engage members who are drifting away.</p>' .
+          '<p><strong>Actions:</strong> Absent 60+ days → "We Miss You" email | Absent 30-60 days → Check-in call | Visiting → Healthy, keep monitoring</p>' .
+          '<p class="mb-0"><em>Note: Some absence is seasonal (summer, holidays). Focus on 60+ days first.</em></p>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+
+    case 'recovery':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-danger mb-3">' .
+          '<h5>💸 Recovery Queue - Prevent Payment-Related Churn</h5>' .
+          '<p><strong>What makes someone actionable here?</strong> ONLY payment failures (risk = 50):</p>' .
+          '<ul>' .
+          '<li>🔴 Payment Failed (+50 points) - Credit card declined, need to update payment method URGENTLY</li>' .
+          '</ul>' .
+          '<p><strong>Note:</strong> Paused members are NOT in this queue - they intentionally paused with a planned resume date. No action needed for paused members.</p>' .
+          '<p><strong>Priority:</strong> ALL members here are CRITICAL. Highest risk shown first. Contact within 24-48 hours!</p>' .
+          '<p><strong>Your Goal:</strong> Recover failed payments and prevent cancellations.</p>' .
+          '<p><strong>Actions:</strong> Payment Failed → URGENT call/email to update payment method</p>' .
+          '<p class="mb-0"><strong>Recovery Tips:</strong> Offer free month, payment plan, or alternative membership level. Track outcome in "Log Contact" form.</p>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+
+    case 'lifecycle':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-secondary mb-3">' .
+          '<h5>📊 Lifecycle Overview - All Members by Stage</h5>' .
+          '<p>This view shows all members and their current lifecycle stage. Use the stage-specific queues above for actionable lists.</p>' .
+          '<p><strong>Stage Definitions:</strong></p>' .
+          '<ul class="mb-0">' .
+          '<li><strong>Onboarding:</strong> New member setting up access</li>' .
+          '<li><strong>Engagement:</strong> First 6 months, building skills</li>' .
+          '<li><strong>Retention:</strong> Long-term member staying active</li>' .
+          '<li><strong>Recovery:</strong> Payment issue needs resolution</li>' .
+          '</ul>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+  }
+
+  if (!empty($guidance)) {
+    $view->attachment_before[] = $guidance;
+  }
+
+  // Add result count summary
+  if (!empty($view->result)) {
+    $total = count($view->result);
+
+    // Get actionable count directly from database since Views result rows
+    // don't reliably expose risk_score values
+    $database = \Drupal::database();
+    $query = $database->select('ms_member_success_snapshot', 'ms');
+    $query->addExpression('COUNT(*)', 'count');
+    $query->condition('ms.is_latest', 1);
+    $query->condition('ms.snapshot_type', 'daily');
+    $query->condition('ms.risk_score', 20, '>=');
+
+    // Filter by current display's stage
+    $stage_map = [
+      'onboarding' => 'onboarding',
+      'engagement' => 'engagement',
+      'retention' => 'retention',
+      'recovery' => 'recovery',
+    ];
+
+    if (isset($stage_map[$view->current_display])) {
+      $query->condition('ms.stage', $stage_map[$view->current_display]);
+    }
+
+    $actionable = $query->execute()->fetchField();
+
+    // Color code based on actionable percentage
+    $color = 'text-success';
+    if ($actionable > 0) {
+      $percentage = ($actionable / $total) * 100;
+      if ($percentage > 50) {
+        $color = 'text-danger';
+      }
+      elseif ($percentage > 20) {
+        $color = 'text-warning';
+      }
+    }
+
+    $summary = [
+      '#type' => 'markup',
+      '#markup' => '<div class="alert alert-light border mb-3">' .
+        '<strong>Showing ' . $total . ' members</strong> | ' .
+        '<span class="' . $color . '">' . $actionable . ' actionable</span> (risk ≥ 20)' .
+        '</div>',
+      '#weight' => -90,
+    ];
+
+    $view->attachment_before[] = $summary;
+  }
 }
