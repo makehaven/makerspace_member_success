@@ -23,6 +23,20 @@ class MemberNameWithIdsField extends FieldPluginBase {
   protected $database;
 
   /**
+   * Static cache for loaded profiles to avoid duplicate queries.
+   *
+   * @var array
+   */
+  protected static $profileCache = [];
+
+  /**
+   * Static cache for CiviCRM contact IDs.
+   *
+   * @var array
+   */
+  protected static $contactIdCache = [];
+
+  /**
    * Constructs a MemberNameWithIdsField object.
    */
   public function __construct(array $configuration, $plugin_id, $plugin_definition, Connection $database) {
@@ -72,31 +86,43 @@ class MemberNameWithIdsField extends FieldPluginBase {
     // Get user name
     $name = $user->getDisplayName();
 
-    // Get photo from main profile
+    // Get photo from main profile (with static cache)
     $photo_html = '';
-    $profile_storage = \Drupal::entityTypeManager()->getStorage('profile');
-    $profiles = $profile_storage->loadByProperties([
-      'uid' => $uid,
-      'type' => 'main',
-      'status' => 1,
-    ]);
+    $profile = NULL;
 
-    if (!empty($profiles)) {
-      $profile = reset($profiles);
-      if ($profile && $profile->hasField('field_member_photo') && !$profile->get('field_member_photo')->isEmpty()) {
-        $picture = $profile->get('field_member_photo')->entity;
-        if ($picture) {
-          // Use thumbnail image style for better performance
-          $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load('thumbnail');
-          if ($image_style) {
-            $photo_url = $image_style->buildUrl($picture->getFileUri());
-          }
-          else {
-            // Fallback to original if thumbnail style doesn't exist
-            $photo_url = \Drupal::service('file_url_generator')->generateAbsoluteString($picture->getFileUri());
-          }
-          $photo_html = '<img src="' . $photo_url . '" alt="' . htmlspecialchars($name) . '" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover; vertical-align: middle;">';
+    if (isset(self::$profileCache[$uid])) {
+      $profile = self::$profileCache[$uid];
+    }
+    else {
+      $profile_storage = \Drupal::entityTypeManager()->getStorage('profile');
+      $profiles = $profile_storage->loadByProperties([
+        'uid' => $uid,
+        'type' => 'main',
+        'status' => 1,
+      ]);
+
+      if (!empty($profiles)) {
+        $profile = reset($profiles);
+        self::$profileCache[$uid] = $profile;
+      }
+      else {
+        self::$profileCache[$uid] = FALSE;
+      }
+    }
+
+    if ($profile && $profile->hasField('field_member_photo') && !$profile->get('field_member_photo')->isEmpty()) {
+      $picture = $profile->get('field_member_photo')->entity;
+      if ($picture) {
+        // Use thumbnail image style for better performance
+        $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load('thumbnail');
+        if ($image_style) {
+          $photo_url = $image_style->buildUrl($picture->getFileUri());
         }
+        else {
+          // Fallback to original if thumbnail style doesn't exist
+          $photo_url = \Drupal::service('file_url_generator')->generateAbsoluteString($picture->getFileUri());
+        }
+        $photo_html = '<img src="' . $photo_url . '" alt="' . htmlspecialchars($name) . '" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover; vertical-align: middle;">';
       }
     }
 
@@ -105,17 +131,24 @@ class MemberNameWithIdsField extends FieldPluginBase {
       $photo_html = '<span class="bg-secondary rounded me-2 d-inline-block text-white text-center" style="width: 40px; height: 40px; line-height: 40px; vertical-align: middle; font-size: 18px;">👤</span>';
     }
 
-    // Get CiviCRM contact ID
+    // Get CiviCRM contact ID (with static cache)
     $civi_id = NULL;
-    try {
-      $civi_id = $this->database->select('civicrm_uf_match', 'uf')
-        ->fields('uf', ['contact_id'])
-        ->condition('uf.uf_id', $uid)
-        ->execute()
-        ->fetchField();
+    if (isset(self::$contactIdCache[$uid])) {
+      $civi_id = self::$contactIdCache[$uid];
     }
-    catch (\Exception $e) {
-      // Skip if CiviCRM not available
+    else {
+      try {
+        $civi_id = $this->database->select('civicrm_uf_match', 'uf')
+          ->fields('uf', ['contact_id'])
+          ->condition('uf.uf_id', $uid)
+          ->execute()
+          ->fetchField();
+        self::$contactIdCache[$uid] = $civi_id;
+      }
+      catch (\Exception $e) {
+        // Skip if CiviCRM not available
+        self::$contactIdCache[$uid] = NULL;
+      }
     }
 
     // Get Chargebee ID
@@ -190,6 +223,14 @@ class MemberNameWithIdsField extends FieldPluginBase {
     return [
       '#type' => 'markup',
       '#markup' => $output,
+      '#cache' => [
+        'tags' => [
+          'user:' . $uid,
+          'profile:main:' . $uid,
+        ],
+        'contexts' => ['user'],
+        'max-age' => 3600, // Cache for 1 hour
+      ],
     ];
   }
 

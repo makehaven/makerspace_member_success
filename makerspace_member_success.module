@@ -293,6 +293,15 @@ function makerspace_member_success_views_data(): array {
     ],
   ];
 
+  // Pseudo-field for Phone Number
+  $data['ms_member_success_snapshot']['phone_number'] = [
+    'title' => t('Phone Number'),
+    'help' => t('Member phone number from CiviCRM (primary phone).'),
+    'field' => [
+      'id' => 'phone_number_field',
+    ],
+  ];
+
   // Outreach tracking fields
   $data['ms_member_success_snapshot']['last_contact_date'] = [
     'title' => t('Last Contact'),
