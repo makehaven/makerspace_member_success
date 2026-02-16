@@ -2,14 +2,36 @@
 
 Provides a member success console for onboarding, engagement, retention, and recapture.
 
+## 🎯 Quick Access
+
+### **📊 Intervention Performance Dashboard**
+**[View Dashboard](/admin/makerspace/member-success/contractor-performance)**
+
+Track staff/volunteer effectiveness, ROI, and outreach success rates.
+
+**What you'll see:**
+- Members at risk & annual value saved
+- Staff performance (contacts, resolutions, success rates)
+- Channel effectiveness (phone vs email vs in-person)
+- Monthly trends (last 6 months)
+- Average days to resolution
+
+**Quick Stats Guides:**
+- **2-minute setup**: See `/CONTRACTOR_STATS_QUICK_START.md` in project root
+- **Detailed guide**: See `/docs/CONTRACTOR_STATS_USAGE_GUIDE.md`
+
+---
+
 ## Features
 
 *   **Dashboard**: High-level statistical overview of member lifecycle stages.
 *   **Action Queues**: Targeted lists for Onboarding, Engagement, Retention, and Recovery.
+*   **Intervention Performance Metrics**: ROI calculations, staff effectiveness, channel success rates.
 *   **Snapshot System**: Daily snapshots of member data for trend analysis.
 *   **CiviCRM Integration**:
     *   Dynamic email links to CiviCRM "Send Email" activity.
     *   Configurable message templates per lifecycle stage.
+    *   Automatic activity logging for all outreach.
 *   **Risk Scoring**: Automated risk assessment based on payment status, badge acquisition, and visit frequency.
 
 ## Installation
@@ -30,6 +52,29 @@ Go to `/admin/config/makerspace/member-success` to configure:
 *   `drush ms-snapshot:build` (alias: `ms-build`): Generates daily snapshots for all active members.
 *   `drush ms-build [uid]`: Generates a snapshot for a specific user ID.
 
+## Key URLs
+
+After installation, access these dashboards:
+
+- **Intervention Performance**: `/admin/makerspace/member-success/contractor-performance`
+- **Member Success Dashboard**: `/admin/makerspace/member-success/dashboard`
+- **Onboarding Queue**: `/admin/makerspace/member-success/onboarding`
+- **Engagement Queue**: `/admin/makerspace/member-success/engagement`
+- **Retention Queue**: `/admin/makerspace/member-success/retention`
+- **Recovery Queue**: `/admin/makerspace/member-success/recovery`
+- **Settings**: `/admin/config/makerspace/member-success`
+
+Find these in the admin menu under: **Admin → Member Success**
+
+## Services
+
+- `makerspace_member_success.snapshot_builder` - Daily snapshot generation and risk scoring
+- `makerspace_member_success.recovery_metrics` - Contractor performance analytics and ROI calculations
+
 ## Architecture
 
-This module uses a custom table `ms_member_success_snapshot` to store daily aggregated data. This ensures fast reporting and Views performance without complex real-time queries. The snapshot builder service runs on cron or via Drush.
+This module uses custom tables:
+- `ms_member_success_snapshot` - Daily aggregated member data for fast reporting
+- `ms_member_outreach_log` - Complete history of all contact attempts
+
+The snapshot builder service runs daily via cron or manually via Drush. This ensures fast reporting and Views performance without complex real-time queries.

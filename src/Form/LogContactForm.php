@@ -122,6 +122,37 @@ class LogContactForm extends FormBase {
       '#rows' => 4,
     ];
 
+    // Cancellation reason (conditional - only shown for confirmed_cancel)
+    $form['cancellation_reason'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Cancellation Reason'),
+      '#description' => $this->t('Record why the member is canceling. This helps track trends.'),
+      '#options' => [
+        '' => $this->t('- Select reason -'),
+        'time' => $this->t('Time Constraints'),
+        'engagement' => $this->t('Engagement (Lack of)'),
+        'cost' => $this->t('Financial Considerations'),
+        'relocation' => $this->t('Relocation'),
+        'equipment' => $this->t('Facility & Equipment Insufficiencies'),
+        'management' => $this->t('Management & Communication Dissatisfaction'),
+        'community' => $this->t('Community/Culture Dissatisfaction'),
+        'orientation' => $this->t('Orientation, Did Not Complete'),
+        'predefined' => $this->t('Term/Project (planned) Completed'),
+        '3rdparty' => $this->t('Payment End (External Employer/Program)'),
+        'removed' => $this->t('Disciplinary Removal'),
+        'other' => $this->t('Other'),
+        'unknown' => $this->t('Unknown'),
+      ],
+      '#states' => [
+        'visible' => [
+          ':input[name="outcome"]' => ['value' => 'confirmed_cancel'],
+        ],
+        'required' => [
+          ':input[name="outcome"]' => ['value' => 'confirmed_cancel'],
+        ],
+      ],
+    ];
+
     // Outreach exhausted override
     $form['mark_exhausted'] = [
       '#type' => 'checkbox',
@@ -202,6 +233,42 @@ class LogContactForm extends FormBase {
             '@outcome' => $outcome,
           ]
         );
+      }
+    }
+
+    // Update cancellation reason on profile if provided
+    $cancellation_reason = $form_state->getValue('cancellation_reason');
+    if ($outcome === 'confirmed_cancel' && !empty($cancellation_reason)) {
+      // Load main profile
+      $profiles = $this->entityTypeManager->getStorage('profile')->loadByProperties([
+        'uid' => $user->id(),
+        'type' => 'main',
+        'is_default' => TRUE,
+        'status' => TRUE,
+      ]);
+
+      if (!empty($profiles)) {
+        $profile = reset($profiles);
+        if ($profile->hasField('field_member_end_reason')) {
+          $old_reason = $profile->get('field_member_end_reason')->value;
+          $profile->set('field_member_end_reason', $cancellation_reason);
+          $profile->save();
+
+          $this->logger('makerspace_member_success')->notice(
+            'Updated cancellation reason for user @uid from @old to @new',
+            [
+              '@uid' => $user->id(),
+              '@old' => $old_reason ?? 'empty',
+              '@new' => $cancellation_reason,
+            ]
+          );
+
+          $this->messenger()->addStatus(
+            $this->t('Cancellation reason updated to: @reason', [
+              '@reason' => $cancellation_reason,
+            ])
+          );
+        }
       }
     }
 

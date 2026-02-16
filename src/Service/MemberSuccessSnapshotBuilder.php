@@ -87,7 +87,7 @@ class MemberSuccessSnapshotBuilder {
 
     // Load previous snapshot to preserve outreach tracking fields
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts'])
+      ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts'])
       ->condition('uid', $uid)
       ->condition('is_latest', 1)
       ->condition('snapshot_type', 'daily')
@@ -155,6 +155,27 @@ class MemberSuccessSnapshotBuilder {
       'tenure_bucket' => $tenure_bucket,
       'join_date' => $profile['join_date'],
     ], $badge_one_days, $badge_four_days, $recency_days, $now_ts);
+
+    // Detect stage transition - if stage changed, reset outreach tracking
+    // This ensures members appear in their new queue immediately
+    $previous_stage = $previous['stage'] ?? NULL;
+    $stage_changed = $previous_stage && $previous_stage !== $stage;
+
+    if ($stage_changed) {
+      // Stage transition detected - clear sleep period and reset tracking
+      $this->logger->info('Stage transition detected for user @uid: @old_stage → @new_stage. Clearing sleep period.', [
+        '@uid' => $uid,
+        '@old_stage' => $previous_stage,
+        '@new_stage' => $stage,
+      ]);
+
+      // Reset outreach tracking for new stage
+      $previous['last_outreach_ts'] = NULL;
+      $previous['outreach_status'] = NULL;
+      $previous['last_contact_date'] = NULL;
+      $previous['next_followup_date'] = NULL;
+      $previous['contact_count'] = 0;
+    }
 
     return [
       'uid' => $uid,

@@ -42,6 +42,13 @@ makerspace_member_success.lifecycle:
   parent: makerspace_member_success.overview
   weight: 50
 
+makerspace_member_success.contractor_performance:
+  title: '📊 Intervention Performance'
+  description: 'View staff/volunteer outreach stats, ROI, and effectiveness metrics'
+  route_name: makerspace_member_success.contractor_performance
+  parent: makerspace_member_success.overview
+  weight: 55
+
 makerspace_member_success.resources:
   title: 'Related Resources'
   route_name: '<nolink>'

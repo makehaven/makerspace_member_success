@@ -25,3 +25,39 @@ makerspace_member_success.log_contact:
     parameters:
       user:
         type: entity:user
+
+makerspace_member_success.contractor_performance:
+  path: '/admin/makerspace/member-success/contractor-performance'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::contractorPerformance'
+    _title: 'Intervention Performance'
+  requirements:
+    _permission: 'administer makerspace member success'
+
+makerspace_member_success.export_staff_performance:
+  path: '/admin/makerspace/member-success/export/staff-performance'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::exportStaffPerformance'
+  requirements:
+    _permission: 'administer makerspace member success'
+
+makerspace_member_success.export_channel_effectiveness:
+  path: '/admin/makerspace/member-success/export/channel-effectiveness'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::exportChannelEffectiveness'
+  requirements:
+    _permission: 'administer makerspace member success'
+
+makerspace_member_success.export_monthly_trends:
+  path: '/admin/makerspace/member-success/export/monthly-trends'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::exportMonthlyTrends'
+  requirements:
+    _permission: 'administer makerspace member success'
+
+makerspace_member_success.export_all:
+  path: '/admin/makerspace/member-success/export/all'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::exportAll'
+  requirements:
+    _permission: 'administer makerspace member success'

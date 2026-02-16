@@ -57,11 +57,11 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'payment_failed' => 1,
       'stage' => 'recovery',
     ];
-    
+
     [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], time());
-    
+
     $this->assertGreaterThanOrEqual(50, $score);
-    $this->assertContains('payment_issue', $reasons);
+    $this->assertContains('payment_failed', $reasons);
   }
 
   /**
@@ -101,33 +101,37 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
   }
 
   /**
-   * Tests risk score for onboarding members missing serial numbers.
+   * Tests risk score for onboarding members missing serial numbers (after grace period).
    */
   public function testRiskScoreOnboardingMissingSerial() {
+    $now = time();
     $data = [
       'stage' => 'onboarding',
       'door_badge_status' => 'active',
       'serial_present' => 0,
+      'join_date' => date('Y-m-d', $now - (20 * 86400)), // 20 days ago (past grace period)
     ];
-    
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], time());
-    
+
+    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+
     $this->assertEquals(10, $score);
     $this->assertContains('missing_serial', $reasons);
   }
 
   /**
-   * Tests risk score for onboarding members with pending door badges.
+   * Tests risk score for onboarding members with pending door badges (after grace period).
    */
   public function testRiskScoreOnboardingPendingBadge() {
+    $now = time();
     $data = [
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 1,
+      'join_date' => date('Y-m-d', $now - (18 * 86400)), // 18 days ago (past 14-day grace)
     ];
-    
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], time());
-    
+
+    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+
     $this->assertEquals(20, $score);
     $this->assertContains('door_badge_pending', $reasons);
   }
@@ -160,11 +164,29 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'badge_count_window' => 1,
       'badge_count_total' => 3,
     ];
-    
+
     [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
-    
+
     $this->assertEquals(20, $score);
     $this->assertContains('no_badge_4', $reasons);
+  }
+
+  /**
+   * Tests onboarding members within grace period have zero risk.
+   */
+  public function testNoRiskDuringOnboardingGracePeriod() {
+    $now = time();
+    $data = [
+      'stage' => 'onboarding',
+      'door_badge_status' => 'requested',
+      'serial_present' => 0,
+      'join_date' => date('Y-m-d', $now - (10 * 86400)), // 10 days ago (within 14-day grace)
+    ];
+
+    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+
+    $this->assertEquals(0, $score);
+    $this->assertEmpty($reasons);
   }
 
 }
