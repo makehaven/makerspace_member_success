@@ -23,10 +23,24 @@ services:
       - '@current_user'
       - '@civicrm'
 
+  makerspace_member_success.outreach_service:
+    class: Drupal\makerspace_member_success\Service\OutreachService
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@current_user'
+      - '@logger.factory'
+      - '@makerspace_member_success.activity_logger'
+
   makerspace_member_success.recovery_metrics:
     class: Drupal\makerspace_member_success\Service\RecoveryMetrics
     arguments:
       - '@database'
+
+  makerspace_member_success.queue_query_applier:
+    class: Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier
+    arguments:
+      - '@request_stack'
 
   makerspace_member_success.commands:
     class: Drupal\makerspace_member_success\Commands\MemberSuccessCommands

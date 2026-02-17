@@ -2,12 +2,17 @@
 
 namespace Drupal\Tests\makerspace_member_success\Unit;
 
-use Drupal\Tests\UnitTestCase;
 use Drupal\makerspace_member_success\Form\LogContactForm;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\Tests\UnitTestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Unit tests for LogContactForm logic.
+ *
+ * Note: sleep-period and followup-status logic is tested via
+ * MemberSuccessLifecycleTest. Snapshot/outreach write logic is tested via
+ * OutreachServiceTest.
  *
  * @group makerspace_member_success
  */
@@ -25,111 +30,120 @@ class LogContactFormTest extends UnitTestCase {
   }
 
   /**
-   * Test outcome to followup status mapping.
-   *
-   * @dataProvider outcomeToFollowupStatusProvider
-   */
-  public function testMapOutcomeToFollowupStatus($outcome, $mark_exhausted, $expected) {
-    $form = $this->getMockBuilder(LogContactForm::class)
-      ->disableOriginalConstructor()
-      ->onlyMethods([])
-      ->getMock();
-
-    $method = new \ReflectionMethod(LogContactForm::class, 'mapOutcomeToFollowupStatus');
-    $method->setAccessible(TRUE);
-
-    $result = $method->invoke($form, $outcome, $mark_exhausted);
-    $this->assertEquals($expected, $result);
-  }
-
-  /**
-   * Data provider for outcome to followup status mapping tests.
-   */
-  public static function outcomeToFollowupStatusProvider() {
-    return [
-      // Outcome, mark_exhausted, expected_status
-      ['payment_updated', FALSE, NULL],
-      ['confirmed_cancel', FALSE, 'confirmed_cancellation'],
-      ['will_return', FALSE, 'return_intent'],
-      ['needs_time', FALSE, 'outreach_active'],
-      ['no_answer', FALSE, 'outreach_active'],
-      ['left_message', FALSE, 'outreach_active'],
-      ['email_sent', FALSE, 'outreach_active'],
-      ['email_bounced', FALSE, 'outreach_active'],
-      ['all_good', FALSE, NULL],
-      // Manual override
-      ['will_return', TRUE, 'outreach_exhausted'],
-      ['payment_updated', TRUE, 'outreach_exhausted'],
-    ];
-  }
-
-  /**
-   * Test sleep period calculation.
-   *
-   * @dataProvider sleepPeriodProvider
-   */
-  public function testGetSleepPeriod($outcome, $expected_days) {
-    $form = $this->getMockBuilder(LogContactForm::class)
-      ->disableOriginalConstructor()
-      ->onlyMethods([])
-      ->getMock();
-
-    $method = new \ReflectionMethod(LogContactForm::class, 'getSleepPeriod');
-    $method->setAccessible(TRUE);
-
-    $result = $method->invoke($form, $outcome);
-    $this->assertEquals($expected_days, $result);
-  }
-
-  /**
-   * Data provider for sleep period tests.
-   */
-  public static function sleepPeriodProvider() {
-    return [
-      // Outcome, expected_days
-      ['left_message', 7],
-      ['email_sent', 7],
-      ['no_answer', 3],
-      ['will_return', 14],
-      ['needs_time', 14],
-      ['all_good', 30],
-      ['payment_updated', -1],  // Resolved
-      ['confirmed_cancel', -1], // Resolved
-      ['email_bounced', 0],     // Immediate reappear
-    ];
-  }
-
-  /**
-   * Test conditional outcome options based on contact method.
+   * Test conditional outcome options based on contact method and stage.
    *
    * @dataProvider outcomeOptionsProvider
    */
-  public function testGetOutcomeOptions($method, $expected_options) {
+  public function testGetOutcomeOptions(string $method, string $stage, array $expected_keys, array $absent_keys = []): void {
     $form = $this->getMockBuilder(LogContactForm::class)
       ->disableOriginalConstructor()
       ->onlyMethods([])
       ->getMock();
 
-    $method_reflection = new \ReflectionMethod(LogContactForm::class, 'getOutcomeOptions');
-    $method_reflection->setAccessible(TRUE);
+    $reflection = new \ReflectionMethod(LogContactForm::class, 'getOutcomeOptions');
+    $reflection->setAccessible(TRUE);
 
-    $result = $method_reflection->invoke($form, $method);
+    $result = $reflection->invoke($form, $method, $stage);
 
-    // Check that all expected options are present
-    foreach ($expected_options as $key) {
-      $this->assertArrayHasKey($key, $result, "Expected option '$key' for method '$method'");
+    foreach ($expected_keys as $key) {
+      $this->assertArrayHasKey($key, $result, "Expected option '$key' for method '$method' / stage '$stage'");
+    }
+    foreach ($absent_keys as $key) {
+      $this->assertArrayNotHasKey($key, $result, "Option '$key' should be absent for method '$method' / stage '$stage'");
     }
   }
 
   /**
    * Data provider for outcome options tests.
    */
-  public static function outcomeOptionsProvider() {
+  public static function outcomeOptionsProvider(): array {
     return [
-      ['phone', ['payment_updated', 'will_return', 'all_good', 'no_answer', 'left_message']],
-      ['email', ['payment_updated', 'will_return', 'all_good', 'email_sent', 'email_bounced']],
-      ['in_person', ['payment_updated', 'will_return', 'all_good', 'confirmed_cancel', 'needs_time']],
-      ['other', ['payment_updated', 'will_return', 'all_good', 'no_answer', 'left_message']],
+      // Phone + recovery: payment_updated available; no_action_needed suppressed.
+      'phone_recovery' => [
+        'phone',
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER,
+          MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE,
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED],
+      ],
+      // Phone + retention: no_action_needed available; payment_updated suppressed.
+      'phone_retention' => [
+        'phone',
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        [
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED],
+      ],
+      // Email + recovery: payment_updated available; no_action_needed suppressed.
+      'email_recovery' => [
+        'email',
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_EMAIL_SENT,
+          MemberSuccessLifecycle::OUTCOME_EMAIL_BOUNCED,
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED],
+      ],
+      // In-person + recovery.
+      'in_person_recovery' => [
+        'in_person',
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL,
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED],
+      ],
+      // Other + recovery.
+      'other_recovery' => [
+        'other',
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER,
+          MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED],
+      ],
+      // SMS + recovery: sms_sent available; no_action_needed suppressed.
+      'sms_recovery' => [
+        'sms',
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        [
+          MemberSuccessLifecycle::OUTCOME_SMS_SENT,
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT,
+        ],
+        [MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED],
+      ],
+      // Onboarding suppresses both no_action_needed and payment_updated.
+      'phone_onboarding' => [
+        'phone',
+        MemberSuccessLifecycle::STAGE_ONBOARDING,
+        [
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN,
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER,
+        ],
+        [
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+        ],
+      ],
     ];
   }
 

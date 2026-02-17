@@ -6,6 +6,9 @@
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
+use Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier;
 
 /**
  * Implements hook_help().
@@ -198,9 +201,9 @@ function makerspace_member_success_views_data(): array {
     'sort' => ['id' => 'standard'],
   ];
 
-  $data['ms_member_success_snapshot']['cancellation_followup'] = [
-    'title' => t('Cancellation Followup'),
-    'help' => t('Status of cancellation outreach.'),
+  $data['ms_member_success_snapshot']['member_followup_status'] = [
+    'title' => t('Member Followup Status'),
+    'help' => t('Durable followup status synced from member profile.'),
     'field' => ['id' => 'standard'],
     'filter' => ['id' => 'string'],
     'sort' => ['id' => 'standard'],
@@ -362,36 +365,10 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
   $alias = $query->ensureTable('ms_member_success_snapshot');
   $query->addWhere(0, "{$alias}.is_latest", 1);
 
-  // Default queue ordering should always be highest risk first unless the
-  // user explicitly chose a table sort via query args.
-  $request = \Drupal::request();
-  if (!$request->query->has('order') && !$request->query->has('sort')) {
-    $query->orderby = [];
-    $query->addOrderBy($alias, 'risk_score', 'DESC');
-  }
-
-  // Hide members in sleep period (next_followup_date > today)
-  // OR where outreach_status indicates permanent resolution
-  $today = date('Y-m-d');
-  $group = $query->setWhereGroup('AND');
-
-  // Create an OR condition: show if no next_followup OR next_followup <= today
-  $or_group = $query->setWhereGroup('OR', $group);
-  $query->addWhere($or_group, "{$alias}.next_followup_date", NULL, 'IS NULL');
-  $query->addWhere($or_group, "{$alias}.next_followup_date", $today, '<=');
-
-  // Hide permanently closed outreach items, but keep rows where status is NULL.
-  // Use both snapshot outreach_status and cancellation_followup so manual
-  // "outreach_exhausted" / "confirmed_cancellation" flags suppress queue items.
-  $resolved_statuses = ['confirmed_cancellation', 'outreach_exhausted'];
-
-  $outreach_status_group = $query->setWhereGroup('OR', $group);
-  $query->addWhere($outreach_status_group, "{$alias}.outreach_status", NULL, 'IS NULL');
-  $query->addWhere($outreach_status_group, "{$alias}.outreach_status", $resolved_statuses, 'NOT IN');
-
-  $followup_status_group = $query->setWhereGroup('OR', $group);
-  $query->addWhere($followup_status_group, "{$alias}.cancellation_followup", NULL, 'IS NULL');
-  $query->addWhere($followup_status_group, "{$alias}.cancellation_followup", $resolved_statuses, 'NOT IN');
+  /** @var \Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier $query_applier */
+  $query_applier = \Drupal::service('makerspace_member_success.queue_query_applier');
+  $query_applier->applyDefaultOrdering($query, $alias);
+  $query_applier->applyVisibilityFilters($query, $alias, MemberSuccessQueueRules::todayYmd());
 }
 
 /**
@@ -535,13 +512,30 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
     $query->condition('ms.is_latest', 1);
     $query->condition('ms.snapshot_type', 'daily');
     $query->condition('ms.risk_score', 20, '>=');
+    $today = MemberSuccessQueueRules::todayYmd();
+    $resolved_statuses = MemberSuccessLifecycle::resolvedFollowupStatuses();
+
+    $followup_date_group = $query->orConditionGroup()
+      ->isNull('ms.next_followup_date')
+      ->condition('ms.next_followup_date', $today, '<=');
+    $query->condition($followup_date_group);
+
+    $outreach_status_group = $query->orConditionGroup()
+      ->isNull('ms.outreach_status')
+      ->condition('ms.outreach_status', $resolved_statuses, 'NOT IN');
+    $query->condition($outreach_status_group);
+
+    $followup_status_group = $query->orConditionGroup()
+      ->isNull('ms.member_followup_status')
+      ->condition('ms.member_followup_status', $resolved_statuses, 'NOT IN');
+    $query->condition($followup_status_group);
 
     // Filter by current display's stage
     $stage_map = [
-      'onboarding' => 'onboarding',
-      'engagement' => 'engagement',
-      'retention' => 'retention',
-      'recovery' => 'recovery',
+      'onboarding' => MemberSuccessLifecycle::STAGE_ONBOARDING,
+      'engagement' => MemberSuccessLifecycle::STAGE_ENGAGEMENT,
+      'retention' => MemberSuccessLifecycle::STAGE_RETENTION,
+      'recovery' => MemberSuccessLifecycle::STAGE_RECOVERY,
     ];
 
     if (isset($stage_map[$view->current_display])) {

@@ -61,6 +61,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $query->condition('is_latest', 1);
     $query->addExpression('COUNT(uid)', 'total');
     $query->addExpression('SUM(CASE WHEN risk_score > 0 THEN 1 ELSE 0 END)', 'at_risk');
+    $query->addExpression('SUM(CASE WHEN risk_score >= 20 THEN 1 ELSE 0 END)', 'actionable');
     $query->addExpression('SUM(CASE WHEN risk_score >= 50 THEN 1 ELSE 0 END)', 'critical');
     $summary = $query->execute()->fetchAssoc();
 
@@ -110,6 +111,12 @@ class MemberSuccessDashboardController extends ControllerBase {
       $summary['at_risk'],
       'ms-risk',
       $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 5])
+    );
+    $summary_html .= $this->renderSummaryCard(
+      'Actionable (20+)',
+      $summary['actionable'],
+      'ms-actionable',
+      $this->safeRouteUrl('view.member_success_queue.lifecycle')
     );
     $summary_html .= $this->renderSummaryCard(
       'Critical (50+)',

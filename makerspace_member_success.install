@@ -138,7 +138,7 @@ function makerspace_member_success_schema() {
         'length' => 64,
         'not null' => FALSE,
       ],
-      'cancellation_followup' => [
+      'member_followup_status' => [
         'type' => 'varchar',
         'length' => 64,
         'not null' => FALSE,
@@ -222,76 +222,78 @@ function makerspace_member_success_schema() {
     ];
   }
 
-  $schema['ms_member_outreach_log'] = [
-    'description' => 'Log of all member outreach contact attempts for analytics.',
-    'fields' => [
-      'id' => [
-        'type' => 'serial',
-        'not null' => TRUE,
+  if (!$schema_api->tableExists('ms_member_outreach_log') || $schema_version !== NULL) {
+    $schema['ms_member_outreach_log'] = [
+      'description' => 'Log of all member outreach contact attempts for analytics.',
+      'fields' => [
+        'id' => [
+          'type' => 'serial',
+          'not null' => TRUE,
+        ],
+        'uid' => [
+          'type' => 'int',
+          'not null' => TRUE,
+          'description' => 'Member user ID.',
+        ],
+        'contact_date' => [
+          'type' => 'varchar',
+          'length' => 10,
+          'not null' => TRUE,
+          'description' => 'Date contact was attempted (YYYY-MM-DD).',
+        ],
+        'contact_method' => [
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+          'description' => 'phone, email, in_person, other.',
+        ],
+        'outcome' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => TRUE,
+          'description' => 'Contact outcome.',
+        ],
+        'notes' => [
+          'type' => 'text',
+          'not null' => FALSE,
+          'description' => 'Staff notes about conversation.',
+        ],
+        'followup_status' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'Followup status applied after contact.',
+        ],
+        'staff_uid' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'Staff member who made contact.',
+        ],
+        'civicrm_activity_id' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'CiviCRM activity ID if created.',
+        ],
+        'sleep_days' => [
+          'type' => 'int',
+          'not null' => FALSE,
+          'description' => 'Sleep period applied (days).',
+        ],
+        'created_at' => [
+          'type' => 'int',
+          'not null' => TRUE,
+          'description' => 'Unix timestamp.',
+        ],
       ],
-      'uid' => [
-        'type' => 'int',
-        'not null' => TRUE,
-        'description' => 'Member user ID.',
+      'primary key' => ['id'],
+      'indexes' => [
+        'idx_uid' => ['uid'],
+        'idx_contact_date' => ['contact_date'],
+        'idx_outcome' => ['outcome'],
+        'idx_created_at' => ['created_at'],
       ],
-      'contact_date' => [
-        'type' => 'varchar',
-        'length' => 10,
-        'not null' => TRUE,
-        'description' => 'Date contact was attempted (YYYY-MM-DD).',
-      ],
-      'contact_method' => [
-        'type' => 'varchar',
-        'length' => 32,
-        'not null' => TRUE,
-        'description' => 'phone, email, in_person, other.',
-      ],
-      'outcome' => [
-        'type' => 'varchar',
-        'length' => 64,
-        'not null' => TRUE,
-        'description' => 'Contact outcome.',
-      ],
-      'notes' => [
-        'type' => 'text',
-        'not null' => FALSE,
-        'description' => 'Staff notes about conversation.',
-      ],
-      'followup_status' => [
-        'type' => 'varchar',
-        'length' => 64,
-        'not null' => FALSE,
-        'description' => 'Followup status applied after contact.',
-      ],
-      'staff_uid' => [
-        'type' => 'int',
-        'not null' => FALSE,
-        'description' => 'Staff member who made contact.',
-      ],
-      'civicrm_activity_id' => [
-        'type' => 'int',
-        'not null' => FALSE,
-        'description' => 'CiviCRM activity ID if created.',
-      ],
-      'sleep_days' => [
-        'type' => 'int',
-        'not null' => FALSE,
-        'description' => 'Sleep period applied (days).',
-      ],
-      'created_at' => [
-        'type' => 'int',
-        'not null' => TRUE,
-        'description' => 'Unix timestamp.',
-      ],
-    ],
-    'primary key' => ['id'],
-    'indexes' => [
-      'idx_uid' => ['uid'],
-      'idx_contact_date' => ['contact_date'],
-      'idx_outcome' => ['outcome'],
-      'idx_created_at' => ['created_at'],
-    ],
-  ];
+    ];
+  }
 
   return $schema;
 }
@@ -532,4 +534,159 @@ function makerspace_member_success_update_9009(): void {
 
     $schema->createTable('ms_member_outreach_log', $table_schema);
   }
+}
+
+/**
+ * Rename snapshot column cancellation_followup → member_followup_status.
+ */
+function makerspace_member_success_update_9010(): void {
+  $schema = \Drupal::database()->schema();
+  if ($schema->fieldExists('ms_member_success_snapshot', 'cancellation_followup')) {
+    $schema->changeField('ms_member_success_snapshot', 'cancellation_followup', 'member_followup_status', [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+    ]);
+  }
+}
+
+/**
+ * Rename civicrm_cancellation_followup_field config key → civicrm_member_followup_field.
+ */
+function makerspace_member_success_update_9011(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $old_value = $config->get('civicrm_cancellation_followup_field');
+  if ($config->get('civicrm_member_followup_field') === NULL && $old_value !== NULL) {
+    $config->set('civicrm_member_followup_field', $old_value);
+    $config->clear('civicrm_cancellation_followup_field');
+    $config->save();
+  }
+}
+
+/**
+ * Rename Drupal field field_chargebee_followup → field_member_followup_status.
+ *
+ * Renames DB tables and columns, then updates the active config table and all
+ * relevant key_value caches so that drush cr proceeds cleanly.
+ */
+function makerspace_member_success_update_9012(): void {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+
+  // Step 1: Rename main field table.
+  if ($schema->tableExists('user__field_chargebee_followup')) {
+    $schema->renameTable('user__field_chargebee_followup', 'user__field_member_followup_status');
+  }
+
+  // Step 2: Rename revision table.
+  if ($schema->tableExists('user_revision__field_chargebee_followup')) {
+    $schema->renameTable('user_revision__field_chargebee_followup', 'user_revision__field_member_followup_status');
+  }
+
+  // Step 3: Rename value column in main table.
+  if ($schema->tableExists('user__field_member_followup_status')
+    && $schema->fieldExists('user__field_member_followup_status', 'field_chargebee_followup_value')) {
+    $schema->changeField(
+      'user__field_member_followup_status',
+      'field_chargebee_followup_value',
+      'field_member_followup_status_value',
+      ['type' => 'varchar', 'length' => 255, 'not null' => FALSE]
+    );
+  }
+
+  // Step 4: Rename value column in revision table.
+  if ($schema->tableExists('user_revision__field_member_followup_status')
+    && $schema->fieldExists('user_revision__field_member_followup_status', 'field_chargebee_followup_value')) {
+    $schema->changeField(
+      'user_revision__field_member_followup_status',
+      'field_chargebee_followup_value',
+      'field_member_followup_status_value',
+      ['type' => 'varchar', 'length' => 255, 'not null' => FALSE]
+    );
+  }
+
+  // Step 5: Update field config in the active config table.
+  // Drupal stores active config in the `config` DB table (not key_value).
+  $old_storage_name = 'field.storage.user.field_chargebee_followup';
+  $new_storage_name = 'field.storage.user.field_member_followup_status';
+  $old_field_name   = 'field.field.user.user.field_chargebee_followup';
+  $new_field_name   = 'field.field.user.user.field_member_followup_status';
+
+  $config_storage = \Drupal::service('config.storage');
+
+  if ($config_storage->exists($old_storage_name)) {
+    $storage_data = $config_storage->read($old_storage_name);
+    $storage_data['id']         = 'user.field_member_followup_status';
+    $storage_data['field_name'] = 'field_member_followup_status';
+    // Add no_action_needed to allowed values if missing.
+    $has_no_action = FALSE;
+    foreach ($storage_data['settings']['allowed_values'] ?? [] as $av) {
+      if ($av['value'] === 'no_action_needed') {
+        $has_no_action = TRUE;
+        break;
+      }
+    }
+    if (!$has_no_action) {
+      $storage_data['settings']['allowed_values'][] = [
+        'value' => 'no_action_needed',
+        'label' => 'No Action Needed',
+      ];
+    }
+    $config_storage->write($new_storage_name, $storage_data);
+    $config_storage->delete($old_storage_name);
+  }
+
+  if ($config_storage->exists($old_field_name)) {
+    $field_data = $config_storage->read($old_field_name);
+    $field_data['id']         = 'user.user.field_member_followup_status';
+    $field_data['field_name'] = 'field_member_followup_status';
+    $field_data['label']      = 'Member Followup Status';
+    if (isset($field_data['dependencies']['config'])) {
+      $field_data['dependencies']['config'] = array_map(
+        fn($c) => str_replace('field_chargebee_followup', 'field_member_followup_status', $c),
+        $field_data['dependencies']['config']
+      );
+    }
+    $config_storage->write($new_field_name, $field_data);
+    $config_storage->delete($old_field_name);
+  }
+
+  // Step 6: Migrate entity.storage_schema.sql key_value entry.
+  $kv_schema = \Drupal::keyValue('entity.storage_schema.sql');
+  $old_schema_key = 'user.field_schema_data.field_chargebee_followup';
+  $new_schema_key = 'user.field_schema_data.field_member_followup_status';
+  $old_schema = $kv_schema->get($old_schema_key);
+  if ($old_schema) {
+    // Remap table names and column names using JSON round-trip for simplicity.
+    $new_schema = json_decode(
+      str_replace('field_chargebee_followup', 'field_member_followup_status', json_encode($old_schema)),
+      TRUE
+    );
+    $kv_schema->set($new_schema_key, $new_schema);
+    $kv_schema->delete($old_schema_key);
+  }
+
+  // Step 7: Update UUID key stores and cached definition maps in key_value.
+  $kv_cfg_fc  = \Drupal::keyValue('config.entity.key_store.field_config');
+  $kv_cfg_fsc = \Drupal::keyValue('config.entity.key_store.field_storage_config');
+  foreach ($kv_cfg_fc->getAll() as $k => $v) {
+    $new_v = array_map(fn($n) => str_replace('field_chargebee_followup', 'field_member_followup_status', $n), $v);
+    if ($new_v !== $v) {
+      $kv_cfg_fc->set($k, $new_v);
+    }
+  }
+  foreach ($kv_cfg_fsc->getAll() as $k => $v) {
+    $new_v = array_map(fn($n) => str_replace('field_chargebee_followup', 'field_member_followup_status', $n), $v);
+    if ($new_v !== $v) {
+      $kv_cfg_fsc->set($k, $new_v);
+    }
+  }
+
+  // Step 8: Delete stale cached field/bundle definitions (rebuilt automatically).
+  \Drupal::keyValue('entity.definitions.installed')->delete('user.field_storage_definitions');
+  \Drupal::keyValue('entity.definitions.bundle_field_map')->delete('user');
+
+  // Step 9: Invalidate entity/field definition caches.
+  \Drupal::entityTypeManager()->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
 }

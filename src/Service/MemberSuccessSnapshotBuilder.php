@@ -7,6 +7,9 @@ use Drupal\Core\Database\Connection;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
+use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
 use Psr\Log\LoggerInterface;
 use Drupal\civicrm\Civicrm;
 
@@ -95,10 +98,10 @@ class MemberSuccessSnapshotBuilder {
       ->fetchAssoc();
 
     // Fallback: if CiviCRM doesn't have it, check the Drupal field.
-    $cancellation_followup = $civi_data['cancellation_followup'];
-    if (empty($cancellation_followup)) {
-      $cancellation_followup = $this->database->select('user__field_chargebee_followup', 'f')
-        ->fields('f', ['field_chargebee_followup_value'])
+    $member_followup_status = $civi_data['member_followup_status'];
+    if (empty($member_followup_status)) {
+      $member_followup_status = $this->database->select('user__field_member_followup_status', 'f')
+        ->fields('f', ['field_member_followup_status_value'])
         ->condition('f.entity_id', $uid)
         ->range(0, 1)
         ->execute()
@@ -114,25 +117,25 @@ class MemberSuccessSnapshotBuilder {
       $activation_ts = strtotime($profile['join_date'] . ' 00:00:00');
     }
 
-    $stage = 'onboarding';
+    $stage = MemberSuccessLifecycle::STAGE_ONBOARDING;
     // Only payment FAILED goes to recovery (needs action)
     // Payment paused is OK (planned break) - member stays in normal lifecycle
     if ($payment_failed) {
-      $stage = 'recovery';
+      $stage = MemberSuccessLifecycle::STAGE_RECOVERY;
     }
     elseif ($door_badge['status'] === 'active' && $serial_present) {
       $engagement_window = $badge_four_days * 86400;
       if ($activation_ts !== NULL && $now_ts - $activation_ts <= $engagement_window) {
-        $stage = 'engagement';
+        $stage = MemberSuccessLifecycle::STAGE_ENGAGEMENT;
       }
       else {
-        $stage = 'retention';
+        $stage = MemberSuccessLifecycle::STAGE_RETENTION;
       }
     }
 
     $tenure_bucket = NULL;
-    if ($stage === 'onboarding') {
-      $tenure_bucket = 'onboarding';
+    if ($stage === MemberSuccessLifecycle::STAGE_ONBOARDING) {
+      $tenure_bucket = MemberSuccessLifecycle::STAGE_ONBOARDING;
     }
     elseif (!empty($profile['join_date'])) {
       $join_ts = strtotime($profile['join_date'] . ' 00:00:00');
@@ -142,7 +145,7 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
-    [$risk_score, $risk_reasons] = $this->buildRiskIndicators([
+    [$risk_score, $risk_reasons] = MemberSuccessRiskScorer::calculate([
       'stage' => $stage,
       'payment_failed' => $payment_failed,
       'payment_pause' => $payment_pause,
@@ -179,12 +182,12 @@ class MemberSuccessSnapshotBuilder {
       // Reset suppressing followup flags when a member enters a new stage.
       // This enables fresh outreach workflows (e.g. retention exhausted ->
       // recovery due to payment failure).
-      if (in_array((string) $cancellation_followup, ['outreach_exhausted', 'confirmed_cancellation'], TRUE)) {
-        $cancellation_followup = NULL;
+      if (MemberSuccessQueueRules::shouldResetSuppressionOnStageChange($previous_stage, $stage, $member_followup_status)) {
+        $member_followup_status = NULL;
 
         $user = $this->entityTypeManager->getStorage('user')->load($uid);
-        if ($user && $user->hasField('field_chargebee_followup')) {
-          $user->set('field_chargebee_followup', NULL);
+        if ($user && $user->hasField('field_member_followup_status')) {
+          $user->set('field_member_followup_status', NULL);
           $user->save();
         }
 
@@ -215,7 +218,7 @@ class MemberSuccessSnapshotBuilder {
       'payment_failed' => $payment_failed ? 1 : 0,
       'payment_pause' => $payment_pause ? 1 : 0,
       'payment_status' => $profile['payment_status'],
-      'cancellation_followup' => $cancellation_followup,
+      'member_followup_status' => $member_followup_status,
       'civicrm_do_not_phone' => $civi_data['do_not_phone'],
       'civicrm_do_not_email' => $civi_data['do_not_email'],
       'civicrm_do_not_sms' => $civi_data['do_not_sms'],
@@ -223,7 +226,7 @@ class MemberSuccessSnapshotBuilder {
       'preferred_outreach_method' => $civi_data['preferred_outreach_method'],
       // Preserve outreach tracking from previous snapshot (set by LogContactForm)
       'last_outreach_ts' => $previous['last_outreach_ts'] ?? NULL,
-      'outreach_status' => $previous['outreach_status'] ?? ($stage === 'recovery' ? 'pending' : NULL),
+      'outreach_status' => $previous['outreach_status'] ?? ($stage === MemberSuccessLifecycle::STAGE_RECOVERY ? MemberSuccessLifecycle::OUTREACH_STATUS_PENDING : NULL),
       'last_contact_date' => $previous['last_contact_date'] ?? NULL,
       'next_followup_date' => $previous['next_followup_date'] ?? NULL,
       'contact_count' => $previous['contact_count'] ?? 0,
@@ -249,7 +252,7 @@ class MemberSuccessSnapshotBuilder {
       'do_not_sms' => 0,
       'do_not_mail' => 0,
       'preferred_outreach_method' => NULL,
-      'cancellation_followup' => NULL,
+      'member_followup_status' => NULL,
     ];
 
     if (!$this->civicrm) {
@@ -270,7 +273,7 @@ class MemberSuccessSnapshotBuilder {
 
       $config = $this->configFactory->get('makerspace_member_success.settings');
       $pref_field = $config->get('civicrm_preferred_method_field') ?? 'preferred_communication_method';
-      $followup_field = $config->get('civicrm_cancellation_followup_field');
+      $followup_field = $config->get('civicrm_member_followup_status_field');
 
       $return_fields = ['do_not_phone', 'do_not_email', 'do_not_sms', 'do_not_mail', $pref_field];
       if ($followup_field) {
@@ -304,7 +307,7 @@ class MemberSuccessSnapshotBuilder {
           'do_not_sms' => (int) ($data['do_not_sms'] ?? 0),
           'do_not_mail' => (int) ($data['do_not_mail'] ?? 0),
           'preferred_outreach_method' => (string) $pref,
-          'cancellation_followup' => $followup,
+          'member_followup_status' => $followup,
         ];
       }
     }
@@ -498,100 +501,6 @@ class MemberSuccessSnapshotBuilder {
       'last_visit_ts' => $last_visit_ts ? (int) $last_visit_ts : NULL,
       'visit_count_30d' => $visit_days ? (int) $visit_days : 0,
     ];
-  }
-
-  /**
-   * Builds risk score and reasons based on snapshot data.
-   *
-   * @return array{0:int,1:array}
-   *   Risk score and reasons list.
-   */
-  protected function buildRiskIndicators(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts): array {
-    $score = 0;
-    $reasons = [];
-
-    // Payment failed = CRITICAL (need immediate action)
-    if (!empty($data['payment_failed'])) {
-      $score += 50;
-      $reasons[] = 'payment_failed';
-    }
-
-    // Payment paused = NOT a problem (member chose to pause, has resume date)
-    // Don't flag paused members - they're intentionally on hold
-    // if (!empty($data['payment_pause'])) {
-    //   // No score added - paused is OK
-    // }
-
-    if ($data['stage'] === 'onboarding') {
-      // Calculate days since join to determine if in grace period
-      $days_since_join = 0;
-      if (!empty($data['join_date'])) {
-        $join_ts = strtotime($data['join_date'] . ' 00:00:00');
-        if ($join_ts) {
-          $days_since_join = (int) floor(($now_ts - $join_ts) / 86400);
-        }
-      }
-
-      // 2-week grace period - only flag members who have been waiting 14+ days
-      // TODO: Future enhancement - also check if orientation is scheduled in CiviCRM
-      //       via Calendly integration. If scheduled, extend grace period until
-      //       scheduled date + 3 days.
-      $grace_period_days = 14;
-      $in_grace_period = $days_since_join < $grace_period_days;
-
-      if (!$in_grace_period) {
-        // After grace period, flag if door badge not active
-        if (($data['door_badge_status'] ?? NULL) !== 'active') {
-          $score += 20;
-          $reasons[] = 'door_badge_pending';
-        }
-        // And flag if missing serial number
-        if (empty($data['serial_present'])) {
-          $score += 10;
-          $reasons[] = 'missing_serial';
-        }
-      }
-    }
-
-    if ($data['stage'] === 'engagement' && !empty($data['activation_ts'])) {
-      $since_activation = $now_ts - $data['activation_ts'];
-      if ($since_activation >= ($badge_one_days * 86400) && $data['badge_count_window'] < 1) {
-        $score += 20;
-        $reasons[] = 'no_badge_1';
-      }
-      if ($since_activation >= ($badge_four_days * 86400) && $data['badge_count_total'] < 4) {
-        $score += 20;
-        $reasons[] = 'no_badge_4';
-      }
-    }
-
-    if ($data['stage'] === 'retention') {
-      // Retention risk escalates by inactivity tier.
-      // Example tiers [30, 60, 90] => +10 / +20 / +30.
-      $thresholds = array_values(array_unique(array_filter(array_map('intval', $recency_days), static fn($d) => $d > 0)));
-      sort($thresholds);
-
-      if (!empty($thresholds)) {
-        $days_since_last_visit = !empty($data['last_visit_ts'])
-          ? (int) floor(($now_ts - (int) $data['last_visit_ts']) / 86400)
-          : PHP_INT_MAX;
-
-        $highest_tier = -1;
-        foreach ($thresholds as $index => $threshold_days) {
-          if ($days_since_last_visit >= $threshold_days) {
-            $highest_tier = $index;
-          }
-        }
-
-        if ($highest_tier >= 0) {
-          // Cap retention inactivity contribution at 40.
-          $score += min(10 * ($highest_tier + 1), 40);
-          $reasons[] = 'inactive_' . $thresholds[$highest_tier];
-        }
-      }
-    }
-
-    return [$score, $reasons];
   }
 
   /**

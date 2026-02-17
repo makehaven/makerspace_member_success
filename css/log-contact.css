@@ -1,0 +1,142 @@
+/* Log Contact form — member header and history panel */
+
+.ms-member-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  background: #f0f4ff;
+  border: 1px solid #c8d8f8;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.ms-member-header__name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+}
+
+.ms-civicrm-link {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #4a6fa5;
+  text-decoration: none;
+  border: 1px solid #c8d8f8;
+  border-radius: 3px;
+  padding: 0.1em 0.45em;
+  margin-left: 0.4em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.ms-civicrm-link:hover {
+  background: #e8f0fe;
+  text-decoration: none;
+}
+
+.ms-member-header__meta {
+  font-size: 0.875rem;
+  color: #555;
+  margin: 0;
+}
+
+.ms-member-header__meta a {
+  color: inherit;
+}
+
+.ms-member-header__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  margin-top: 0.4rem;
+}
+
+.ms-member-header__contacts dt {
+  font-weight: 600;
+  display: inline;
+}
+
+.ms-member-header__contacts dd {
+  display: inline;
+  margin: 0;
+}
+
+.ms-member-header__contacts .pair {
+  white-space: nowrap;
+}
+
+/* Stage + status badges */
+.ms-badge {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.ms-badge--onboarding  { background: #dbeafe; color: #1e40af; }
+.ms-badge--engagement  { background: #d1fae5; color: #065f46; }
+.ms-badge--retention   { background: #ede9fe; color: #5b21b6; }
+.ms-badge--recovery    { background: #fee2e2; color: #991b1b; }
+
+.ms-badge--risk-low    { background: #d1fae5; color: #065f46; }
+.ms-badge--risk-mid    { background: #fef3c7; color: #92400e; }
+.ms-badge--risk-high   { background: #fee2e2; color: #991b1b; }
+
+/* Recent history table */
+.ms-history {
+  margin-bottom: 1.5rem;
+}
+
+.ms-history__heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #666;
+  margin: 0 0 0.5rem;
+}
+
+.ms-history__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ms-history__table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
+  color: #444;
+}
+
+.ms-history__table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #e9ecef;
+  vertical-align: top;
+}
+
+.ms-history__table tr:last-child td {
+  border-bottom: none;
+}
+
+.ms-history__table .col-date   { width: 7rem; white-space: nowrap; }
+.ms-history__table .col-method { width: 7rem; }
+.ms-history__table .col-outcome{ width: 11rem; }
+.ms-history__table .col-notes  { color: #555; }
+.ms-history__table .col-staff  { width: 9rem; white-space: nowrap; color: #777; }
+
+.ms-history__empty {
+  font-size: 0.85rem;
+  color: #888;
+  font-style: italic;
+  padding: 0.4rem 0;
+}

@@ -2,52 +2,15 @@
 
 namespace Drupal\Tests\makerspace_member_success\Unit;
 
+use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
 use Drupal\Tests\UnitTestCase;
-use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
-use Drupal\Core\Database\Connection;
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Component\Datetime\TimeInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\civicrm\Civicrm;
-use Psr\Log\LoggerInterface;
 
 /**
- * Unit tests for MemberSuccessSnapshotBuilder.
+ * Unit tests for MemberSuccessRiskScorer (extracted from MemberSuccessSnapshotBuilder).
  *
  * @group makerspace_member_success
  */
 class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
-
-  /**
-   * The builder under test.
-   */
-  protected $builder;
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-
-    $database = $this->createMock(Connection::class);
-    $config_factory = $this->createMock(ConfigFactoryInterface::class);
-    $time = $this->createMock(TimeInterface::class);
-    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
-    $logger_factory = $this->createMock(LoggerChannelFactoryInterface::class);
-    $civicrm = $this->getMockBuilder(Civicrm::class)
-      ->disableOriginalConstructor()
-      ->getMock();
-
-    $logger = $this->createMock(LoggerInterface::class);
-    $logger_factory->method('get')->willReturn($logger);
-
-    $this->builder = new class($database, $config_factory, $time, $entity_type_manager, $logger_factory, $civicrm) extends MemberSuccessSnapshotBuilder {
-      public function publicBuildRiskIndicators(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts): array {
-        return $this->buildRiskIndicators($data, $badge_one_days, $badge_four_days, $recency_days, $now_ts);
-      }
-    };
-  }
 
   /**
    * Tests risk score calculation for payment issues.
@@ -58,7 +21,7 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'stage' => 'recovery',
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], time());
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], time());
 
     $this->assertGreaterThanOrEqual(50, $score);
     $this->assertContains('payment_failed', $reasons);
@@ -71,11 +34,11 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     $now = time();
     $data = [
       'stage' => 'retention',
-      'last_visit_ts' => $now - (40 * 86400), // 40 days ago
+      'last_visit_ts' => $now - (40 * 86400),
     ];
-    
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
-    
+
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
+
     $this->assertEquals(10, $score);
     $this->assertContains('inactive_30', $reasons);
   }
@@ -87,10 +50,10 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     $now = time();
     $data = [
       'stage' => 'retention',
-      'last_visit_ts' => $now - (100 * 86400), // 100 days ago
+      'last_visit_ts' => $now - (100 * 86400),
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30, 60, 90], $now);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now);
 
     $this->assertEquals(30, $score);
     $this->assertContains('inactive_90', $reasons);
@@ -109,9 +72,9 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'door_badge_status' => 'active',
       'serial_present' => 1,
     ];
-    
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
-    
+
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
+
     $this->assertEquals(0, $score);
     $this->assertEmpty($reasons);
   }
@@ -125,10 +88,10 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'stage' => 'onboarding',
       'door_badge_status' => 'active',
       'serial_present' => 0,
-      'join_date' => date('Y-m-d', $now - (20 * 86400)), // 20 days ago (past grace period)
+      'join_date' => date('Y-m-d', $now - (20 * 86400)),
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(10, $score);
     $this->assertContains('missing_serial', $reasons);
@@ -143,10 +106,10 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 1,
-      'join_date' => date('Y-m-d', $now - (18 * 86400)), // 18 days ago (past 14-day grace)
+      'join_date' => date('Y-m-d', $now - (18 * 86400)),
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(20, $score);
     $this->assertContains('door_badge_pending', $reasons);
@@ -159,12 +122,12 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     $now = time();
     $data = [
       'stage' => 'engagement',
-      'activation_ts' => $now - (30 * 86400), // 30 days since activation
+      'activation_ts' => $now - (30 * 86400),
       'badge_count_window' => 0,
     ];
-    
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
-    
+
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
+
     $this->assertEquals(20, $score);
     $this->assertContains('no_badge_1', $reasons);
   }
@@ -176,12 +139,12 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     $now = time();
     $data = [
       'stage' => 'engagement',
-      'activation_ts' => $now - (190 * 86400), // 190 days since activation
+      'activation_ts' => $now - (190 * 86400),
       'badge_count_window' => 1,
       'badge_count_total' => 3,
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(20, $score);
     $this->assertContains('no_badge_4', $reasons);
@@ -196,10 +159,10 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 0,
-      'join_date' => date('Y-m-d', $now - (10 * 86400)), // 10 days ago (within 14-day grace)
+      'join_date' => date('Y-m-d', $now - (10 * 86400)),
     ];
 
-    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(0, $score);
     $this->assertEmpty($reasons);

@@ -27,7 +27,7 @@ makerspace_member_success.settings:
     civicrm_preferred_method_field:
       type: string
       label: 'CiviCRM preferred communication method field'
-    civicrm_cancellation_followup_field:
+    civicrm_member_followup_field:
       type: string
       label: 'CiviCRM cancellation followup field'
     civicrm_do_not_fields:

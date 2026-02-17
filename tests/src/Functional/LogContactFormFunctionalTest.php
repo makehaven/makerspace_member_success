@@ -59,7 +59,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Create test member
     $this->memberUser = $this->drupalCreateUser();
-    $this->memberUser->set('field_chargebee_followup', 'outreach_active');
+    $this->memberUser->set('field_member_followup_status', 'outreach_active');
     $this->memberUser->save();
 
     // Create a snapshot for the test member
@@ -109,7 +109,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Verify followup status was auto-mapped to "return_intent"
     $updated_user = User::load($this->memberUser->id());
-    $this->assertEquals('return_intent', $updated_user->get('field_chargebee_followup')->value);
+    $this->assertEquals('return_intent', $updated_user->get('field_member_followup_status')->value);
 
     // Verify outreach log entry was created
     $log_entry = $database->select('ms_member_outreach_log', 'log')
@@ -156,7 +156,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Verify status mapped to "outreach_active"
     $updated_user = User::load($this->memberUser->id());
-    $this->assertEquals('outreach_active', $updated_user->get('field_chargebee_followup')->value);
+    $this->assertEquals('outreach_active', $updated_user->get('field_member_followup_status')->value);
   }
 
   /**
@@ -189,7 +189,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Verify followup status is NULL (removed from queue)
     $updated_user = User::load($this->memberUser->id());
-    $this->assertNull($updated_user->get('field_chargebee_followup')->value);
+    $this->assertNull($updated_user->get('field_member_followup_status')->value);
   }
 
   /**
@@ -211,7 +211,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Verify status overridden to "outreach_exhausted"
     $updated_user = User::load($this->memberUser->id());
-    $this->assertEquals('outreach_exhausted', $updated_user->get('field_chargebee_followup')->value);
+    $this->assertEquals('outreach_exhausted', $updated_user->get('field_member_followup_status')->value);
   }
 
   /**

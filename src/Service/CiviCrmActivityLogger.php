@@ -220,12 +220,14 @@ class CiviCrmActivityLogger {
       'will_return' => 'Member Will Return',
       'confirmed_cancel' => 'Confirmed Cancellation',
       'payment_updated' => 'Payment Method Updated',
-      'all_good' => 'Check-in Conversation (All Good)',
+      'no_action_needed' => 'No Action Needed',
       'needs_time' => 'Needs Time to Decide',
       'no_answer' => 'No Answer',
       'left_message' => 'Left Voicemail/Message',
       'email_sent' => 'Email Sent - Awaiting Reply',
       'email_bounced' => 'Email Bounced/Undeliverable',
+      'sms_sent' => 'SMS Sent - Awaiting Reply',
+      'invalid_contact' => 'Invalid Contact Information',
     ];
   }
 

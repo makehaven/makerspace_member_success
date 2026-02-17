@@ -34,7 +34,9 @@ class MemberTenureField extends FieldPluginBase {
       ];
     }
 
-    $tenure = \Drupal::service('date.formatter')->formatTimeDiffSince((int) $join_ts, 2);
+    $tenure = \Drupal::service('date.formatter')->formatTimeDiffSince((int) $join_ts, [
+      'granularity' => 2,
+    ]);
     $joined_on = date('M j, Y', (int) $join_ts);
 
     return [

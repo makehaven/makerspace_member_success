@@ -39,6 +39,7 @@
 
 .ms-summary-card.ms-total { border-left-color: var(--gin-color-primary); }
 .ms-summary-card.ms-risk { border-left-color: var(--gin-color-warning); }
+.ms-summary-card.ms-actionable { border-left-color: #198754; }
 .ms-summary-card.ms-critical { border-left-color: var(--gin-color-danger); }
 
 .ms-summary-number {

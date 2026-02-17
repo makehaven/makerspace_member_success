@@ -5,3 +5,11 @@ dashboard:
       css/dashboard.css: {}
   dependencies:
     - core/drupal
+
+log_contact:
+  version: 1.x
+  css:
+    theme:
+      css/log-contact.css: {}
+  dependencies:
+    - core/drupal

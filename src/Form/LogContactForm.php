@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Form;
 
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
@@ -9,6 +10,8 @@ use Drupal\user\Entity\User;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\makerspace_member_success\Service\CiviCrmActivityLogger;
+use Drupal\makerspace_member_success\Service\OutreachService;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 
 /**
  * Form for logging contact attempts with at-risk members.
@@ -23,21 +26,49 @@ class LogContactForm extends FormBase {
   protected $entityTypeManager;
 
   /**
-   * The CiviCRM activity logger.
+   * The CiviCRM activity logger (used for phone number lookup).
    *
    * @var \Drupal\makerspace_member_success\Service\CiviCrmActivityLogger
    */
   protected $activityLogger;
 
   /**
+   * The outreach service.
+   *
+   * @var \Drupal\makerspace_member_success\Service\OutreachService
+   */
+  protected $outreachService;
+
+  /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
+   * Stage-to-queue-route mapping.
+   */
+  protected const STAGE_ROUTES = [
+    MemberSuccessLifecycle::STAGE_ONBOARDING => 'view.member_success_queue.onboarding',
+    MemberSuccessLifecycle::STAGE_ENGAGEMENT => 'view.member_success_queue.engagement',
+    MemberSuccessLifecycle::STAGE_RETENTION => 'view.member_success_queue.retention',
+    MemberSuccessLifecycle::STAGE_RECOVERY => 'view.member_success_queue.recovery',
+  ];
+
+  /**
    * Constructs a LogContactForm object.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
-    CiviCrmActivityLogger $activity_logger
+    CiviCrmActivityLogger $activity_logger,
+    OutreachService $outreach_service,
+    Connection $database
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->activityLogger = $activity_logger;
+    $this->outreachService = $outreach_service;
+    $this->database = $database;
   }
 
   /**
@@ -46,7 +77,9 @@ class LogContactForm extends FormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('entity_type.manager'),
-      $container->get('makerspace_member_success.activity_logger')
+      $container->get('makerspace_member_success.activity_logger'),
+      $container->get('makerspace_member_success.outreach_service'),
+      $container->get('database')
     );
   }
 
@@ -68,18 +101,64 @@ class LogContactForm extends FormBase {
 
     $form_state->set('user', $user);
 
-    // Get phone number from CiviCRM
-    $phone_number = $this->getPhoneNumber($user->id());
-    $phone_display = $phone_number ? '<strong>' . $this->t('Phone:') . '</strong> ' . htmlspecialchars($phone_number) : '<em>' . $this->t('No phone number on file') . '</em>';
+    $form['#attached']['library'][] = 'makerspace_member_success/log_contact';
 
-    // Member info header
+    // Load the member's current snapshot (stage + summary fields).
+    $snapshot = $this->database->select('ms_member_success_snapshot', 'ms')
+      ->fields('ms', ['stage', 'risk_score', 'outreach_status', 'contact_count'])
+      ->condition('ms.uid', $user->id())
+      ->condition('ms.is_latest', 1)
+      ->condition('ms.snapshot_type', 'daily')
+      ->execute()
+      ->fetchAssoc();
+
+    $stage        = $snapshot['stage'] ?? MemberSuccessLifecycle::STAGE_RECOVERY;
+    $risk_score   = (int) ($snapshot['risk_score'] ?? 0);
+    $contact_count = (int) ($snapshot['contact_count'] ?? 0);
+
+    $form_state->set('stage', $stage);
+
+    // CiviCRM contact ID and phone — fetched together to avoid two lookups.
+    $civicrm_contact_id = $this->activityLogger->getContactId($user->id());
+    $phone_number = $this->getPhoneNumberForContact($civicrm_contact_id);
+
+    // Risk badge CSS class.
+    $risk_class = $risk_score >= 50 ? 'high' : ($risk_score >= 20 ? 'mid' : 'low');
+
+    // Build the member header.
+    $header_parts = [];
+
+    $name_html = '<p class="ms-member-header__name">' . htmlspecialchars($user->getDisplayName());
+    if ($civicrm_contact_id) {
+      $civicrm_url = '/civicrm/contact/view?cid=' . (int) $civicrm_contact_id . '&reset=1';
+      $name_html .= ' <a href="' . $civicrm_url . '" target="_blank" rel="noopener" class="ms-civicrm-link" title="' . $this->t('View in CiviCRM') . '">CiviCRM ↗</a>';
+    }
+    $name_html .= '</p>';
+    $header_parts[] = $name_html;
+    $header_parts[] = '<p class="ms-member-header__meta">' . htmlspecialchars($user->getEmail()) . '</p>';
+
+    $contacts_html = '<dl class="ms-member-header__contacts">';
+    if ($phone_number) {
+      $contacts_html .= '<span class="pair"><dt>' . $this->t('Phone') . ':</dt> <dd>' . htmlspecialchars($phone_number) . '</dd></span>';
+    }
+    else {
+      $contacts_html .= '<span class="pair" style="color:#999"><em>' . $this->t('No phone on file') . '</em></span>';
+    }
+    $contacts_html .= '<span class="pair"><dt>' . $this->t('Stage') . ':</dt> <dd><span class="ms-badge ms-badge--' . htmlspecialchars($stage) . '">' . htmlspecialchars($stage) . '</span></dd></span>';
+    $contacts_html .= '<span class="pair"><dt>' . $this->t('Risk') . ':</dt> <dd><span class="ms-badge ms-badge--risk-' . $risk_class . '">' . $risk_score . '</span></dd></span>';
+    $contacts_html .= '<span class="pair"><dt>' . $this->t('Contacts') . ':</dt> <dd>' . $contact_count . '</dd></span>';
+    $contacts_html .= '</dl>';
+    $header_parts[] = $contacts_html;
+
     $form['member_info'] = [
       '#type' => 'markup',
-      '#markup' => '<div class="alert alert-info">' .
-        '<strong>' . $this->t('Member:') . '</strong> ' . $user->getDisplayName() .
-        ' (' . $user->getEmail() . ')<br>' .
-        $phone_display .
-        '</div>',
+      '#markup' => '<div class="ms-member-header">' . implode('', $header_parts) . '</div>',
+    ];
+
+    // Recent interaction history.
+    $form['member_history'] = [
+      '#type' => 'markup',
+      '#markup' => $this->buildHistoryMarkup($user->id()),
     ];
 
     // Contact method
@@ -88,6 +167,7 @@ class LogContactForm extends FormBase {
       '#title' => $this->t('Contact Method'),
       '#options' => [
         'phone' => $this->t('Phone Call'),
+        'sms' => $this->t('SMS / Text'),
         'email' => $this->t('Email'),
         'in_person' => $this->t('In-Person'),
         'other' => $this->t('Other'),
@@ -104,11 +184,11 @@ class LogContactForm extends FormBase {
     // Get selected method (from form state or default)
     $selected_method = $form_state->getValue('contact_method') ?? 'phone';
 
-    // Outcome (conditional based on method)
+    // Outcome (conditional based on method and stage)
     $form['outcome'] = [
       '#type' => 'select',
       '#title' => $this->t('Outcome'),
-      '#options' => $this->getOutcomeOptions($selected_method),
+      '#options' => $this->getOutcomeOptions($selected_method, $stage),
       '#required' => TRUE,
       '#prefix' => '<div id="outcome-wrapper">',
       '#suffix' => '</div>',
@@ -170,20 +250,16 @@ class LogContactForm extends FormBase {
     ];
 
     // Actions
-    $form['actions'] = [
-      '#type' => 'actions',
-    ];
-
+    $form['actions'] = ['#type' => 'actions'];
     $form['actions']['submit'] = [
       '#type' => 'submit',
       '#value' => $this->t('Log Interaction'),
       '#button_type' => 'primary',
     ];
-
     $form['actions']['cancel'] = [
       '#type' => 'link',
       '#title' => $this->t('Cancel'),
-      '#url' => Url::fromRoute('view.member_success_queue.recovery'),
+      '#url' => $this->stageUrl($stage),
       '#attributes' => ['class' => ['btn', 'btn-secondary']],
     ];
 
@@ -195,257 +271,40 @@ class LogContactForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $user = $form_state->get('user');
-    $contact_method = $form_state->getValue('contact_method');
-    $outcome = $form_state->getValue('outcome');
-    $notes = $form_state->getValue('notes');
-    $mark_exhausted = $form_state->getValue('mark_exhausted');
-    $log_in_civicrm = $form_state->getValue('log_in_civicrm');
+    $stage = $form_state->get('stage');
 
-    // Calculate sleep period based on outcome
-    $sleep_days = $this->getSleepPeriod($outcome);
-    $today = date('Y-m-d');
-    $next_followup_date = NULL;
-
-    if ($sleep_days > 0) {
-      // Calculate next followup date
-      $next_followup_date = date('Y-m-d', strtotime($today . ' +' . $sleep_days . ' days'));
-    }
-    elseif ($sleep_days === -1) {
-      // Permanent resolution - set far future date
-      $next_followup_date = '9999-12-31';
-    }
-
-    // Auto-map outcome to followup status
-    $followup_status = $this->mapOutcomeToFollowupStatus($outcome, $mark_exhausted);
-
-    // Update followup status if changed
-    if (!empty($followup_status) && $user->hasField('field_chargebee_followup')) {
-      $current_status = $user->get('field_chargebee_followup')->value;
-      if ($followup_status !== $current_status) {
-        $user->set('field_chargebee_followup', $followup_status);
-        $user->save();
-        $this->logger('makerspace_member_success')->notice(
-          'Updated followup status for user @uid from @old to @new (auto-mapped from outcome: @outcome)',
-          [
-            '@uid' => $user->id(),
-            '@old' => $current_status ?? 'empty',
-            '@new' => $followup_status,
-            '@outcome' => $outcome,
-          ]
-        );
-      }
-    }
-
-    // Update cancellation reason on profile if provided
-    $cancellation_reason = $form_state->getValue('cancellation_reason');
-    if ($outcome === 'confirmed_cancel' && !empty($cancellation_reason)) {
-      // Load main profile
-      $profiles = $this->entityTypeManager->getStorage('profile')->loadByProperties([
-        'uid' => $user->id(),
-        'type' => 'main',
-        'is_default' => TRUE,
-        'status' => TRUE,
-      ]);
-
-      if (!empty($profiles)) {
-        $profile = reset($profiles);
-        if ($profile->hasField('field_member_end_reason')) {
-          $old_reason = $profile->get('field_member_end_reason')->value;
-          $profile->set('field_member_end_reason', $cancellation_reason);
-          $profile->save();
-
-          $this->logger('makerspace_member_success')->notice(
-            'Updated cancellation reason for user @uid from @old to @new',
-            [
-              '@uid' => $user->id(),
-              '@old' => $old_reason ?? 'empty',
-              '@new' => $cancellation_reason,
-            ]
-          );
-
-          $this->messenger()->addStatus(
-            $this->t('Cancellation reason updated to: @reason', [
-              '@reason' => $cancellation_reason,
-            ])
-          );
-        }
-      }
-    }
-
-    // Create CiviCRM activity if requested
-    $civicrm_activity_id = NULL;
-    if ($log_in_civicrm) {
-      $civicrm_activity_id = $this->activityLogger->logRetentionContact(
-        $user,
-        $contact_method,
-        $outcome,
-        $notes
-      );
-
-      if ($civicrm_activity_id) {
-        $this->messenger()->addStatus(
-          $this->t('CiviCRM activity @id created.', ['@id' => $civicrm_activity_id])
-        );
-      }
-      else {
-        $this->messenger()->addWarning(
-          $this->t('Contact logged in Drupal, but CiviCRM activity creation failed. Please check logs.')
-        );
-      }
-    }
-
-    // Update snapshot with outreach tracking
-    $this->updateSnapshotOutreach($user->id(), $today, $next_followup_date, $outcome);
-
-    // Log to outreach log table for metrics tracking
-    $this->insertOutreachLog([
-      'uid' => $user->id(),
-      'contact_date' => $today,
-      'contact_method' => $contact_method,
-      'outcome' => $outcome,
-      'notes' => $notes,
-      'followup_status' => $followup_status,
-      'staff_uid' => \Drupal::currentUser()->id(),
-      'civicrm_activity_id' => $civicrm_activity_id,
-      'sleep_days' => $sleep_days,
-      'created_at' => time(),
-    ]);
-
-    // Display success message
-    $outcome_labels = [
-      'will_return' => $this->t('Member will return'),
-      'confirmed_cancel' => $this->t('Confirmed cancellation'),
-      'payment_updated' => $this->t('Payment updated'),
-      'all_good' => $this->t('Check-in conversation (all good)'),
-      'needs_time' => $this->t('Needs time to decide'),
-      'no_answer' => $this->t('No answer'),
-      'left_message' => $this->t('Left message'),
-      'email_sent' => $this->t('Email sent'),
-      'email_bounced' => $this->t('Email bounced'),
-    ];
-
-    $this->messenger()->addStatus(
-      $this->t('Interaction logged for @name: @outcome', [
-        '@name' => $user->getDisplayName(),
-        '@outcome' => $outcome_labels[$outcome] ?? $outcome,
-      ])
+    $result = $this->outreachService->recordContact(
+      $user,
+      $stage,
+      $form_state->getValue('contact_method'),
+      $form_state->getValue('outcome'),
+      (string) $form_state->getValue('notes'),
+      (bool) $form_state->getValue('mark_exhausted'),
+      (bool) $form_state->getValue('log_in_civicrm'),
+      (string) $form_state->getValue('cancellation_reason')
     );
 
-    // Redirect back to recovery queue
-    $form_state->setRedirect('view.member_success_queue.recovery');
-  }
-
-  /**
-   * Calculate sleep period in days based on contact outcome.
-   *
-   * @param string $outcome
-   *   The outcome value from the form.
-   *
-   * @return int
-   *   Number of days to sleep, or -1 for permanent resolution.
-   */
-  protected function getSleepPeriod($outcome) {
-    $sleep_periods = [
-      'left_message' => 7,           // Left voicemail → 7 days
-      'email_sent' => 7,             // Email sent → 7 days
-      'no_answer' => 3,              // No answer → 3 days
-      'will_return' => 14,           // Will return → 14 days
-      'needs_time' => 14,            // Needs time → 14 days
-      'all_good' => 30,              // Positive check-in → follow up later
-      'payment_updated' => -1,       // Payment updated → resolved
-      'confirmed_cancel' => -1,      // Confirmed cancel → resolved
-      'email_bounced' => 0,          // Email bounced → reappear immediately
-    ];
-
-    return $sleep_periods[$outcome] ?? 0;
-  }
-
-  /**
-   * Insert outreach log entry for metrics tracking.
-   *
-   * @param array $data
-   *   Log entry data.
-   */
-  protected function insertOutreachLog(array $data) {
-    $database = \Drupal::database();
-
-    try {
-      $database->insert('ms_member_outreach_log')
-        ->fields($data)
-        ->execute();
-
-      $this->logger('makerspace_member_success')->notice(
-        'Outreach logged for UID @uid: @method → @outcome',
-        [
-          '@uid' => $data['uid'],
-          '@method' => $data['contact_method'],
-          '@outcome' => $data['outcome'],
-        ]
-      );
-    }
-    catch (\Exception $e) {
-      $this->logger('makerspace_member_success')->error(
-        'Failed to log outreach: @message',
-        ['@message' => $e->getMessage()]
-      );
-    }
-  }
-
-  /**
-   * Update snapshot with outreach tracking data.
-   *
-   * @param int $uid
-   *   The user ID.
-   * @param string $contact_date
-   *   The contact date (YYYY-MM-DD).
-   * @param string|null $next_followup_date
-   *   The next followup date (YYYY-MM-DD) or NULL.
-   * @param string $outcome
-   *   The contact outcome.
-   */
-  protected function updateSnapshotOutreach($uid, $contact_date, $next_followup_date, $outcome) {
-    $database = \Drupal::database();
-
-    // Get current contact count from latest snapshot
-    $current_count = $database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['contact_count'])
-      ->condition('ms.uid', $uid)
-      ->condition('ms.is_latest', 1)
-      ->condition('ms.snapshot_type', 'daily')
-      ->execute()
-      ->fetchField();
-
-    $new_count = ((int) $current_count) + 1;
-
-    // Update all latest snapshots for this user
-    $database->update('ms_member_success_snapshot')
-      ->fields([
-        'last_contact_date' => $contact_date,
-        'next_followup_date' => $next_followup_date,
-        'contact_count' => $new_count,
-        'last_outreach_ts' => time(),
-      ])
-      ->condition('uid', $uid)
-      ->condition('is_latest', 1)
-      ->execute();
-
-    // Log the update
-    $this->logger('makerspace_member_success')->notice(
-      'Updated outreach tracking for user @uid: contact_count=@count, next_followup=@next',
-      [
-        '@uid' => $uid,
-        '@count' => $new_count,
-        '@next' => $next_followup_date ?? 'none',
-      ]
+    $this->addResultMessages(
+      $form_state->getValue('outcome'),
+      $result,
+      $user->getDisplayName(),
+      (bool) $form_state->getValue('log_in_civicrm')
     );
 
-    // Warn if contact count >= 3
-    if ($new_count >= 3) {
-      $this->messenger()->addWarning(
-        $this->t('This is attempt #@count for this member. Consider marking as "Outreach Exhausted" if no response.', [
-          '@count' => $new_count,
-        ])
-      );
+    if ($result['contact_count'] >= 3) {
+      $this->messenger()->addWarning($this->t(
+        'This is attempt #@count for this member. Consider marking as "Outreach Exhausted" if no response.',
+        ['@count' => $result['contact_count']]
+      ));
+    }
+
+    // Redirect to destination param if provided, otherwise stage-aware queue.
+    $destination = $this->getRequest()->query->get('destination');
+    if ($destination) {
+      $form_state->setRedirectUrl(Url::fromUserInput($destination));
+    }
+    else {
+      $form_state->setRedirectUrl($this->stageUrl($stage));
     }
   }
 
@@ -453,137 +312,278 @@ class LogContactForm extends FormBase {
    * AJAX callback to update outcome options based on contact method.
    */
   public function updateOutcomeOptions(array &$form, FormStateInterface $form_state) {
+    $stage = $form_state->get('stage') ?? MemberSuccessLifecycle::STAGE_RECOVERY;
+    $method = $form_state->getValue('contact_method') ?? 'phone';
+    $form['outcome']['#options'] = $this->getOutcomeOptions($method, $stage);
     return $form['outcome'];
   }
 
   /**
-   * Get outcome options based on contact method.
+   * Returns the URL for the queue matching the given stage.
+   *
+   * @param string $stage
+   *   Lifecycle stage machine name.
+   *
+   * @return \Drupal\Core\Url
+   *   Queue URL.
+   */
+  protected function stageUrl(string $stage): Url {
+    $route = self::STAGE_ROUTES[$stage] ?? 'view.member_success_queue.recovery';
+    return Url::fromRoute($route);
+  }
+
+  /**
+   * Returns outcome options filtered by contact method and lifecycle stage.
    *
    * @param string $method
-   *   The contact method (phone, email, in_person, other).
+   *   Contact method.
+   * @param string $stage
+   *   Lifecycle stage.
    *
    * @return array
-   *   Outcome options appropriate for the method.
+   *   Filtered outcome options.
    */
-  protected function getOutcomeOptions(string $method): array {
-    $options = ['' => $this->t('- Select outcome -')];
+  protected function getOutcomeOptions(string $method, string $stage): array {
+    $suppressed_by_stage = match ($stage) {
+      MemberSuccessLifecycle::STAGE_ONBOARDING,
+      MemberSuccessLifecycle::STAGE_ENGAGEMENT => [
+        MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
+        MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+      ],
+      MemberSuccessLifecycle::STAGE_RETENTION => [
+        MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+      ],
+      MemberSuccessLifecycle::STAGE_RECOVERY => [
+        MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
+      ],
+      default => [],
+    };
+
+    $all = ['' => $this->t('- Select outcome -')];
 
     switch ($method) {
       case 'phone':
-        $options += [
-          'payment_updated' => $this->t('Spoke - Payment Updated'),
-          'will_return' => $this->t('Spoke - Will Return'),
-          'all_good' => $this->t('Spoke - All Good (Check-in)'),
-          'confirmed_cancel' => $this->t('Spoke - Confirmed Cancellation'),
-          'needs_time' => $this->t('Spoke - Needs Time to Decide'),
-          'no_answer' => $this->t('No Answer'),
-          'left_message' => $this->t('Left Voicemail'),
+        $all += [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Spoke - Payment Updated'),
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Spoke - Will Return'),
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED => $this->t('Spoke - No Action Needed'),
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Spoke - Confirmed Cancellation'),
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Spoke - Needs Time to Decide'),
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER => $this->t('No Answer'),
+          MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE => $this->t('Left Voicemail'),
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT => $this->t('Invalid Contact Info'),
+        ];
+        break;
+
+      case 'sms':
+        $all += [
+          MemberSuccessLifecycle::OUTCOME_SMS_SENT => $this->t('SMS Sent - Awaiting Reply'),
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Replied - Payment Updated'),
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Replied - Will Return'),
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Replied - Confirmed Cancellation'),
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Replied - Needs Time to Decide'),
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT => $this->t('Invalid Contact Info'),
         ];
         break;
 
       case 'email':
-        $options += [
-          'payment_updated' => $this->t('Replied - Payment Updated'),
-          'will_return' => $this->t('Replied - Will Return'),
-          'all_good' => $this->t('Replied - All Good (Check-in)'),
-          'confirmed_cancel' => $this->t('Replied - Confirmed Cancellation'),
-          'needs_time' => $this->t('Replied - Needs Time to Decide'),
-          'email_sent' => $this->t('Sent - Awaiting Reply'),
-          'email_bounced' => $this->t('Bounced/Undeliverable'),
+        $all += [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Replied - Payment Updated'),
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Replied - Will Return'),
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED => $this->t('Replied - No Action Needed'),
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Replied - Confirmed Cancellation'),
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Replied - Needs Time to Decide'),
+          MemberSuccessLifecycle::OUTCOME_EMAIL_SENT => $this->t('Sent - Awaiting Reply'),
+          MemberSuccessLifecycle::OUTCOME_EMAIL_BOUNCED => $this->t('Bounced/Undeliverable'),
+          MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT => $this->t('Invalid Contact Info'),
         ];
         break;
 
       case 'in_person':
-        $options += [
-          'payment_updated' => $this->t('Spoke - Payment Updated'),
-          'will_return' => $this->t('Spoke - Will Return'),
-          'all_good' => $this->t('Spoke - All Good (Check-in)'),
-          'confirmed_cancel' => $this->t('Spoke - Confirmed Cancellation'),
-          'needs_time' => $this->t('Spoke - Needs Time to Decide'),
+        $all += [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Spoke - Payment Updated'),
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Spoke - Will Return'),
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED => $this->t('Spoke - No Action Needed'),
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Spoke - Confirmed Cancellation'),
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Spoke - Needs Time to Decide'),
         ];
         break;
 
       case 'other':
-        // Show all options for 'other'
-        $options += [
-          'payment_updated' => $this->t('Contact Made - Payment Updated'),
-          'will_return' => $this->t('Contact Made - Will Return'),
-          'all_good' => $this->t('Contact Made - All Good (Check-in)'),
-          'confirmed_cancel' => $this->t('Contact Made - Confirmed Cancellation'),
-          'needs_time' => $this->t('Contact Made - Needs Time to Decide'),
-          'no_answer' => $this->t('No Response'),
-          'left_message' => $this->t('Left Message'),
+        $all += [
+          MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Contact Made - Payment Updated'),
+          MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Contact Made - Will Return'),
+          MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED => $this->t('Contact Made - No Action Needed'),
+          MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Contact Made - Confirmed Cancellation'),
+          MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Contact Made - Needs Time to Decide'),
+          MemberSuccessLifecycle::OUTCOME_NO_ANSWER => $this->t('No Response'),
+          MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE => $this->t('Left Message'),
         ];
         break;
     }
 
-    return $options;
+    // Filter out outcomes suppressed by the member's current stage.
+    foreach ($suppressed_by_stage as $suppressed_outcome) {
+      unset($all[$suppressed_outcome]);
+    }
+
+    return $all;
   }
 
   /**
-   * Map contact outcome to followup status.
+   * Adds messenger feedback messages based on the outreach result.
    *
    * @param string $outcome
    *   The contact outcome.
-   * @param bool $mark_exhausted
-   *   Whether to force "outreach_exhausted" status.
-   *
-   * @return string|null
-   *   The followup status to set, or NULL for no change.
+   * @param array $result
+   *   Return value from OutreachService::recordContact().
+   * @param string $display_name
+   *   Member display name for the status message.
+   * @param bool $log_in_civicrm
+   *   Whether CiviCRM logging was requested.
    */
-  protected function mapOutcomeToFollowupStatus(string $outcome, bool $mark_exhausted): ?string {
-    // Manual override takes precedence
-    if ($mark_exhausted) {
-      return 'outreach_exhausted';
-    }
-
-    // Auto-mapping based on outcome
-    $mapping = [
-      'payment_updated' => NULL,                    // Resolved - remove from queue
-      'confirmed_cancel' => 'confirmed_cancellation',
-      'will_return' => 'return_intent',
-      'needs_time' => 'outreach_active',
-      'no_answer' => 'outreach_active',
-      'left_message' => 'outreach_active',
-      'email_sent' => 'outreach_active',
-      'email_bounced' => 'outreach_active',
+  protected function addResultMessages(string $outcome, array $result, string $display_name, bool $log_in_civicrm = FALSE): void {
+    $outcome_labels = [
+      MemberSuccessLifecycle::OUTCOME_WILL_RETURN => $this->t('Member will return'),
+      MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL => $this->t('Confirmed cancellation'),
+      MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED => $this->t('Payment updated'),
+      MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED => $this->t('No action needed'),
+      MemberSuccessLifecycle::OUTCOME_NEEDS_TIME => $this->t('Needs time to decide'),
+      MemberSuccessLifecycle::OUTCOME_NO_ANSWER => $this->t('No answer'),
+      MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE => $this->t('Left message'),
+      MemberSuccessLifecycle::OUTCOME_EMAIL_SENT => $this->t('Email sent'),
+      MemberSuccessLifecycle::OUTCOME_EMAIL_BOUNCED => $this->t('Email bounced'),
+      MemberSuccessLifecycle::OUTCOME_SMS_SENT => $this->t('SMS sent'),
+      MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT => $this->t('Invalid contact info'),
     ];
 
-    return $mapping[$outcome] ?? NULL;
+    $this->messenger()->addStatus($this->t('Interaction logged for @name: @outcome', [
+      '@name' => $display_name,
+      '@outcome' => $outcome_labels[$outcome] ?? $outcome,
+    ]));
+
+    $civicrm_activity_id = $result['civicrm_activity_id'];
+    if ($civicrm_activity_id) {
+      $this->messenger()->addStatus($this->t('CiviCRM activity @id created.', ['@id' => $civicrm_activity_id]));
+    }
+    elseif ($log_in_civicrm && !$civicrm_activity_id) {
+      $this->messenger()->addWarning($this->t('Contact logged in Drupal, but CiviCRM activity creation failed. Please check logs.'));
+    }
   }
 
   /**
-   * Get phone number from CiviCRM for a user.
+   * Builds the recent interaction history markup for a member.
    *
    * @param int $uid
    *   The Drupal user ID.
    *
-   * @return string|null
-   *   The phone number, or NULL if not found.
+   * @return string
+   *   HTML string for the history table.
    */
-  protected function getPhoneNumber(int $uid): ?string {
-    try {
-      // Get CiviCRM contact ID
-      $contact_id = $this->activityLogger->getContactId($uid);
-      if (!$contact_id) {
-        return NULL;
-      }
+  protected function buildHistoryMarkup(int $uid): string {
+    $outcome_labels = [
+      MemberSuccessLifecycle::OUTCOME_WILL_RETURN       => $this->t('Will Return'),
+      MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL  => $this->t('Confirmed Cancel'),
+      MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED   => $this->t('Payment Updated'),
+      MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED  => $this->t('No Action Needed'),
+      MemberSuccessLifecycle::OUTCOME_NEEDS_TIME        => $this->t('Needs Time'),
+      MemberSuccessLifecycle::OUTCOME_NO_ANSWER         => $this->t('No Answer'),
+      MemberSuccessLifecycle::OUTCOME_LEFT_MESSAGE      => $this->t('Left Message'),
+      MemberSuccessLifecycle::OUTCOME_EMAIL_SENT        => $this->t('Email Sent'),
+      MemberSuccessLifecycle::OUTCOME_EMAIL_BOUNCED     => $this->t('Email Bounced'),
+      MemberSuccessLifecycle::OUTCOME_SMS_SENT          => $this->t('SMS Sent'),
+      MemberSuccessLifecycle::OUTCOME_INVALID_CONTACT   => $this->t('Invalid Contact'),
+    ];
 
-      // Query CiviCRM for phone number
-      $database = \Drupal::database();
-      $phone = $database->select('civicrm_phone', 'p')
+    $method_labels = [
+      'phone'     => $this->t('Phone'),
+      'sms'       => $this->t('SMS'),
+      'email'     => $this->t('Email'),
+      'in_person' => $this->t('In-Person'),
+      'other'     => $this->t('Other'),
+    ];
+
+    $rows = $this->database->select('ms_member_outreach_log', 'log')
+      ->fields('log', ['contact_date', 'contact_method', 'outcome', 'notes', 'staff_uid'])
+      ->condition('log.uid', $uid)
+      ->orderBy('log.created_at', 'DESC')
+      ->range(0, 5)
+      ->execute()
+      ->fetchAll();
+
+    $html = '<div class="ms-history">';
+    $html .= '<p class="ms-history__heading">' . $this->t('Recent Interactions') . '</p>';
+
+    if (!$rows) {
+      $html .= '<p class="ms-history__empty">' . $this->t('No previous interactions recorded.') . '</p>';
+      $html .= '</div>';
+      return $html;
+    }
+
+    $html .= '<table class="ms-history__table">';
+    $html .= '<thead><tr>';
+    $html .= '<th class="col-date">'   . $this->t('Date')    . '</th>';
+    $html .= '<th class="col-method">' . $this->t('Method')  . '</th>';
+    $html .= '<th class="col-outcome">'. $this->t('Outcome') . '</th>';
+    $html .= '<th class="col-notes">'  . $this->t('Notes')   . '</th>';
+    $html .= '<th class="col-staff">'  . $this->t('Staff')   . '</th>';
+    $html .= '</tr></thead><tbody>';
+
+    // Pre-load staff display names for all unique staff UIDs.
+    $staff_uids = array_unique(array_filter(array_column($rows, 'staff_uid')));
+    $staff_names = [];
+    if ($staff_uids) {
+      $staff_users = $this->entityTypeManager->getStorage('user')->loadMultiple($staff_uids);
+      foreach ($staff_users as $staff) {
+        $staff_names[$staff->id()] = $staff->getDisplayName();
+      }
+    }
+
+    foreach ($rows as $row) {
+      $outcome_label = (string) ($outcome_labels[$row->outcome] ?? ucwords(str_replace('_', ' ', $row->outcome)));
+      $method_label  = (string) ($method_labels[$row->contact_method] ?? ucwords($row->contact_method));
+      $staff_name    = $staff_names[$row->staff_uid] ?? '—';
+      $notes         = $row->notes ? htmlspecialchars(mb_strimwidth($row->notes, 0, 80, '…')) : '<span style="color:#bbb">—</span>';
+
+      $html .= '<tr>';
+      $html .= '<td class="col-date">'   . htmlspecialchars($row->contact_date) . '</td>';
+      $html .= '<td class="col-method">' . htmlspecialchars($method_label)      . '</td>';
+      $html .= '<td class="col-outcome">'. htmlspecialchars($outcome_label)     . '</td>';
+      $html .= '<td class="col-notes">'  . $notes                               . '</td>';
+      $html .= '<td class="col-staff">'  . htmlspecialchars((string) $staff_name) . '</td>';
+      $html .= '</tr>';
+    }
+
+    $html .= '</tbody></table></div>';
+    return $html;
+  }
+
+  /**
+   * Get phone number from CiviCRM given an already-resolved contact ID.
+   *
+   * @param int|null $contact_id
+   *   The CiviCRM contact ID.
+   *
+   * @return string|null
+   *   The primary phone number, or NULL if not found.
+   */
+  protected function getPhoneNumberForContact(?int $contact_id): ?string {
+    if (!$contact_id) {
+      return NULL;
+    }
+    try {
+      $phone = $this->database->select('civicrm_phone', 'p')
         ->fields('p', ['phone'])
         ->condition('p.contact_id', $contact_id)
         ->condition('p.is_primary', 1)
         ->execute()
         ->fetchField();
-
       return $phone ?: NULL;
     }
     catch (\Exception $e) {
       $this->logger('makerspace_member_success')->error(
-        'Failed to fetch phone number for uid @uid: @message',
-        ['@uid' => $uid, '@message' => $e->getMessage()]
+        'Failed to fetch phone for CiviCRM contact @cid: @message',
+        ['@cid' => $contact_id, '@message' => $e->getMessage()]
       );
       return NULL;
     }

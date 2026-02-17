@@ -801,12 +801,12 @@ display:
         tenure_bucket:
           id: tenure_bucket
           table: ms_member_success_snapshot
-          field: tenure_bucket
+          field: member_tenure
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: standard
-          label: Tenure
+          plugin_id: member_tenure_field
+          label: 'Member Since'
           exclude: false
           alter:
             alter_text: false
@@ -1004,12 +1004,12 @@ display:
         last_visit_ts:
           id: last_visit_ts
           table: ms_member_success_snapshot
-          field: last_visit_ts
+          field: days_since_last_visit
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: date
-          label: 'Last Visit'
+          plugin_id: days_since_last_visit_field
+          label: 'Last Door Entry'
           exclude: false
           alter:
             alter_text: false
@@ -1256,10 +1256,10 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-        cancellation_followup:
-          id: cancellation_followup
+        member_followup_status:
+          id: member_followup_status
           table: ms_member_success_snapshot
-          field: cancellation_followup
+          field: member_followup_status
           relationship: none
           group_type: group
           admin_label: ''
@@ -2781,11 +2781,6 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-          type: timestamp_ago
-          settings:
-            future_format: '@interval hence'
-            past_format: '@interval ago'
-            granularity: 2
         orientation_date:
           id: orientation_date
           table: ms_member_success_snapshot
@@ -3910,12 +3905,12 @@ display:
         tenure_bucket:
           id: tenure_bucket
           table: ms_member_success_snapshot
-          field: tenure_bucket
+          field: member_tenure
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: standard
-          label: Tenure
+          plugin_id: member_tenure_field
+          label: 'Member Since'
           exclude: false
           alter:
             alter_text: false
@@ -4389,8 +4384,8 @@ display:
           columns:
             name: name
             membership_type: membership_type
-            member_tenure: member_tenure
-            last_door_entry: last_door_entry
+            tenure_bucket: tenure_bucket
+            last_visit_ts: last_visit_ts
             visit_count_30d: visit_count_30d
             risk_score: risk_score
             action_retention: action_retention
@@ -4403,14 +4398,14 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            member_tenure:
+            tenure_bucket:
               sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
-            last_door_entry:
+            last_visit_ts:
               sortable: false
               default_sort_order: asc
               align: ''
@@ -5231,12 +5226,12 @@ display:
         tenure_bucket:
           id: tenure_bucket
           table: ms_member_success_snapshot
-          field: tenure_bucket
+          field: member_tenure
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: standard
-          label: Tenure
+          plugin_id: member_tenure_field
+          label: 'Member Since'
           exclude: false
           alter:
             alter_text: false
@@ -5384,12 +5379,12 @@ display:
         last_visit_ts:
           id: last_visit_ts
           table: ms_member_success_snapshot
-          field: last_visit_ts
+          field: days_since_last_visit
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: date
-          label: 'Last Visit'
+          plugin_id: days_since_last_visit_field
+          label: 'Last Door Entry'
           exclude: false
           alter:
             alter_text: false
@@ -5431,11 +5426,6 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-          type: timestamp_ago
-          settings:
-            future_format: '@interval hence'
-            past_format: '@interval ago'
-            granularity: 2
         orientation_date:
           id: orientation_date
           table: ms_member_success_snapshot
@@ -5711,7 +5701,7 @@ display:
             name: name
             membership_type: membership_type
             payment_risk_combined: payment_risk_combined
-            cancellation_followup: cancellation_followup
+            member_followup_status: member_followup_status
             id_1: id_1
             field_user_chargebee_id: field_user_chargebee_id
             field_stripe_customer_id: field_stripe_customer_id
@@ -5733,7 +5723,7 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            cancellation_followup:
+            member_followup_status:
               sortable: true
               default_sort_order: asc
               align: ''
@@ -6923,10 +6913,10 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
-        cancellation_followup:
-          id: cancellation_followup
+        member_followup_status:
+          id: member_followup_status
           table: ms_member_success_snapshot
-          field: cancellation_followup
+          field: member_followup_status
           relationship: none
           group_type: group
           admin_label: ''
@@ -7076,7 +7066,7 @@ display:
             risk_score: risk_score
             engagement_combined: engagement_combined
             payment_risk_combined: payment_risk_combined
-            cancellation_followup: cancellation_followup
+            member_followup_status: member_followup_status
             last_visit_ts: last_visit_ts
             visit_count_30d: visit_count_30d
           default: risk_score
@@ -7123,7 +7113,7 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            cancellation_followup:
+            member_followup_status:
               sortable: true
               default_sort_order: asc
               align: ''

@@ -78,3 +78,11 @@ This module uses custom tables:
 - `ms_member_outreach_log` - Complete history of all contact attempts
 
 The snapshot builder service runs daily via cron or manually via Drush. This ensures fast reporting and Views performance without complex real-time queries.
+
+## Refactor Roadmap
+
+Incremental refactor plan is documented in:
+- `web/modules/custom/makerspace_member_success/docs/REFACTOR_PLAN.md`
+
+Production deployment checklist is documented in:
+- `web/modules/custom/makerspace_member_success/docs/PANTHEON_GO_LIVE_CHECKLIST.md`
