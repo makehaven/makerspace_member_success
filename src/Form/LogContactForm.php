@@ -60,7 +60,7 @@ class LogContactForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, FormStateInterface $form_state, User $user = NULL) {
+  public function buildForm(array $form, FormStateInterface $form_state, ?User $user = NULL) {
     if (!$user) {
       $this->messenger()->addError($this->t('Invalid user.'));
       return $form;
@@ -176,7 +176,7 @@ class LogContactForm extends FormBase {
 
     $form['actions']['submit'] = [
       '#type' => 'submit',
-      '#value' => $this->t('Log Contact'),
+      '#value' => $this->t('Log Interaction'),
       '#button_type' => 'primary',
     ];
 
@@ -316,6 +316,7 @@ class LogContactForm extends FormBase {
       'will_return' => $this->t('Member will return'),
       'confirmed_cancel' => $this->t('Confirmed cancellation'),
       'payment_updated' => $this->t('Payment updated'),
+      'all_good' => $this->t('Check-in conversation (all good)'),
       'needs_time' => $this->t('Needs time to decide'),
       'no_answer' => $this->t('No answer'),
       'left_message' => $this->t('Left message'),
@@ -324,7 +325,7 @@ class LogContactForm extends FormBase {
     ];
 
     $this->messenger()->addStatus(
-      $this->t('Contact logged for @name: @outcome', [
+      $this->t('Interaction logged for @name: @outcome', [
         '@name' => $user->getDisplayName(),
         '@outcome' => $outcome_labels[$outcome] ?? $outcome,
       ])
@@ -350,6 +351,7 @@ class LogContactForm extends FormBase {
       'no_answer' => 3,              // No answer → 3 days
       'will_return' => 14,           // Will return → 14 days
       'needs_time' => 14,            // Needs time → 14 days
+      'all_good' => 30,              // Positive check-in → follow up later
       'payment_updated' => -1,       // Payment updated → resolved
       'confirmed_cancel' => -1,      // Confirmed cancel → resolved
       'email_bounced' => 0,          // Email bounced → reappear immediately
@@ -471,6 +473,7 @@ class LogContactForm extends FormBase {
         $options += [
           'payment_updated' => $this->t('Spoke - Payment Updated'),
           'will_return' => $this->t('Spoke - Will Return'),
+          'all_good' => $this->t('Spoke - All Good (Check-in)'),
           'confirmed_cancel' => $this->t('Spoke - Confirmed Cancellation'),
           'needs_time' => $this->t('Spoke - Needs Time to Decide'),
           'no_answer' => $this->t('No Answer'),
@@ -482,6 +485,7 @@ class LogContactForm extends FormBase {
         $options += [
           'payment_updated' => $this->t('Replied - Payment Updated'),
           'will_return' => $this->t('Replied - Will Return'),
+          'all_good' => $this->t('Replied - All Good (Check-in)'),
           'confirmed_cancel' => $this->t('Replied - Confirmed Cancellation'),
           'needs_time' => $this->t('Replied - Needs Time to Decide'),
           'email_sent' => $this->t('Sent - Awaiting Reply'),
@@ -493,6 +497,7 @@ class LogContactForm extends FormBase {
         $options += [
           'payment_updated' => $this->t('Spoke - Payment Updated'),
           'will_return' => $this->t('Spoke - Will Return'),
+          'all_good' => $this->t('Spoke - All Good (Check-in)'),
           'confirmed_cancel' => $this->t('Spoke - Confirmed Cancellation'),
           'needs_time' => $this->t('Spoke - Needs Time to Decide'),
         ];
@@ -503,6 +508,7 @@ class LogContactForm extends FormBase {
         $options += [
           'payment_updated' => $this->t('Contact Made - Payment Updated'),
           'will_return' => $this->t('Contact Made - Will Return'),
+          'all_good' => $this->t('Contact Made - All Good (Check-in)'),
           'confirmed_cancel' => $this->t('Contact Made - Confirmed Cancellation'),
           'needs_time' => $this->t('Contact Made - Needs Time to Decide'),
           'no_answer' => $this->t('No Response'),

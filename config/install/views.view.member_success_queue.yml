@@ -848,6 +848,56 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
+        member_tenure:
+          id: member_tenure
+          table: ms_member_success_snapshot
+          field: member_tenure
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: member_tenure_field
+          label: 'Member Since'
+          exclude: false
+          alter:
+            alter_text: false
+            make_link: false
+            absolute: false
+            word_boundary: false
+            ellipsis: false
+            strip_tags: false
+            trim: false
+            html: false
+            text: ''
+            path: ''
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            preserve_tags: ''
+            help: ''
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
         risk_score:
           id: risk_score
           table: ms_member_success_snapshot
@@ -1006,6 +1056,56 @@ display:
             future_format: '@interval hence'
             past_format: '@interval ago'
             granularity: 2
+        last_door_entry:
+          id: last_door_entry
+          table: ms_member_success_snapshot
+          field: days_since_last_visit
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: days_since_last_visit_field
+          label: 'Last Door Entry'
+          exclude: false
+          alter:
+            alter_text: false
+            make_link: false
+            absolute: false
+            word_boundary: false
+            ellipsis: false
+            strip_tags: false
+            trim: false
+            html: false
+            text: ''
+            path: ''
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            preserve_tags: ''
+            help: ''
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
         orientation_date:
           id: orientation_date
           table: ms_member_success_snapshot
@@ -1241,7 +1341,7 @@ display:
       access:
         type: perm
         options:
-          perm: 'administer makerspace member success'
+          perm: 'access makerspace member success queues'
       cache:
         type: tag
         options: {  }
@@ -1676,7 +1776,7 @@ display:
               responsive: ''
             risk_score:
               sortable: true
-              default_sort_order: asc
+              default_sort_order: desc
               align: ''
               separator: ''
               empty_column: false
@@ -3005,7 +3105,7 @@ display:
               responsive: ''
             risk_score:
               sortable: true
-              default_sort_order: asc
+              default_sort_order: desc
               align: ''
               separator: ''
               empty_column: false
@@ -4289,8 +4389,8 @@ display:
           columns:
             name: name
             membership_type: membership_type
-            tenure_bucket: tenure_bucket
-            last_visit_ts: last_visit_ts
+            member_tenure: member_tenure
+            last_door_entry: last_door_entry
             visit_count_30d: visit_count_30d
             risk_score: risk_score
             action_retention: action_retention
@@ -4303,15 +4403,15 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            tenure_bucket:
-              sortable: true
+            member_tenure:
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
-            last_visit_ts:
-              sortable: true
+            last_door_entry:
+              sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
@@ -4326,7 +4426,7 @@ display:
               responsive: ''
             risk_score:
               sortable: true
-              default_sort_order: asc
+              default_sort_order: desc
               align: ''
               separator: ''
               empty_column: false
@@ -5663,7 +5763,7 @@ display:
               responsive: ''
             risk_score:
               sortable: true
-              default_sort_order: asc
+              default_sort_order: desc
               align: ''
               separator: ''
               empty_column: false

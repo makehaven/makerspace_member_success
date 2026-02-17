@@ -27,11 +27,8 @@ function makerspace_member_success_schema() {
   $schema_api = \Drupal::database()->schema();
   $schema_version = \Drupal::keyValue('system.schema')
     ->get('makerspace_member_success');
-  if ($schema_api->tableExists($table_name) && $schema_version === NULL) {
-    return $schema;
-  }
-
-  $schema[$table_name] = [
+  if (!$schema_api->tableExists($table_name) || $schema_version !== NULL) {
+    $schema[$table_name] = [
     'description' => 'Member-level success snapshots for onboarding, engagement, and retention.',
     'fields' => [
       'id' => [
@@ -221,6 +218,78 @@ function makerspace_member_success_schema() {
       'risk_score' => ['risk_score'],
       'is_latest' => ['is_latest'],
       'next_followup_date' => ['next_followup_date'],
+    ],
+    ];
+  }
+
+  $schema['ms_member_outreach_log'] = [
+    'description' => 'Log of all member outreach contact attempts for analytics.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+      ],
+      'uid' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'Member user ID.',
+      ],
+      'contact_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => TRUE,
+        'description' => 'Date contact was attempted (YYYY-MM-DD).',
+      ],
+      'contact_method' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'phone, email, in_person, other.',
+      ],
+      'outcome' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'Contact outcome.',
+      ],
+      'notes' => [
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => 'Staff notes about conversation.',
+      ],
+      'followup_status' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'description' => 'Followup status applied after contact.',
+      ],
+      'staff_uid' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Staff member who made contact.',
+      ],
+      'civicrm_activity_id' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'CiviCRM activity ID if created.',
+      ],
+      'sleep_days' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Sleep period applied (days).',
+      ],
+      'created_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'Unix timestamp.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'idx_uid' => ['uid'],
+      'idx_contact_date' => ['contact_date'],
+      'idx_outcome' => ['outcome'],
+      'idx_created_at' => ['created_at'],
     ],
   ];
 

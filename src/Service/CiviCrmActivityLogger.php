@@ -220,6 +220,7 @@ class CiviCrmActivityLogger {
       'will_return' => 'Member Will Return',
       'confirmed_cancel' => 'Confirmed Cancellation',
       'payment_updated' => 'Payment Method Updated',
+      'all_good' => 'Check-in Conversation (All Good)',
       'needs_time' => 'Needs Time to Decide',
       'no_answer' => 'No Answer',
       'left_message' => 'Left Voicemail/Message',

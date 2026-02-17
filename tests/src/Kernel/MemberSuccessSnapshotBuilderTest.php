@@ -21,6 +21,8 @@ class MemberSuccessSnapshotBuilderTest extends KernelTestBase {
     'profile',
     'node',
     'taxonomy',
+    'civicrm',
+    'civicrm_entity',
     'makerspace_member_success',
   ];
 
@@ -44,11 +46,6 @@ class MemberSuccessSnapshotBuilderTest extends KernelTestBase {
     $this->installEntitySchema('taxonomy_term');
     $this->installSchema('makerspace_member_success', ['ms_member_success_snapshot']);
 
-    // Mock CiviCRM service.
-    $civicrm = $this->getMockBuilder('Drupal\civicrm\Civicrm')
-      ->disableOriginalConstructor()
-      ->getMock();
-    $this->container->set('civicrm', $civicrm);
   }
 
   /**

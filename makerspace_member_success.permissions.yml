@@ -1,3 +1,11 @@
 administer makerspace member success:
   title: 'Administer Member Success settings'
   description: 'Manage thresholds, mappings, and settings for the member success console.'
+
+access makerspace member success queues:
+  title: 'Access Member Success queues'
+  description: 'View member success dashboard and intervention queues.'
+
+log makerspace member success contacts:
+  title: 'Log Member Success contacts'
+  description: 'Record outreach attempts and outcomes for members.'

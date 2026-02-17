@@ -182,3 +182,183 @@
   --gin-border-m: 8px;
   --gin-border-s: 4px;
 }
+
+/* Intervention performance fallback styles when Bootstrap is unavailable. */
+.ms-performance-dashboard .row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -0.75rem;
+  margin-right: -0.75rem;
+}
+
+.ms-performance-dashboard .g-3 {
+  row-gap: 1rem;
+}
+
+.ms-performance-dashboard [class*="col-"] {
+  width: 100%;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  .ms-performance-dashboard .col-md-2 { width: 16.6667%; }
+  .ms-performance-dashboard .col-md-3 { width: 25%; }
+  .ms-performance-dashboard .col-md-4 { width: 33.3333%; }
+}
+
+.ms-performance-dashboard .card {
+  background: var(--gin-bg-layer);
+  border: 1px solid var(--gin-border-color);
+  border-radius: var(--gin-border-m);
+}
+
+.ms-performance-dashboard .card-body {
+  padding: 1rem;
+}
+
+.ms-performance-dashboard .h-100 {
+  height: 100%;
+}
+
+.ms-performance-dashboard .table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ms-performance-dashboard .table th,
+.ms-performance-dashboard .table td {
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--gin-border-color-layer2);
+  text-align: left;
+}
+
+.ms-performance-dashboard .table th {
+  border-top: 0;
+  border-bottom: 2px solid var(--gin-border-color);
+}
+
+.ms-performance-dashboard .table-striped tbody tr:nth-child(odd) {
+  background: #fafafa;
+}
+
+.ms-performance-dashboard .btn {
+  display: inline-block;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--gin-border-s);
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ms-performance-dashboard .btn-primary {
+  background: var(--gin-color-primary);
+  color: #fff;
+}
+
+.ms-performance-dashboard .btn-secondary {
+  background: #6c757d;
+  color: #fff;
+}
+
+.ms-performance-dashboard .btn-success {
+  background: #198754;
+  color: #fff;
+}
+
+.ms-performance-dashboard .btn-outline-success {
+  border-color: #198754;
+  color: #198754;
+  background: transparent;
+}
+
+.ms-performance-dashboard .btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.ms-performance-dashboard .form-control {
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--gin-border-color);
+  border-radius: var(--gin-border-s);
+  box-sizing: border-box;
+}
+
+.ms-performance-dashboard .form-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+}
+
+.ms-performance-dashboard .alert {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--gin-border-color);
+  border-radius: var(--gin-border-m);
+}
+
+.ms-performance-dashboard .alert-info {
+  background: #eff7ff;
+}
+
+.ms-performance-dashboard .d-flex {
+  display: flex;
+}
+
+.ms-performance-dashboard .justify-content-between {
+  justify-content: space-between;
+}
+
+.ms-performance-dashboard .align-items-center {
+  align-items: center;
+}
+
+.ms-performance-dashboard .align-items-end {
+  align-items: flex-end;
+}
+
+.ms-performance-dashboard .text-end {
+  text-align: right;
+}
+
+.ms-performance-dashboard .text-center {
+  text-align: center;
+}
+
+.ms-performance-dashboard .text-muted {
+  color: var(--gin-color-text-light);
+}
+
+.ms-performance-dashboard .display-5 {
+  font-size: 2.5rem;
+}
+
+.ms-performance-dashboard .fw-bold {
+  font-weight: 700;
+}
+
+.ms-performance-dashboard .text-uppercase {
+  text-transform: uppercase;
+}
+
+.ms-performance-dashboard .mb-0 { margin-bottom: 0; }
+.ms-performance-dashboard .mb-1 { margin-bottom: 0.25rem; }
+.ms-performance-dashboard .mb-2 { margin-bottom: 0.5rem; }
+.ms-performance-dashboard .mb-3 { margin-bottom: 1rem; }
+.ms-performance-dashboard .mb-4 { margin-bottom: 1.5rem; }
+.ms-performance-dashboard .mt-2 { margin-top: 0.5rem; }
+.ms-performance-dashboard .mt-4 { margin-top: 1.5rem; }
+.ms-performance-dashboard .p-3 { padding: 1rem; }
+.ms-performance-dashboard .p-4 { padding: 1.5rem; }
+.ms-performance-dashboard .small { font-size: 0.875rem; }
+
+.ms-performance-dashboard .text-primary { color: var(--gin-color-primary); }
+.ms-performance-dashboard .text-success { color: #198754; }
+.ms-performance-dashboard .text-info { color: #0dcaf0; }
+.ms-performance-dashboard .text-warning { color: #f5ae07; }
+.ms-performance-dashboard .border-primary { border-color: var(--gin-color-primary) !important; }
+.ms-performance-dashboard .border-success { border-color: #198754 !important; }
+.ms-performance-dashboard .border-info { border-color: #0dcaf0 !important; }
+.ms-performance-dashboard .border-warning { border-color: #f5ae07 !important; }

@@ -228,7 +228,10 @@ class MemberSuccessDashboardController extends ControllerBase {
     $monthly_trends = $this->recoveryMetrics->getMonthlyTrends(6);
     $all_metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
 
-    $build = [];
+    $build = [
+      '#prefix' => '<div class="ms-performance-dashboard">',
+      '#suffix' => '</div>',
+    ];
 
     // Page title
     $build['title'] = [
@@ -253,9 +256,9 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['alert', 'alert-info', 'mb-4']],
       'content' => [
         '#markup' => $this->t('<strong>How metrics are calculated:</strong><ul class="mb-0 mt-2">
-          <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for all members who were successfully resolved (payment updated or confirmed cancellation)</li>
-          <li><strong>Resolution Rate:</strong> Percentage of contacted members who had successful outcomes (payment updated or confirmed cancellation)</li>
-          <li><strong>Avg Days to Resolution:</strong> Average time from first contact to successful resolution across all resolved members</li>
+          <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach (payment updated)</li>
+          <li><strong>Resolution Rate:</strong> Percentage of contacted members retained after outreach (payment updated)</li>
+          <li><strong>Avg Days to Resolution:</strong> Average time from first contact to retention outcome across retained members</li>
           <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, in-person)</li>
           </ul>'),
       ],
@@ -270,53 +273,45 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['roi_section']['total_at_risk'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
-      'card' => [
-        '#markup' => $this->renderMetricCard(
-          'Members at Risk',
-          $retention_value['total_members_at_risk'],
-          'primary',
-          NULL
-        ),
-      ],
+      '#markup' => $this->renderMetricCard(
+        'Members at Risk',
+        $retention_value['total_members_at_risk'],
+        'primary',
+        NULL
+      ),
     ];
 
     $build['roi_section']['value_saved'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
-      'card' => [
-        '#markup' => $this->renderMetricCard(
-          'Annual Value Saved',
-          '$' . number_format($retention_value['annual_value_saved'], 0),
-          'success',
-          NULL
-        ),
-      ],
+      '#markup' => $this->renderMetricCard(
+        'Annual Value Saved',
+        '$' . number_format($retention_value['annual_value_saved'], 0),
+        'success',
+        NULL
+      ),
     ];
 
     $build['roi_section']['resolution_rate'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
-      'card' => [
-        '#markup' => $this->renderMetricCard(
-          'Resolution Rate',
-          $all_metrics['resolution_rate']['rate'] . '%',
-          'info',
-          $all_metrics['resolution_rate']['resolved'] . ' of ' . $all_metrics['resolution_rate']['total'] . ' resolved'
-        ),
-      ],
+      '#markup' => $this->renderMetricCard(
+        'Resolution Rate',
+        $all_metrics['resolution_rate']['rate'] . '%',
+        'info',
+        $all_metrics['resolution_rate']['resolved'] . ' of ' . $all_metrics['resolution_rate']['total'] . ' resolved'
+      ),
     ];
 
     $build['roi_section']['avg_days'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
-      'card' => [
-        '#markup' => $this->renderMetricCard(
-          'Avg Days to Resolution',
-          round($all_metrics['avg_days_to_resolution'], 1),
-          'warning',
-          NULL
-        ),
-      ],
+      '#markup' => $this->renderMetricCard(
+        'Avg Days to Resolution',
+        round($all_metrics['avg_days_to_resolution'], 1),
+        'warning',
+        NULL
+      ),
     ];
 
     // Staff Performance Table
@@ -479,13 +474,13 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dd>Count of unique members who have been contacted for recovery/retention (distinct UIDs in outreach log).</dd>
 
           <dt>Annual Value Saved</dt>
-          <dd>For each member with outcome = "payment_updated" or "confirmed_cancel", we retrieve their monthly payment amount and multiply by 12. These annual values are summed across all resolved members.</dd>
+          <dd>For each member with outcome = "payment_updated", we retrieve their monthly payment amount and multiply by 12. These annual values are summed across retained members.</dd>
 
           <dt>Resolution Rate</dt>
-          <dd>(Members with successful outcomes ÷ Total members contacted) × 100. Successful outcomes = "payment_updated" or "confirmed_cancel".</dd>
+          <dd>(Members with successful outcomes ÷ Total members contacted) × 100. Successful outcomes = "payment_updated". Confirmed cancellations are tracked but not counted as retained.</dd>
 
           <dt>Avg Days to Resolution</dt>
-          <dd>For each resolved member, calculate days from their first contact to their last successful contact. Average these values across all resolved members.</dd>
+          <dd>For each retained member, calculate days from their first contact to their successful retention contact. Average these values across retained members.</dd>
 
           <dt>Staff Performance Metrics</dt>
           <dd>
@@ -505,13 +500,13 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dd>All metrics recalculated for each calendar month based on contact_date field. Shows performance changes over time.</dd>
         </dl>
 
-        <h5>What Counts as "Resolved"?</h5>
-        <p>A member is considered resolved when their outcome is recorded as:</p>
+        <h5>What Counts as "Retained"?</h5>
+        <p>A member is considered retained when their outcome is recorded as:</p>
         <ul>
           <li><strong>payment_updated:</strong> Member fixed their payment issue</li>
-          <li><strong>confirmed_cancel:</strong> Member confirmed intentional cancellation (prevents further outreach)</li>
+          <li><strong>confirmed_cancel:</strong> Tracked as contacted/lost, and excluded from retention success</li>
         </ul>
-        <p>Other outcomes (no_response, left_message, etc.) do NOT count as resolved.</p>
+        <p>Other outcomes (no_response, left_message, etc.) do NOT count as retained.</p>
 
         <h5>Limitations</h5>
         <ul>
@@ -544,10 +539,10 @@ class MemberSuccessDashboardController extends ControllerBase {
     $variant = $color_classes[$color] ?? 'primary';
 
     return '
-      <div class="card h-100 border-' . $variant . ' shadow-sm">
-        <div class="card-body text-center p-4">
+      <div class="card h-100 border-' . $variant . ' shadow-sm" style="border-width: 2px !important;">
+        <div class="card-body text-center p-4" style="background-color: #f8f9fa;">
           <h6 class="text-uppercase text-muted fw-bold mb-3" style="font-size: 0.75rem; letter-spacing: 0.5px;">' . $title . '</h6>
-          <div class="display-5 fw-bold text-' . $variant . ' mb-1">' . $value . '</div>
+          <div class="display-5 fw-bold text-' . $variant . ' mb-1" style="font-size: 2.5rem;">' . $value . '</div>
           ' . $subtitle_html . '
         </div>
       </div>';
@@ -557,17 +552,19 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Build filter form HTML.
    */
   private function buildFilterForm($start_date, $end_date) {
-    $current_path = \Drupal::request()->getPathInfo();
+    $current_path = htmlspecialchars((string) \Drupal::request()->getPathInfo(), ENT_QUOTES, 'UTF-8');
+    $start_date = htmlspecialchars((string) ($start_date ?? ''), ENT_QUOTES, 'UTF-8');
+    $end_date = htmlspecialchars((string) ($end_date ?? ''), ENT_QUOTES, 'UTF-8');
 
     $html = '
       <form method="get" action="' . $current_path . '" class="row g-3 align-items-end">
         <div class="col-md-3">
           <label class="form-label">Start Date</label>
-          <input type="date" name="start_date" class="form-control" value="' . ($start_date ?? '') . '">
+          <input type="date" name="start_date" class="form-control" value="' . $start_date . '">
         </div>
         <div class="col-md-3">
           <label class="form-label">End Date</label>
-          <input type="date" name="end_date" class="form-control" value="' . ($end_date ?? '') . '">
+          <input type="date" name="end_date" class="form-control" value="' . $end_date . '">
         </div>
         <div class="col-md-2">
           <button type="submit" class="btn btn-primary">Filter</button>

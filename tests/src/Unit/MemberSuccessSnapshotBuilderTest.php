@@ -76,8 +76,24 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     
     [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30], $now);
     
-    $this->assertEquals(20, $score);
-    $this->assertContains('inactive', $reasons);
+    $this->assertEquals(10, $score);
+    $this->assertContains('inactive_30', $reasons);
+  }
+
+  /**
+   * Tests tiered retention inactivity scoring.
+   */
+  public function testRiskScoreInactiveRetentionTiered() {
+    $now = time();
+    $data = [
+      'stage' => 'retention',
+      'last_visit_ts' => $now - (100 * 86400), // 100 days ago
+    ];
+
+    [$score, $reasons] = $this->builder->publicBuildRiskIndicators($data, 28, 180, [30, 60, 90], $now);
+
+    $this->assertEquals(30, $score);
+    $this->assertContains('inactive_90', $reasons);
   }
 
   /**

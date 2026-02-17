@@ -175,6 +175,23 @@ class MemberSuccessSnapshotBuilder {
       $previous['last_contact_date'] = NULL;
       $previous['next_followup_date'] = NULL;
       $previous['contact_count'] = 0;
+
+      // Reset suppressing followup flags when a member enters a new stage.
+      // This enables fresh outreach workflows (e.g. retention exhausted ->
+      // recovery due to payment failure).
+      if (in_array((string) $cancellation_followup, ['outreach_exhausted', 'confirmed_cancellation'], TRUE)) {
+        $cancellation_followup = NULL;
+
+        $user = $this->entityTypeManager->getStorage('user')->load($uid);
+        if ($user && $user->hasField('field_chargebee_followup')) {
+          $user->set('field_chargebee_followup', NULL);
+          $user->save();
+        }
+
+        $this->logger->info('Reset followup suppression flag for user @uid due to stage transition.', [
+          '@uid' => $uid,
+        ]);
+      }
     }
 
     return [
@@ -319,7 +336,7 @@ class MemberSuccessSnapshotBuilder {
    */
   protected function loadProfileData(int $uid): array {
     $query = $this->database->select('profile', 'p');
-    $query->fields('p', ['profile_id']);
+    $query->fields('p', ['profile_id', 'created']);
     $query->condition('p.uid', $uid);
     $query->condition('p.type', 'main');
     $query->condition('p.is_default', 1);
@@ -338,8 +355,24 @@ class MemberSuccessSnapshotBuilder {
     $query->addField('term', 'name', 'membership_type');
 
     $record = $query->execute()->fetchAssoc() ?: [];
+    $join_date = $record['join_date'] ?? NULL;
+    if (empty($join_date) && !empty($record['created'])) {
+      $join_date = date('Y-m-d', (int) $record['created']);
+    }
+    if (empty($join_date)) {
+      $user_created = $this->database->select('users_field_data', 'u')
+        ->fields('u', ['created'])
+        ->condition('u.uid', $uid)
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+      if (!empty($user_created)) {
+        $join_date = date('Y-m-d', (int) $user_created);
+      }
+    }
+
     return [
-      'join_date' => $record['join_date'] ?? NULL,
+      'join_date' => $join_date,
       'serial_present' => !empty($record['profile_serial']),
       'payment_status' => $record['payment_status'] ?? NULL,
       'membership_type' => $record['membership_type'] ?? NULL,
@@ -532,14 +565,29 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
-    if ($data['stage'] === 'retention' && !empty($data['last_visit_ts'])) {
-      $max_days = 0;
-      foreach ($recency_days as $days) {
-        $max_days = max($max_days, (int) $days);
-      }
-      if ($max_days > 0 && $now_ts - $data['last_visit_ts'] >= ($max_days * 86400)) {
-        $score += 20;
-        $reasons[] = 'inactive';
+    if ($data['stage'] === 'retention') {
+      // Retention risk escalates by inactivity tier.
+      // Example tiers [30, 60, 90] => +10 / +20 / +30.
+      $thresholds = array_values(array_unique(array_filter(array_map('intval', $recency_days), static fn($d) => $d > 0)));
+      sort($thresholds);
+
+      if (!empty($thresholds)) {
+        $days_since_last_visit = !empty($data['last_visit_ts'])
+          ? (int) floor(($now_ts - (int) $data['last_visit_ts']) / 86400)
+          : PHP_INT_MAX;
+
+        $highest_tier = -1;
+        foreach ($thresholds as $index => $threshold_days) {
+          if ($days_since_last_visit >= $threshold_days) {
+            $highest_tier = $index;
+          }
+        }
+
+        if ($highest_tier >= 0) {
+          // Cap retention inactivity contribution at 40.
+          $score += min(10 * ($highest_tier + 1), 40);
+          $reasons[] = 'inactive_' . $thresholds[$highest_tier];
+        }
       }
     }
 

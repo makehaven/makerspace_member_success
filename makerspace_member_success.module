@@ -275,6 +275,24 @@ function makerspace_member_success_views_data(): array {
     ],
   ];
 
+  // Pseudo-field for Member Tenure.
+  $data['ms_member_success_snapshot']['member_tenure'] = [
+    'title' => t('Member Tenure'),
+    'help' => t('Shows how long ago the member joined.'),
+    'field' => [
+      'id' => 'member_tenure_field',
+    ],
+  ];
+
+  // Pseudo-field for Days Since Last Visit.
+  $data['ms_member_success_snapshot']['days_since_last_visit'] = [
+    'title' => t('Last Door Entry'),
+    'help' => t('Shows days since last door access event.'),
+    'field' => [
+      'id' => 'days_since_last_visit_field',
+    ],
+  ];
+
   // Pseudo-field for Member Name with IDs
   $data['ms_member_success_snapshot']['member_name_with_ids'] = [
     'title' => t('Member Name with IDs'),
@@ -344,6 +362,14 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
   $alias = $query->ensureTable('ms_member_success_snapshot');
   $query->addWhere(0, "{$alias}.is_latest", 1);
 
+  // Default queue ordering should always be highest risk first unless the
+  // user explicitly chose a table sort via query args.
+  $request = \Drupal::request();
+  if (!$request->query->has('order') && !$request->query->has('sort')) {
+    $query->orderby = [];
+    $query->addOrderBy($alias, 'risk_score', 'DESC');
+  }
+
   // Hide members in sleep period (next_followup_date > today)
   // OR where outreach_status indicates permanent resolution
   $today = date('Y-m-d');
@@ -354,9 +380,18 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
   $query->addWhere($or_group, "{$alias}.next_followup_date", NULL, 'IS NULL');
   $query->addWhere($or_group, "{$alias}.next_followup_date", $today, '<=');
 
-  // Also hide if outreach_status is permanently resolved
+  // Hide permanently closed outreach items, but keep rows where status is NULL.
+  // Use both snapshot outreach_status and cancellation_followup so manual
+  // "outreach_exhausted" / "confirmed_cancellation" flags suppress queue items.
   $resolved_statuses = ['confirmed_cancellation', 'outreach_exhausted'];
-  $query->addWhere($group, "{$alias}.outreach_status", $resolved_statuses, 'NOT IN');
+
+  $outreach_status_group = $query->setWhereGroup('OR', $group);
+  $query->addWhere($outreach_status_group, "{$alias}.outreach_status", NULL, 'IS NULL');
+  $query->addWhere($outreach_status_group, "{$alias}.outreach_status", $resolved_statuses, 'NOT IN');
+
+  $followup_status_group = $query->setWhereGroup('OR', $group);
+  $query->addWhere($followup_status_group, "{$alias}.cancellation_followup", NULL, 'IS NULL');
+  $query->addWhere($followup_status_group, "{$alias}.cancellation_followup", $resolved_statuses, 'NOT IN');
 }
 
 /**
@@ -383,7 +418,7 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
     '<strong>KEY</strong>=Missing Serial | ' .
     '<strong>NO-BADGE</strong>=0 Badges (30d) | ' .
     '<strong>STALLED</strong>=&lt;4 Badges (90d) | ' .
-    '<strong>ABSENT</strong>=No Visits (30d+)' .
+    '<strong>ABSENT</strong>=Inactivity Tier Triggered' .
     '</div>';
 
   switch ($view->current_display) {
@@ -432,12 +467,15 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
           '<h5>❤️ Retention Queue - Keep Long-Term Members Engaged</h5>' .
           '<p><strong>What makes someone actionable here?</strong> Risk score ≥20 means:</p>' .
           '<ul>' .
-          '<li>🟤 No visits in 30+ days (+20 points) - Stopped coming to space</li>' .
+          '<li>🟡 30+ days since last visit (+10 points)</li>' .
+          '<li>🟠 60+ days since last visit (+20 points)</li>' .
+          '<li>🔴 90+ days since last visit (+30 points)</li>' .
           '</ul>' .
-          '<p><strong>Priority:</strong> Longest absence shown first. Checking in shows we care!</p>' .
+          '<p><strong>Priority:</strong> Highest risk shown first, then longest absence. Start with 90+ days.</p>' .
           '<p><strong>Your Goal:</strong> Re-engage members who are drifting away.</p>' .
-          '<p><strong>Actions:</strong> Absent 60+ days → "We Miss You" email | Absent 30-60 days → Check-in call | Visiting → Healthy, keep monitoring</p>' .
-          '<p class="mb-0"><em>Note: Some absence is seasonal (summer, holidays). Focus on 60+ days first.</em></p>' .
+          '<p><strong>Tenure column:</strong> <code>new_member</code> means joined within configured new-member window (default 180 days); <code>sustaining</code> means longer-term member. Blank tenure usually means join date is missing on the member\'s main profile.</p>' .
+          '<p><strong>Known low-activity but healthy members:</strong> Use <strong>Log Contact</strong> and check <strong>Mark as Outreach Exhausted</strong>. That suppresses repeat outreach in this stage.</p>' .
+          '<p class="mb-0"><em>Important: suppression resets automatically if the member moves into a new stage (for example, payment failure in Recovery).</em></p>' .
           '</div>',
         '#weight' => -100,
       ];

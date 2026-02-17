@@ -27,6 +27,9 @@ makerspace_member_success.settings:
     civicrm_preferred_method_field:
       type: string
       label: 'CiviCRM preferred communication method field'
+    civicrm_cancellation_followup_field:
+      type: string
+      label: 'CiviCRM cancellation followup field'
     civicrm_do_not_fields:
       type: sequence
       label: 'CiviCRM do-not contact fields'
@@ -37,3 +40,27 @@ makerspace_member_success.settings:
       label: 'CiviCRM activity types for outreach'
       sequence:
         type: string
+    template_onboarding:
+      type: string
+      label: 'CiviCRM template for onboarding stage'
+    template_engagement:
+      type: string
+      label: 'CiviCRM template for engagement stage'
+    template_retention:
+      type: string
+      label: 'CiviCRM template for retention stage'
+    template_recovery:
+      type: string
+      label: 'CiviCRM template for recovery stage'
+    civicrm_activity_type_phone:
+      type: integer
+      label: 'CiviCRM activity type for phone outreach'
+    civicrm_activity_type_email:
+      type: integer
+      label: 'CiviCRM activity type for email outreach'
+    civicrm_activity_type_in_person:
+      type: integer
+      label: 'CiviCRM activity type for in-person outreach'
+    civicrm_activity_type_other:
+      type: integer
+      label: 'CiviCRM activity type for other outreach'

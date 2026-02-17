@@ -37,7 +37,7 @@ class RecoveryMetrics {
       SELECT
         COUNT(DISTINCT uid) as total,
         COUNT(DISTINCT CASE
-          WHEN outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN outcome = 'payment_updated'
           THEN uid
         END) as resolved
       FROM {ms_member_outreach_log}
@@ -71,7 +71,7 @@ class RecoveryMetrics {
         WHERE uid IN (
           SELECT DISTINCT uid
           FROM {ms_member_outreach_log}
-          WHERE outcome IN ('payment_updated', 'confirmed_cancel')
+          WHERE outcome = 'payment_updated'
         )
         GROUP BY uid
       ) resolved_members
@@ -104,7 +104,7 @@ class RecoveryMetrics {
       FROM (
         SELECT
           l.uid,
-          MAX(CASE WHEN l.outcome IN ('payment_updated', 'confirmed_cancel') THEN 1 ELSE 0 END) as resolved
+          MAX(CASE WHEN l.outcome = 'payment_updated' THEN 1 ELSE 0 END) as resolved
         FROM ({$high_attempt_query}) high
         JOIN {ms_member_outreach_log} l ON high.uid = l.uid
         GROUP BY l.uid
@@ -136,14 +136,14 @@ class RecoveryMetrics {
         SELECT
           uid,
           DATEDIFF(
-            MAX(CASE WHEN outcome IN ('payment_updated', 'confirmed_cancel') THEN contact_date END),
+            MAX(CASE WHEN outcome = 'payment_updated' THEN contact_date END),
             MIN(contact_date)
           ) as days_to_resolution
         FROM {ms_member_outreach_log}
         WHERE uid IN (
           SELECT DISTINCT uid
           FROM {ms_member_outreach_log}
-          WHERE outcome IN ('payment_updated', 'confirmed_cancel')
+          WHERE outcome = 'payment_updated'
         )
         GROUP BY uid
       ) resolved
@@ -168,7 +168,7 @@ class RecoveryMetrics {
         contact_method,
         COUNT(DISTINCT uid) as total_contacted,
         COUNT(DISTINCT CASE
-          WHEN outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN outcome = 'payment_updated'
           THEN uid
         END) as resolved
       FROM {ms_member_outreach_log}
@@ -277,7 +277,7 @@ class RecoveryMetrics {
         u.name as staff_name,
         COUNT(DISTINCT log.uid) as members_contacted,
         COUNT(DISTINCT CASE
-          WHEN log.outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN log.outcome = 'payment_updated'
           THEN log.uid
         END) as resolved,
         COUNT(*) as total_attempts
@@ -306,12 +306,12 @@ class RecoveryMetrics {
           staff_uid,
           uid,
           DATEDIFF(
-            MAX(CASE WHEN outcome IN ('payment_updated', 'confirmed_cancel') THEN contact_date END),
+            MAX(CASE WHEN outcome = 'payment_updated' THEN contact_date END),
             MIN(contact_date)
           ) as days_to_resolution
         FROM {ms_member_outreach_log}
         WHERE staff_uid IS NOT NULL
-          AND outcome IN ('payment_updated', 'confirmed_cancel')" . $date_where . "
+          AND outcome = 'payment_updated'" . $date_where . "
         GROUP BY staff_uid, uid
       ) as member_resolution_times
       WHERE days_to_resolution IS NOT NULL
@@ -360,7 +360,7 @@ class RecoveryMetrics {
         COUNT(DISTINCT uid) as members_contacted,
         COUNT(*) as total_attempts,
         COUNT(DISTINCT CASE
-          WHEN outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN outcome = 'payment_updated'
           THEN uid
         END) as resolved,
         COUNT(DISTINCT DATE(contact_date)) as active_days,
@@ -410,7 +410,7 @@ class RecoveryMetrics {
         log.uid,
         u.uid as user_id,
         MAX(CASE
-          WHEN log.outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN log.outcome = 'payment_updated'
           THEN 1 ELSE 0
         END) as was_resolved
       FROM {ms_member_outreach_log} log
@@ -476,7 +476,7 @@ class RecoveryMetrics {
         DATE_FORMAT(contact_date, '%Y-%m') as month,
         COUNT(DISTINCT uid) as members_contacted,
         COUNT(DISTINCT CASE
-          WHEN outcome IN ('payment_updated', 'confirmed_cancel')
+          WHEN outcome = 'payment_updated'
           THEN uid
         END) as resolved,
         COUNT(*) as total_attempts

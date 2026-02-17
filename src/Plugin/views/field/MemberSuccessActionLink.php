@@ -172,8 +172,11 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // Log Contact button (renamed for clarity)
     if ($uid) {
         try {
-            $log_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid])->toString();
-            $buttons[] = '<a href="' . $log_url . '" class="btn btn-sm btn-success text-white" title="Record that you contacted this member">Log Contact</a>';
+            $log_contact_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
+            if ($log_contact_url->access(\Drupal::currentUser())) {
+              $log_url = $log_contact_url->toString();
+              $buttons[] = '<a href="' . $log_url . '" class="btn btn-sm btn-success text-white" title="Record an outreach interaction with this member">Log Interaction</a>';
+            }
         } catch (\Exception $e) {
             // Skip if route fails
         }

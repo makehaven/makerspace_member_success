@@ -12,27 +12,36 @@ makerspace_member_success.dashboard:
     _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::build'
     _title: 'Member Success Dashboard'
   requirements:
-    _permission: 'administer makerspace member success'
+    _permission: 'access makerspace member success queues'
 
 makerspace_member_success.log_contact:
   path: '/admin/makerspace/member-success/log-contact/{user}'
   defaults:
     _form: '\Drupal\makerspace_member_success\Form\LogContactForm'
-    _title: 'Log Member Contact'
+    _title: 'Log Member Interaction'
   requirements:
-    _permission: 'administer makerspace member success'
+    _permission: 'log makerspace member success contacts'
   options:
     parameters:
       user:
         type: entity:user
 
+makerspace_member_success.intervention_performance:
+  path: '/admin/makerspace/member-success/intervention-performance'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::contractorPerformance'
+    _title: 'Intervention Performance'
+  requirements:
+    _permission: 'access makerspace member success queues'
+
+# Legacy redirect - old URL
 makerspace_member_success.contractor_performance:
   path: '/admin/makerspace/member-success/contractor-performance'
   defaults:
     _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::contractorPerformance'
     _title: 'Intervention Performance'
   requirements:
-    _permission: 'administer makerspace member success'
+    _permission: 'access makerspace member success queues'
 
 makerspace_member_success.export_staff_performance:
   path: '/admin/makerspace/member-success/export/staff-performance'

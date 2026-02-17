@@ -25,6 +25,9 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
     'user',
     'system',
     'field',
+    'views',
+    'civicrm',
+    'civicrm_entity',
   ];
 
   /**
@@ -49,8 +52,8 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
 
     // Create admin user with permission to log contacts
     $this->adminUser = $this->drupalCreateUser([
-      'access member success queues',
-      'log member contacts',
+      'access makerspace member success queues',
+      'log makerspace member success contacts',
       'access user profiles',
     ]);
 
@@ -70,7 +73,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($this->adminUser);
 
     // Navigate to log contact form
-    $this->drupalGet('/makerspace/member-success/log-contact/' . $this->memberUser->id());
+    $this->drupalGet('/admin/makerspace/member-success/log-contact/' . $this->memberUser->id());
     $this->assertSession()->statusCodeEquals(200);
 
     // Verify phone number display (if implemented)
@@ -128,7 +131,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
   public function testLogEmailContactSent() {
     $this->drupalLogin($this->adminUser);
 
-    $this->drupalGet('/makerspace/member-success/log-contact/' . $this->memberUser->id());
+    $this->drupalGet('/admin/makerspace/member-success/log-contact/' . $this->memberUser->id());
 
     $edit = [
       'contact_method' => 'email',
@@ -162,7 +165,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
   public function testLogContactPaymentUpdatedResolved() {
     $this->drupalLogin($this->adminUser);
 
-    $this->drupalGet('/makerspace/member-success/log-contact/' . $this->memberUser->id());
+    $this->drupalGet('/admin/makerspace/member-success/log-contact/' . $this->memberUser->id());
 
     $edit = [
       'contact_method' => 'phone',
@@ -195,7 +198,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
   public function testLogContactManualExhausted() {
     $this->drupalLogin($this->adminUser);
 
-    $this->drupalGet('/makerspace/member-success/log-contact/' . $this->memberUser->id());
+    $this->drupalGet('/admin/makerspace/member-success/log-contact/' . $this->memberUser->id());
 
     $edit = [
       'contact_method' => 'phone',
@@ -217,7 +220,7 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
   public function testConditionalOutcomeOptions() {
     $this->drupalLogin($this->adminUser);
 
-    $this->drupalGet('/makerspace/member-success/log-contact/' . $this->memberUser->id());
+    $this->drupalGet('/admin/makerspace/member-success/log-contact/' . $this->memberUser->id());
 
     // Verify phone options are present
     $this->assertSession()->optionExists('outcome', 'will_return');

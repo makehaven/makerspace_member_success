@@ -44,6 +44,7 @@ class RiskReasonsField extends FieldPluginBase {
     // Map reasons to short codes
     $code_map = [
       'payment_issue' => 'PAY',
+      'payment_failed' => 'PAY',
       'door_badge_pending' => 'DOOR',
       'missing_serial' => 'KEY',
       'no_badge_1' => 'NO-BADGE',
@@ -55,6 +56,9 @@ class RiskReasonsField extends FieldPluginBase {
     foreach ($risk_reasons as $reason) {
       if (isset($code_map[$reason])) {
         $codes[] = $code_map[$reason];
+      }
+      elseif (strpos($reason, 'inactive_') === 0) {
+        $codes[] = 'ABSENT';
       }
     }
 

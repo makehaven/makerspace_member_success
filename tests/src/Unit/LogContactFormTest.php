@@ -4,6 +4,7 @@ namespace Drupal\Tests\makerspace_member_success\Unit;
 
 use Drupal\Tests\UnitTestCase;
 use Drupal\makerspace_member_success\Form\LogContactForm;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Unit tests for LogContactForm logic.
@@ -11,6 +12,17 @@ use Drupal\makerspace_member_success\Form\LogContactForm;
  * @group makerspace_member_success
  */
 class LogContactFormTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $container = new ContainerBuilder();
+    $container->set('string_translation', $this->getStringTranslationStub());
+    \Drupal::setContainer($container);
+  }
 
   /**
    * Test outcome to followup status mapping.
@@ -33,7 +45,7 @@ class LogContactFormTest extends UnitTestCase {
   /**
    * Data provider for outcome to followup status mapping tests.
    */
-  public function outcomeToFollowupStatusProvider() {
+  public static function outcomeToFollowupStatusProvider() {
     return [
       // Outcome, mark_exhausted, expected_status
       ['payment_updated', FALSE, NULL],
@@ -44,6 +56,7 @@ class LogContactFormTest extends UnitTestCase {
       ['left_message', FALSE, 'outreach_active'],
       ['email_sent', FALSE, 'outreach_active'],
       ['email_bounced', FALSE, 'outreach_active'],
+      ['all_good', FALSE, NULL],
       // Manual override
       ['will_return', TRUE, 'outreach_exhausted'],
       ['payment_updated', TRUE, 'outreach_exhausted'],
@@ -71,7 +84,7 @@ class LogContactFormTest extends UnitTestCase {
   /**
    * Data provider for sleep period tests.
    */
-  public function sleepPeriodProvider() {
+  public static function sleepPeriodProvider() {
     return [
       // Outcome, expected_days
       ['left_message', 7],
@@ -79,6 +92,7 @@ class LogContactFormTest extends UnitTestCase {
       ['no_answer', 3],
       ['will_return', 14],
       ['needs_time', 14],
+      ['all_good', 30],
       ['payment_updated', -1],  // Resolved
       ['confirmed_cancel', -1], // Resolved
       ['email_bounced', 0],     // Immediate reappear
@@ -110,12 +124,12 @@ class LogContactFormTest extends UnitTestCase {
   /**
    * Data provider for outcome options tests.
    */
-  public function outcomeOptionsProvider() {
+  public static function outcomeOptionsProvider() {
     return [
-      ['phone', ['payment_updated', 'will_return', 'no_answer', 'left_message']],
-      ['email', ['payment_updated', 'will_return', 'email_sent', 'email_bounced']],
-      ['in_person', ['payment_updated', 'will_return', 'confirmed_cancel', 'needs_time']],
-      ['other', ['payment_updated', 'will_return', 'no_answer', 'left_message']],
+      ['phone', ['payment_updated', 'will_return', 'all_good', 'no_answer', 'left_message']],
+      ['email', ['payment_updated', 'will_return', 'all_good', 'email_sent', 'email_bounced']],
+      ['in_person', ['payment_updated', 'will_return', 'all_good', 'confirmed_cancel', 'needs_time']],
+      ['other', ['payment_updated', 'will_return', 'all_good', 'no_answer', 'left_message']],
     ];
   }
 
