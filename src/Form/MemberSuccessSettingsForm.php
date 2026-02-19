@@ -103,6 +103,16 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => implode(', ', (array) $config->get('retention_recency_days')),
     ];
 
+    $form['thresholds']['outreach_send_hour_local'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Default outreach send hour (local time)'),
+      '#description' => $this->t('Newly queued items default to this hour (0-23) to avoid overnight sends.'),
+      '#default_value' => (int) ($config->get('outreach_send_hour_local') ?? 10),
+      '#min' => 0,
+      '#max' => 23,
+      '#required' => TRUE,
+    ];
+
     $form['email_templates'] = [
       '#type' => 'details',
       '#title' => $this->t('Email Templates (CiviCRM)'),
@@ -136,6 +146,41 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Recovery Template'),
       '#options' => $template_options,
       '#default_value' => $config->get('template_recovery'),
+    ];
+
+    $form['sms_templates'] = [
+      '#type' => 'details',
+      '#title' => $this->t('SMS Templates (CiviCRM)'),
+      '#description' => $this->t('Optional: select a default SMS template to preload when clicking SMS.'),
+      '#open' => FALSE,
+    ];
+
+    $form['sms_templates']['sms_template_onboarding'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Onboarding SMS Template'),
+      '#options' => $template_options,
+      '#default_value' => $config->get('sms_template_onboarding'),
+    ];
+
+    $form['sms_templates']['sms_template_engagement'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Engagement SMS Template'),
+      '#options' => $template_options,
+      '#default_value' => $config->get('sms_template_engagement'),
+    ];
+
+    $form['sms_templates']['sms_template_retention'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Retention SMS Template'),
+      '#options' => $template_options,
+      '#default_value' => $config->get('sms_template_retention'),
+    ];
+
+    $form['sms_templates']['sms_template_recovery'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Recovery SMS Template'),
+      '#options' => $template_options,
+      '#default_value' => $config->get('sms_template_recovery'),
     ];
 
     $form['advanced'] = [
@@ -195,10 +240,15 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('badge_four_days', (int) $form_state->getValue('badge_four_days'))
       ->set('new_member_days', (int) $form_state->getValue('new_member_days'))
       ->set('retention_recency_days', $retention_days)
+      ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))
       ->set('template_engagement', $form_state->getValue('template_engagement'))
       ->set('template_retention', $form_state->getValue('template_retention'))
       ->set('template_recovery', $form_state->getValue('template_recovery'))
+      ->set('sms_template_onboarding', $form_state->getValue('sms_template_onboarding'))
+      ->set('sms_template_engagement', $form_state->getValue('sms_template_engagement'))
+      ->set('sms_template_retention', $form_state->getValue('sms_template_retention'))
+      ->set('sms_template_recovery', $form_state->getValue('sms_template_recovery'))
       ->set('payment_risk_fields', $this->sanitizeList($form_state->getValue('payment_risk_fields')))
       ->set('civicrm_preferred_method_field', trim((string) $form_state->getValue('civicrm_preferred_method_field')))
       ->set('civicrm_member_followup_field', trim((string) $form_state->getValue('civicrm_member_followup_field')))

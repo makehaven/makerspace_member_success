@@ -6,6 +6,7 @@ retention_recency_days:
   - 30
   - 60
   - 90
+outreach_send_hour_local: 10
 payment_risk_fields:
   - field_payment_failed
   - field_chargebee_payment_pause
@@ -20,3 +21,32 @@ outreach_activity_types:
   - 'Email'
   - 'Phone Call'
   - 'SMS'
+template_onboarding: ''
+template_engagement: ''
+template_retention: ''
+template_recovery: ''
+sms_template_onboarding: ''
+sms_template_engagement: ''
+sms_template_retention: ''
+sms_template_recovery: ''
+automation_enabled: false
+automation_policy_version: 'v1'
+pause_all: false
+pause_email: false
+pause_sms: false
+stage_onboarding_min_risk_to_contact: 20
+stage_onboarding_cooldown_days: 7
+stage_onboarding_max_attempts: 3
+stage_onboarding_require_manual_approval: true
+stage_engagement_min_risk_to_contact: 20
+stage_engagement_cooldown_days: 7
+stage_engagement_max_attempts: 3
+stage_engagement_require_manual_approval: true
+stage_retention_min_risk_to_contact: 20
+stage_retention_cooldown_days: 7
+stage_retention_max_attempts: 3
+stage_retention_require_manual_approval: true
+stage_recovery_min_risk_to_contact: 20
+stage_recovery_cooldown_days: 7
+stage_recovery_max_attempts: 3
+stage_recovery_require_manual_approval: true

@@ -128,6 +128,7 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     // Add prominent link to Intervention Performance dashboard
     $performance_url = $this->safeRouteUrl('makerspace_member_success.contractor_performance');
+    $queue_review_url = $this->safeRouteUrl('makerspace_member_success.queue_review');
     $summary_html .= '
       <div class="alert alert-info mt-3 mb-4">
         <div class="d-flex justify-content-between align-items-center">
@@ -135,7 +136,10 @@ class MemberSuccessDashboardController extends ControllerBase {
             <strong>📊 Intervention Performance Dashboard</strong>
             <p class="mb-0 small">View staff effectiveness, ROI calculations, and outreach metrics</p>
           </div>
-          <a href="' . $performance_url . '" class="btn btn-primary">View Performance Stats →</a>
+          <div class="d-flex gap-2">
+            <a href="' . $queue_review_url . '" class="btn btn-outline-primary">Queue Review</a>
+            <a href="' . $performance_url . '" class="btn btn-primary">View Performance Stats →</a>
+          </div>
         </div>
       </div>
     ';

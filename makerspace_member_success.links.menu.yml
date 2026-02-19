@@ -1,7 +1,7 @@
 makerspace_member_success.overview:
   title: 'Member Success'
   description: 'Member success queues and insights.'
-  route_name: makerspace_member_success.dashboard
+  route_name: makerspace_member_success.settings
   parent: system.admin_config
   weight: 100
 
@@ -11,6 +11,13 @@ makerspace_member_success.settings:
   route_name: makerspace_member_success.settings
   parent: makerspace_member_success.overview
   weight: 100
+
+makerspace_member_success.dashboard_link:
+  title: 'Dashboard'
+  description: 'View member success dashboard and stage queues.'
+  route_name: makerspace_member_success.dashboard
+  parent: makerspace_member_success.overview
+  weight: 5
 
 makerspace_member_success.onboarding:
   title: '1. Onboarding'
@@ -41,6 +48,13 @@ makerspace_member_success.lifecycle:
   route_name: view.member_success_queue.lifecycle
   parent: makerspace_member_success.overview
   weight: 50
+
+makerspace_member_success.queue_review:
+  title: 'Queue Review'
+  description: 'Review and bulk-process outreach queue actions.'
+  route_name: makerspace_member_success.queue_review
+  parent: makerspace_member_success.overview
+  weight: 52
 
 makerspace_member_success.contractor_performance:
   title: '📊 Intervention Performance'

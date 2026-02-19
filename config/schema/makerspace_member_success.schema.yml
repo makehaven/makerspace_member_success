@@ -19,6 +19,9 @@ makerspace_member_success.settings:
       label: 'Retention recency windows (days)'
       sequence:
         type: integer
+    outreach_send_hour_local:
+      type: integer
+      label: 'Default outreach send hour (local time, 0-23)'
     payment_risk_fields:
       type: sequence
       label: 'Payment risk field machine names'
@@ -52,6 +55,81 @@ makerspace_member_success.settings:
     template_recovery:
       type: string
       label: 'CiviCRM template for recovery stage'
+    sms_template_onboarding:
+      type: string
+      label: 'CiviCRM SMS template for onboarding stage'
+    sms_template_engagement:
+      type: string
+      label: 'CiviCRM SMS template for engagement stage'
+    sms_template_retention:
+      type: string
+      label: 'CiviCRM SMS template for retention stage'
+    sms_template_recovery:
+      type: string
+      label: 'CiviCRM SMS template for recovery stage'
+    automation_enabled:
+      type: boolean
+      label: 'Whether automated outreach sending is enabled'
+    automation_policy_version:
+      type: string
+      label: 'Automation policy version identifier'
+    pause_all:
+      type: boolean
+      label: 'Pause all outreach automation'
+    pause_email:
+      type: boolean
+      label: 'Pause email outreach automation'
+    pause_sms:
+      type: boolean
+      label: 'Pause SMS outreach automation'
+    stage_onboarding_min_risk_to_contact:
+      type: integer
+      label: 'Onboarding minimum risk score to contact'
+    stage_onboarding_cooldown_days:
+      type: integer
+      label: 'Onboarding cooldown days'
+    stage_onboarding_max_attempts:
+      type: integer
+      label: 'Onboarding max attempts before manual'
+    stage_onboarding_require_manual_approval:
+      type: boolean
+      label: 'Onboarding requires manual approval'
+    stage_engagement_min_risk_to_contact:
+      type: integer
+      label: 'Engagement minimum risk score to contact'
+    stage_engagement_cooldown_days:
+      type: integer
+      label: 'Engagement cooldown days'
+    stage_engagement_max_attempts:
+      type: integer
+      label: 'Engagement max attempts before manual'
+    stage_engagement_require_manual_approval:
+      type: boolean
+      label: 'Engagement requires manual approval'
+    stage_retention_min_risk_to_contact:
+      type: integer
+      label: 'Retention minimum risk score to contact'
+    stage_retention_cooldown_days:
+      type: integer
+      label: 'Retention cooldown days'
+    stage_retention_max_attempts:
+      type: integer
+      label: 'Retention max attempts before manual'
+    stage_retention_require_manual_approval:
+      type: boolean
+      label: 'Retention requires manual approval'
+    stage_recovery_min_risk_to_contact:
+      type: integer
+      label: 'Recovery minimum risk score to contact'
+    stage_recovery_cooldown_days:
+      type: integer
+      label: 'Recovery cooldown days'
+    stage_recovery_max_attempts:
+      type: integer
+      label: 'Recovery max attempts before manual'
+    stage_recovery_require_manual_approval:
+      type: boolean
+      label: 'Recovery requires manual approval'
     civicrm_activity_type_phone:
       type: integer
       label: 'CiviCRM activity type for phone outreach'

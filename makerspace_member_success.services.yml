@@ -42,6 +42,48 @@ services:
     arguments:
       - '@request_stack'
 
+  makerspace_member_success.outreach_suppression_checker:
+    class: Drupal\makerspace_member_success\Service\OutreachSuppressionChecker
+    arguments:
+      - '@database'
+
+  makerspace_member_success.outreach_policy_decider:
+    class: Drupal\makerspace_member_success\Service\OutreachPolicyDecider
+    arguments:
+      - '@config.factory'
+      - '@makerspace_member_success.outreach_suppression_checker'
+
+  makerspace_member_success.outreach_queue_service:
+    class: Drupal\makerspace_member_success\Service\OutreachQueueService
+    arguments:
+      - '@database'
+      - '@datetime.time'
+      - '@makerspace_member_success.outreach_policy_decider'
+      - '@config.factory'
+
+  makerspace_member_success.outreach_message_builder:
+    class: Drupal\makerspace_member_success\Service\OutreachMessageBuilder
+    arguments:
+      - '@database'
+
+  makerspace_member_success.outreach_sender:
+    class: Drupal\makerspace_member_success\Service\OutreachSender
+
+  Drupal\makerspace_member_success\Service\OutreachSuppressionCheckerInterface:
+    alias: makerspace_member_success.outreach_suppression_checker
+
+  Drupal\makerspace_member_success\Service\OutreachPolicyDeciderInterface:
+    alias: makerspace_member_success.outreach_policy_decider
+
+  Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface:
+    alias: makerspace_member_success.outreach_queue_service
+
+  Drupal\makerspace_member_success\Service\OutreachMessageBuilderInterface:
+    alias: makerspace_member_success.outreach_message_builder
+
+  Drupal\makerspace_member_success\Service\OutreachSenderInterface:
+    alias: makerspace_member_success.outreach_sender
+
   makerspace_member_success.commands:
     class: Drupal\makerspace_member_success\Commands\MemberSuccessCommands
     arguments:

@@ -3,6 +3,7 @@
 namespace Drupal\makerspace_member_success\Plugin\views\field;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Url;
 use Drupal\views\Plugin\views\field\FieldPluginBase;
 use Drupal\views\ResultRow;
@@ -23,11 +24,54 @@ class MemberSuccessActionLink extends FieldPluginBase {
   protected $configFactory;
 
   /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
+   * Static cache for SMS eligibility checks keyed by contact ID.
+   *
+   * @var array<int, bool>
+   */
+  protected static $smsEligibilityCache = [];
+
+  /**
+   * Static cache for SMS eligibility details keyed by contact ID.
+   *
+   * @var array<int, array{eligible: bool, reason: string}>
+   */
+  protected static $smsEligibilityDetailsCache = [];
+
+  /**
+   * Whether SMS consent metadata has been loaded.
+   *
+   * @var bool
+   */
+  protected $smsMetadataLoaded = FALSE;
+
+  /**
+   * CiviCRM custom table name for SMS consent.
+   *
+   * @var string|null
+   */
+  protected $smsConsentTable;
+
+  /**
+   * CiviCRM custom column name for SMS consent.
+   *
+   * @var string|null
+   */
+  protected $smsConsentColumn;
+
+  /**
    * Constructs a MemberSuccessActionLink object.
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $config_factory) {
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $config_factory, Connection $database) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->configFactory = $config_factory;
+    $this->database = $database;
   }
 
   /**
@@ -38,7 +82,8 @@ class MemberSuccessActionLink extends FieldPluginBase {
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('database')
     );
   }
 
@@ -69,6 +114,7 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // Get Configured Template
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $template_id = $config->get("template_{$stage}");
+    $sms_template_id = $config->get("sms_template_{$stage}");
 
     // Build Options
     $query = [
@@ -87,7 +133,6 @@ class MemberSuccessActionLink extends FieldPluginBase {
     $email_label = '✉️ Email';
     $status_badge = '';
     $action_text = '';
-    $show_buttons = TRUE;
 
     switch ($stage) {
         case 'onboarding':
@@ -169,9 +214,40 @@ class MemberSuccessActionLink extends FieldPluginBase {
         // Skip email button if URL fails
     }
 
+    $sms_unavailable_reason = '';
+    if ($contact_id) {
+      $sms_details = $this->getSmsEligibilityDetails((int) $contact_id);
+      if ($sms_details['eligible']) {
+        try {
+          $sms_query = [
+            'action' => 'add',
+            'reset' => 1,
+            'cid' => $contact_id,
+            'selectedChild' => 'activity',
+          ];
+          if (!empty($sms_template_id)) {
+            // Support either query key used by SMS form integrations.
+            $sms_query['template_id'] = $sms_template_id;
+            $sms_query['msg_template_id'] = $sms_template_id;
+          }
+          $sms_url = Url::fromUserInput('/civicrm/activity/sms/add', ['query' => $sms_query])->toString();
+          $buttons[] = '<a href="' . $sms_url . '" class="btn btn-sm btn-primary text-white" target="_blank" title="Send SMS via CiviCRM (consented contacts only)">SMS</a>';
+        }
+        catch (\Exception $e) {
+          $sms_unavailable_reason = 'SMS unavailable: link error';
+        }
+      }
+      else {
+        $sms_unavailable_reason = $sms_details['reason'];
+      }
+    }
+    else {
+      $sms_unavailable_reason = 'SMS unavailable: no CiviCRM contact';
+    }
+
     // Log Contact button (renamed for clarity)
     if ($uid) {
-        try {
+      try {
             $log_contact_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
             if ($log_contact_url->access(\Drupal::currentUser())) {
               $log_url = $log_contact_url->toString();
@@ -191,6 +267,10 @@ class MemberSuccessActionLink extends FieldPluginBase {
       $output .= '<br><small class="text-muted">' . $action_text . '</small>';
     }
 
+    if (!empty($sms_unavailable_reason)) {
+      $output .= '<br><small class="text-muted">' . $sms_unavailable_reason . '</small>';
+    }
+
     if (!empty($buttons)) {
       $output .= '<br><div class="btn-group btn-group-sm mt-1" role="group">' . implode('', $buttons) . '</div>';
     }
@@ -199,6 +279,112 @@ class MemberSuccessActionLink extends FieldPluginBase {
       '#type' => 'markup',
       '#markup' => $output,
     ];
+  }
+
+  /**
+   * Determines whether a contact is eligible for SMS outreach.
+   */
+  protected function isSmsEligible(int $contact_id): bool {
+    return $this->getSmsEligibilityDetails($contact_id)['eligible'];
+  }
+
+  /**
+   * Determines SMS eligibility and reason for non-eligibility.
+   *
+   * @return array{eligible: bool, reason: string}
+   *   Eligibility details.
+   */
+  protected function getSmsEligibilityDetails(int $contact_id): array {
+    if (isset(self::$smsEligibilityDetailsCache[$contact_id])) {
+      return self::$smsEligibilityDetailsCache[$contact_id];
+    }
+
+    try {
+      $query = $this->database->select('civicrm_contact', 'c');
+      $query->leftJoin('civicrm_phone', 'phone', 'phone.contact_id = c.id AND phone.is_primary = 1');
+      $query->addField('c', 'id', 'contact_id');
+      $query->addField('c', 'do_not_sms');
+      $query->addField('c', 'is_opt_out');
+      $query->addField('phone', 'id', 'phone_id');
+      $query->addField('phone', 'phone');
+      $query->condition('c.id', $contact_id);
+
+      $sms_alias = $this->applySmsConsentJoin($query);
+      if ($sms_alias && $this->smsConsentColumn !== NULL) {
+        $query->addField($sms_alias, $this->smsConsentColumn, 'sms_consent');
+      }
+
+      $row = $query->range(0, 1)->execute()->fetchAssoc();
+      if (!$row) {
+        $details = ['eligible' => FALSE, 'reason' => 'SMS unavailable: no CiviCRM contact'];
+      }
+      elseif ((int) ($row['do_not_sms'] ?? 0) !== 0 || (int) ($row['is_opt_out'] ?? 0) !== 0) {
+        $details = ['eligible' => FALSE, 'reason' => 'SMS unavailable: contact opted out'];
+      }
+      elseif (empty($row['phone_id']) || empty(trim((string) ($row['phone'] ?? '')))) {
+        $details = ['eligible' => FALSE, 'reason' => 'SMS unavailable: no primary phone'];
+      }
+      elseif ($sms_alias && $this->smsConsentColumn !== NULL && (int) ($row['sms_consent'] ?? 0) !== 1) {
+        $details = ['eligible' => FALSE, 'reason' => 'SMS unavailable: no SMS consent'];
+      }
+      else {
+        $details = ['eligible' => TRUE, 'reason' => ''];
+      }
+
+      self::$smsEligibilityDetailsCache[$contact_id] = $details;
+      self::$smsEligibilityCache[$contact_id] = $details['eligible'];
+      return $details;
+    }
+    catch (\Exception $e) {
+      $details = ['eligible' => FALSE, 'reason' => 'SMS unavailable: lookup error'];
+      self::$smsEligibilityDetailsCache[$contact_id] = $details;
+      self::$smsEligibilityCache[$contact_id] = FALSE;
+      return $details;
+    }
+  }
+
+  /**
+   * Left joins SMS consent custom table when available.
+   */
+  protected function applySmsConsentJoin($query): ?string {
+    if (!$this->ensureSmsConsentMetadata()) {
+      return NULL;
+    }
+    $alias = 'sms_pref';
+    $query->leftJoin($this->smsConsentTable, $alias, "$alias.entity_id = c.id");
+    return $alias;
+  }
+
+  /**
+   * Loads SMS consent custom field metadata.
+   */
+  protected function ensureSmsConsentMetadata(): bool {
+    if ($this->smsMetadataLoaded) {
+      return $this->smsConsentTable !== NULL && $this->smsConsentColumn !== NULL;
+    }
+
+    $this->smsMetadataLoaded = TRUE;
+
+    try {
+      $query = $this->database->select('civicrm_custom_group', 'cg');
+      $query->innerJoin('civicrm_custom_field', 'cf', 'cf.custom_group_id = cg.id');
+      $query->addField('cg', 'table_name');
+      $query->addField('cf', 'column_name');
+      $query->condition('cg.name', 'SMS_Preferences');
+      $query->condition('cf.name', 'SMS_Consent');
+      $record = $query->execute()->fetchAssoc();
+
+      if ($record) {
+        $this->smsConsentTable = $record['table_name'] ?? NULL;
+        $this->smsConsentColumn = $record['column_name'] ?? NULL;
+      }
+    }
+    catch (\Exception $e) {
+      $this->smsConsentTable = NULL;
+      $this->smsConsentColumn = NULL;
+    }
+
+    return $this->smsConsentTable !== NULL && $this->smsConsentColumn !== NULL;
   }
 
 }

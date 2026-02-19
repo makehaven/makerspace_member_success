@@ -298,6 +298,10 @@ class LogContactForm extends FormBase {
       ));
     }
 
+    // If this interaction came from queue processing, mark matching queue items
+    // as handled so they no longer appear as pending work.
+    $this->markQueueItemsHandled((int) $user->id(), (string) $stage);
+
     // Redirect to destination param if provided, otherwise stage-aware queue.
     $destination = $this->getRequest()->query->get('destination');
     if ($destination) {
@@ -306,6 +310,24 @@ class LogContactForm extends FormBase {
     else {
       $form_state->setRedirectUrl($this->stageUrl($stage));
     }
+  }
+
+  /**
+   * Marks queued/approved items for this user+stage as sent after manual log.
+   */
+  protected function markQueueItemsHandled(int $uid, string $stage): void {
+    $this->database->update('ms_member_outreach_queue')
+      ->fields([
+        'status' => 'sent',
+        'sent_at' => \Drupal::time()->getCurrentTime(),
+        'updated_at' => \Drupal::time()->getCurrentTime(),
+        'failure_code' => NULL,
+        'failure_message' => NULL,
+      ])
+      ->condition('uid', $uid)
+      ->condition('stage', $stage)
+      ->condition('status', ['queued', 'approved'], 'IN')
+      ->execute();
   }
 
   /**

@@ -26,6 +26,14 @@ makerspace_member_success.log_contact:
       user:
         type: entity:user
 
+makerspace_member_success.queue_review:
+  path: '/admin/makerspace/member-success/queue-review'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\OutreachQueueReviewForm'
+    _title: 'Outreach Queue Review'
+  requirements:
+    _permission: 'administer makerspace member success'
+
 makerspace_member_success.intervention_performance:
   path: '/admin/makerspace/member-success/intervention-performance'
   defaults:

@@ -284,6 +284,42 @@ function makerspace_member_success_schema() {
           'not null' => TRUE,
           'description' => 'Unix timestamp.',
         ],
+        'recommended_channel' => [
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => FALSE,
+          'description' => 'System-recommended channel (sms, email, manual_only).',
+        ],
+        'recommended_template_id' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'Template selected by policy recommendation.',
+        ],
+        'recommended_reason_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'Reason code for recommendation.',
+        ],
+        'actual_template_id' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'Template actually used by staff.',
+        ],
+        'override_reason_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+          'description' => 'Reason why staff overrode recommendation.',
+        ],
+        'queue_id' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+          'description' => 'Related queue item ID if originated from queue.',
+        ],
       ],
       'primary key' => ['id'],
       'indexes' => [
@@ -291,6 +327,162 @@ function makerspace_member_success_schema() {
         'idx_contact_date' => ['contact_date'],
         'idx_outcome' => ['outcome'],
         'idx_created_at' => ['created_at'],
+        'idx_queue_id' => ['queue_id'],
+      ],
+    ];
+  }
+
+  if (!$schema_api->tableExists('ms_member_outreach_queue') || $schema_version !== NULL) {
+    $schema['ms_member_outreach_queue'] = [
+      'description' => 'Queue for manual/automated member outreach actions.',
+      'fields' => [
+        'id' => [
+          'type' => 'serial',
+          'not null' => TRUE,
+        ],
+        'uid' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'civicrm_contact_id' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+        'stage' => [
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+        ],
+        'risk_score' => [
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+        'risk_reasons' => [
+          'type' => 'blob',
+          'not null' => FALSE,
+          'serialize' => TRUE,
+        ],
+        'recommended_channel' => [
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => TRUE,
+        ],
+        'recommended_template_id' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'recommended_reason_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => TRUE,
+        ],
+        'actual_channel' => [
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => FALSE,
+        ],
+        'actual_template_id' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'override_reason_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'destination_email' => [
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => FALSE,
+        ],
+        'destination_phone' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'consent_snapshot' => [
+          'type' => 'blob',
+          'not null' => FALSE,
+          'serialize' => TRUE,
+        ],
+        'policy_version' => [
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+          'default' => 'v1',
+        ],
+        'status' => [
+          'type' => 'varchar',
+          'length' => 24,
+          'not null' => TRUE,
+          'default' => 'queued',
+        ],
+        'suppression_reason_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'failure_code' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'failure_message' => [
+          'type' => 'text',
+          'not null' => FALSE,
+        ],
+        'scheduled_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'approved_by_uid' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+        'approved_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+        'sent_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+        'locked_by' => [
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => FALSE,
+        ],
+        'locked_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+        'created_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'updated_at' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+      ],
+      'primary key' => ['id'],
+      'indexes' => [
+        'idx_status_scheduled' => ['status', 'scheduled_at'],
+        'idx_uid_status' => ['uid', 'status'],
+        'idx_stage_status' => ['stage', 'status'],
+        'idx_locked' => ['locked_at'],
       ],
     ];
   }
@@ -689,4 +881,197 @@ function makerspace_member_success_update_9012(): void {
   // Step 9: Invalidate entity/field definition caches.
   \Drupal::entityTypeManager()->clearCachedDefinitions();
   \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+}
+
+/**
+ * Re-import member success queue view to use the linked member name field.
+ */
+function makerspace_member_success_update_9013(): void {
+  makerspace_member_success_import_view_config();
+}
+
+/**
+ * Forces queue name fields to use the linked member-name field plugin.
+ */
+function makerspace_member_success_update_9014(): void {
+  $editable = \Drupal::configFactory()->getEditable('views.view.member_success_queue');
+  $displays = $editable->get('display');
+  if (!is_array($displays) || empty($displays)) {
+    return;
+  }
+
+  foreach ($displays as $display_id => $display) {
+    $path = "display.$display_id.display_options.fields.name";
+    $name_field = $editable->get($path);
+    if (!is_array($name_field)) {
+      continue;
+    }
+
+    $name_field['table'] = 'ms_member_success_snapshot';
+    $name_field['field'] = 'member_name_with_ids';
+    $name_field['relationship'] = 'none';
+    $name_field['plugin_id'] = 'member_name_with_ids_field';
+    $name_field['alter']['alter_text'] = FALSE;
+    $name_field['alter']['text'] = '';
+    $name_field['alter']['word_boundary'] = TRUE;
+    $name_field['alter']['ellipsis'] = TRUE;
+
+    $editable->set($path, $name_field);
+  }
+
+  $editable->save(TRUE);
+}
+
+/**
+ * Adds outreach queue table, extends outreach log, and seeds automation config.
+ */
+function makerspace_member_success_update_9015(): void {
+  $schema = \Drupal::database()->schema();
+
+  if (!$schema->tableExists('ms_member_outreach_queue')) {
+    $schema->createTable('ms_member_outreach_queue', [
+      'description' => 'Queue for manual/automated member outreach actions.',
+      'fields' => [
+        'id' => ['type' => 'serial', 'not null' => TRUE],
+        'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+        'civicrm_contact_id' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => FALSE],
+        'stage' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE],
+        'risk_score' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+        'risk_reasons' => ['type' => 'blob', 'not null' => FALSE, 'serialize' => TRUE],
+        'recommended_channel' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE],
+        'recommended_template_id' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'recommended_reason_code' => ['type' => 'varchar', 'length' => 64, 'not null' => TRUE],
+        'actual_channel' => ['type' => 'varchar', 'length' => 16, 'not null' => FALSE],
+        'actual_template_id' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'override_reason_code' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'destination_email' => ['type' => 'varchar', 'length' => 255, 'not null' => FALSE],
+        'destination_phone' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'consent_snapshot' => ['type' => 'blob', 'not null' => FALSE, 'serialize' => TRUE],
+        'policy_version' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE, 'default' => 'v1'],
+        'status' => ['type' => 'varchar', 'length' => 24, 'not null' => TRUE, 'default' => 'queued'],
+        'suppression_reason_code' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'failure_code' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'failure_message' => ['type' => 'text', 'not null' => FALSE],
+        'scheduled_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+        'approved_by_uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => FALSE],
+        'approved_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => FALSE],
+        'sent_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => FALSE],
+        'locked_by' => ['type' => 'varchar', 'length' => 64, 'not null' => FALSE],
+        'locked_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => FALSE],
+        'created_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+        'updated_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+      ],
+      'primary key' => ['id'],
+      'indexes' => [
+        'idx_status_scheduled' => ['status', 'scheduled_at'],
+        'idx_uid_status' => ['uid', 'status'],
+        'idx_stage_status' => ['stage', 'status'],
+        'idx_locked' => ['locked_at'],
+      ],
+    ]);
+  }
+
+  $log_fields = [
+    'recommended_channel' => [
+      'type' => 'varchar',
+      'length' => 16,
+      'not null' => FALSE,
+      'description' => 'System-recommended channel (sms, email, manual_only).',
+    ],
+    'recommended_template_id' => [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+      'description' => 'Template selected by policy recommendation.',
+    ],
+    'recommended_reason_code' => [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+      'description' => 'Reason code for recommendation.',
+    ],
+    'actual_template_id' => [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+      'description' => 'Template actually used by staff.',
+    ],
+    'override_reason_code' => [
+      'type' => 'varchar',
+      'length' => 64,
+      'not null' => FALSE,
+      'description' => 'Reason why staff overrode recommendation.',
+    ],
+    'queue_id' => [
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => FALSE,
+      'description' => 'Related queue item ID if originated from queue.',
+    ],
+  ];
+
+  foreach ($log_fields as $field_name => $definition) {
+    if (!$schema->fieldExists('ms_member_outreach_log', $field_name)) {
+      $schema->addField('ms_member_outreach_log', $field_name, $definition);
+    }
+  }
+
+  if (!$schema->indexExists('ms_member_outreach_log', 'idx_queue_id')) {
+    $schema->addIndex('ms_member_outreach_log', 'idx_queue_id', ['queue_id'], [
+      'fields' => [
+        'queue_id' => [
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => FALSE,
+        ],
+      ],
+    ]);
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'automation_enabled' => FALSE,
+    'automation_policy_version' => 'v1',
+    'outreach_send_hour_local' => 10,
+    'pause_all' => FALSE,
+    'pause_email' => FALSE,
+    'pause_sms' => FALSE,
+    'stage_onboarding_min_risk_to_contact' => 20,
+    'stage_onboarding_cooldown_days' => 7,
+    'stage_onboarding_max_attempts' => 3,
+    'stage_onboarding_require_manual_approval' => TRUE,
+    'stage_engagement_min_risk_to_contact' => 20,
+    'stage_engagement_cooldown_days' => 7,
+    'stage_engagement_max_attempts' => 3,
+    'stage_engagement_require_manual_approval' => TRUE,
+    'stage_retention_min_risk_to_contact' => 20,
+    'stage_retention_cooldown_days' => 7,
+    'stage_retention_max_attempts' => 3,
+    'stage_retention_require_manual_approval' => TRUE,
+    'stage_recovery_min_risk_to_contact' => 20,
+    'stage_recovery_cooldown_days' => 7,
+    'stage_recovery_max_attempts' => 3,
+    'stage_recovery_require_manual_approval' => TRUE,
+  ];
+
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save(TRUE);
+  }
+}
+
+/**
+ * Adds default outreach send hour for queue scheduling.
+ */
+function makerspace_member_success_update_9016(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  if ($config->get('outreach_send_hour_local') === NULL) {
+    $config->set('outreach_send_hour_local', 10)->save(TRUE);
+  }
 }
