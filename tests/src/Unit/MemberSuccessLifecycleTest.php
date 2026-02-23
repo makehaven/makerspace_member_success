@@ -13,6 +13,13 @@ use Drupal\Tests\UnitTestCase;
 class MemberSuccessLifecycleTest extends UnitTestCase {
 
   /**
+   * Tests that stages() includes the paused stage.
+   */
+  public function testStagesIncludesPaused(): void {
+    $this->assertContains(MemberSuccessLifecycle::STAGE_PAUSED, MemberSuccessLifecycle::stages());
+  }
+
+  /**
    * Tests queue-resolving status list includes all permanent suppressions.
    */
   public function testResolvedFollowupStatuses(): void {

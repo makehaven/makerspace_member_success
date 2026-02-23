@@ -11,6 +11,7 @@ final class MemberSuccessLifecycle {
   public const STAGE_ENGAGEMENT = 'engagement';
   public const STAGE_RETENTION = 'retention';
   public const STAGE_RECOVERY = 'recovery';
+  public const STAGE_PAUSED = 'paused';
 
   public const FOLLOWUP_OUTREACH_EXHAUSTED = 'outreach_exhausted';
   public const FOLLOWUP_CONFIRMED_CANCELLATION = 'confirmed_cancellation';
@@ -47,6 +48,7 @@ final class MemberSuccessLifecycle {
       self::STAGE_ENGAGEMENT,
       self::STAGE_RETENTION,
       self::STAGE_RECOVERY,
+      self::STAGE_PAUSED,
     ];
   }
 

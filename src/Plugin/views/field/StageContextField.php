@@ -16,7 +16,8 @@ class StageContextField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function query() {
-    // Leave empty to avoid a query on this field.
+    $this->ensureMyTable();
+    $this->addAdditionalFields(['pause_start_date']);
   }
 
   /**
@@ -90,6 +91,31 @@ class StageContextField extends FieldPluginBase {
         $output .= '<span class="text-danger"><strong>⚠️ URGENT</strong></span>';
         $output .= '<br><span class="small">Contact within 24-48h</span>';
         $output .= '<br><span class="small text-muted">Payment failed</span>';
+        break;
+
+      case 'paused':
+        $pause_start_date = $values->ms_member_success_snapshot_pause_start_date ?? '';
+        if ($pause_start_date) {
+          $pause_start_ts = strtotime($pause_start_date . ' 00:00:00');
+          $pause_days = (int) floor(($now - $pause_start_ts) / 86400);
+          $days_remaining = max(0, 90 - $pause_days);
+
+          if ($pause_days >= 61) {
+            $color = 'danger';
+            $label = 'Ending soon';
+          }
+          else {
+            $color = 'muted';
+            $label = 'On pause';
+          }
+
+          $output .= '<span class="text-' . $color . '">' . $label . ': <strong>' . $pause_days . ' days</strong></span>';
+          $output .= '<br><span class="small text-muted">~' . $days_remaining . ' days remaining</span>';
+          $output .= '<br><span class="small text-muted">Since: ' . date('M j', $pause_start_ts) . '</span>';
+        }
+        else {
+          $output .= '<span class="text-muted">Payment paused</span>';
+        }
         break;
     }
 

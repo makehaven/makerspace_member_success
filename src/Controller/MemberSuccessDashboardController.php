@@ -4,6 +4,7 @@ namespace Drupal\makerspace_member_success\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -93,7 +94,8 @@ class MemberSuccessDashboardController extends ControllerBase {
       'onboarding' => ['label' => 'Onboarding', 'icon' => '🏁', 'desc' => 'New joins needing access.'],
       'engagement' => ['label' => 'Engagement', 'icon' => '🚀', 'desc' => 'First 6 months activity.'],
       'retention' => ['label' => 'Retention', 'icon' => '❤️', 'desc' => 'Sustaining members.'],
-      'recovery' => ['label' => 'Recovery', 'icon' => '💸', 'desc' => 'Payment/pause issues.'],
+      'recovery' => ['label' => 'Recovery', 'icon' => '💸', 'desc' => 'Payment failed — needs immediate contact.'],
+      'paused' => ['label' => 'Paused', 'icon' => '⏸️', 'desc' => 'Payment paused — approaching 3-month limit.'],
     ];
 
     // Generate HTML for Summary Cards
@@ -127,7 +129,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $summary_html .= '</div>';
 
     // Add prominent link to Intervention Performance dashboard
-    $performance_url = $this->safeRouteUrl('makerspace_member_success.contractor_performance');
+    $performance_url = $this->safeRouteUrl('makerspace_member_success.intervention_performance');
     $queue_review_url = $this->safeRouteUrl('makerspace_member_success.queue_review');
     $summary_html .= '
       <div class="alert alert-info mt-3 mb-4">
@@ -144,14 +146,44 @@ class MemberSuccessDashboardController extends ControllerBase {
       </div>
     ';
 
-    // Generate HTML for Stage Cards
+    // Generate HTML for Stage Cards — 4 main stages in the grid, paused below.
     $stages_html = '<div class="ms-dashboard-grid">';
-    foreach ($stage_defs as $key => $info) {
+    foreach (['onboarding', 'engagement', 'retention', 'recovery'] as $key) {
+      $info = $stage_defs[$key];
       $stats = $stages[$key] ?? ['total' => 0, 'risk' => 0];
-      $route_name = 'view.member_success_queue.' . $key;
-      $stages_html .= $this->renderStageCard($key, $info, $stats, $this->safeRouteUrl($route_name));
+      $stages_html .= $this->renderStageCard($key, $info, $stats, $this->safeRouteUrl('view.member_success_queue.' . $key));
     }
     $stages_html .= '</div>';
+
+    // Paused stage as a wide card below the 4-stage grid.
+    $paused_info = $stage_defs['paused'];
+    $paused_stats = $stages['paused'] ?? ['total' => 0, 'risk' => 0];
+    $paused_url = $this->safeRouteUrl('makerspace_member_success.queue_review', ['status' => 'queued', 'stage' => 'paused']);
+    $paused_percent = $paused_stats['total'] > 0 ? round(($paused_stats['risk'] / $paused_stats['total']) * 100) : 0;
+    $stages_html .= '
+      <div class="ms-card ms-stage-card" style="margin-top:1rem;">
+        <div class="ms-card-header">
+          <span class="ms-stage-icon">' . $paused_info['icon'] . '</span>
+          <h5 class="ms-stage-title">' . $paused_info['label'] . '</h5>
+        </div>
+        <div class="ms-card-body" style="display:flex; align-items:center; gap:2rem; flex-wrap:wrap;">
+          <div style="flex:1; min-width:200px;">
+            <p class="ms-stage-desc" style="margin-bottom:0;">' . $paused_info['desc'] . ' Risk only scores when pause reaches 61+ days.</p>
+          </div>
+          <div style="display:flex; gap:2rem; align-items:baseline; white-space:nowrap;">
+            <div style="text-align:center;">
+              <div class="ms-stat-value">' . $paused_stats['total'] . '</div>
+              <div class="ms-stat-label">Total</div>
+            </div>
+            <div style="text-align:center;">
+              <div class="ms-risk-count">' . $paused_stats['risk'] . '</div>
+              <div class="ms-stat-label">Actionable</div>
+            </div>
+          </div>
+          <a href="' . $paused_url . '" class="ms-action-btn" style="white-space:nowrap; position:relative;">Review Paused Queue &rarr;</a>
+        </div>
+      </div>
+    ';
 
     return [
       '#type' => 'markup',
@@ -229,10 +261,17 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Builds the intervention performance dashboard (staff/volunteer outreach metrics).
    */
   public function contractorPerformance() {
-    // Get date range from query parameters
     $request = \Drupal::request();
     $start_date = $request->query->get('start_date');
     $end_date = $request->query->get('end_date');
+
+    // Default to last 90 days when no date range is provided.
+    $using_default = FALSE;
+    if (empty($start_date) && empty($end_date)) {
+      $using_default = TRUE;
+      $start_date = date('Y-m-d', strtotime('-90 days'));
+      $end_date = date('Y-m-d');
+    }
 
     $staff_performance = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
     $retention_value = $this->recoveryMetrics->getRetentionValue($start_date, $end_date);
@@ -252,12 +291,13 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['mb-4']],
     ];
 
-    // Date filter and export buttons
+    // Date filter and export buttons.
+    // Markup::create() is required because #markup strips <input>/<form> tags.
     $build['filters'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['card', 'mb-4', 'p-3']],
       'form' => [
-        '#markup' => $this->buildFilterForm($start_date, $end_date),
+        '#markup' => Markup::create($this->buildFilterForm($start_date, $end_date)),
       ],
     ];
 
@@ -267,6 +307,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['alert', 'alert-info', 'mb-4']],
       'content' => [
         '#markup' => $this->t('<strong>How metrics are calculated:</strong><ul class="mb-0 mt-2">
+          <li><strong>Members Contacted:</strong> Distinct members with at least one outreach contact logged in this date range</li>
           <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach (payment updated)</li>
           <li><strong>Resolution Rate:</strong> Percentage of contacted members retained after outreach (payment updated)</li>
           <li><strong>Avg Days to Resolution:</strong> Average time from first contact to retention outcome across retained members</li>
@@ -285,10 +326,10 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
       '#markup' => $this->renderMetricCard(
-        'Members at Risk',
+        'Members Contacted',
         $retention_value['total_members_at_risk'],
         'primary',
-        NULL
+        'Distinct members with outreach logged'
       ),
     ];
 
@@ -332,18 +373,13 @@ class MemberSuccessDashboardController extends ControllerBase {
     ];
 
     $build['staff_table']['header'] = [
-      '#markup' => '
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h3 class="mb-0">Staff Performance</h3>
-          <a href="' . Url::fromRoute('makerspace_member_success.export_staff_performance', [], ['query' => ['start_date' => $start_date, 'end_date' => $end_date]])->toString() . '" class="btn btn-sm btn-outline-success">📥 Export CSV</a>
-        </div>
-      ',
+      '#markup' => '<h3 class="mb-3">Performance by Person</h3>',
     ];
 
     $build['staff_table']['description'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('Shows individual staff/volunteer effectiveness. "Resolution Rate" = resolved members ÷ total members contacted. Sorted by number of resolutions (highest first).'),
+      '#value' => $this->t('Shows individual effectiveness for anyone who has logged an intervention. "Resolution Rate" = resolved members ÷ total members contacted. Sorted by number of resolutions (highest first).'),
       '#attributes' => ['class' => ['text-muted', 'small', 'mb-2']],
     ];
 
@@ -493,14 +529,14 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dt>Avg Days to Resolution</dt>
           <dd>For each retained member, calculate days from their first contact to their successful retention contact. Average these values across retained members.</dd>
 
-          <dt>Staff Performance Metrics</dt>
+          <dt>Performance by Person</dt>
           <dd>
             <ul>
-              <li><strong>Members Contacted:</strong> Distinct count of member UIDs contacted by this staff member</li>
-              <li><strong>Total Attempts:</strong> Count of all contact records for this staff member</li>
-              <li><strong>Resolved:</strong> Count of distinct members this staff member successfully resolved</li>
+              <li><strong>Members Contacted:</strong> Distinct count of member UIDs contacted by this person</li>
+              <li><strong>Total Attempts:</strong> Count of all contact records logged by this person</li>
+              <li><strong>Resolved:</strong> Count of distinct members this person successfully resolved</li>
               <li><strong>Resolution Rate:</strong> (Resolved ÷ Members Contacted) × 100</li>
-              <li><strong>Avg Days to Resolve:</strong> Average time from first to last contact for members this staff member resolved</li>
+              <li><strong>Avg Days to Resolve:</strong> Average time from first to last contact for members this person resolved</li>
             </ul>
           </dd>
 
@@ -518,6 +554,9 @@ class MemberSuccessDashboardController extends ControllerBase {
           <li><strong>confirmed_cancel:</strong> Tracked as contacted/lost, and excluded from retention success</li>
         </ul>
         <p>Other outcomes (no_response, left_message, etc.) do NOT count as retained.</p>
+
+        <h5>Paused Members</h5>
+        <p>Members with a payment pause are tracked in the <strong>Paused</strong> stage. They receive a risk score only when their pause reaches 61+ days (approaching Chargebee\'s 90-day limit). Paused members are <em>not</em> included in resolution-rate calculations — their outreach goal is re-engagement/pause-extension, not payment recovery.</p>
 
         <h5>Limitations</h5>
         <ul>
@@ -564,26 +603,43 @@ class MemberSuccessDashboardController extends ControllerBase {
    */
   private function buildFilterForm($start_date, $end_date) {
     $current_path = htmlspecialchars((string) \Drupal::request()->getPathInfo(), ENT_QUOTES, 'UTF-8');
-    $start_date = htmlspecialchars((string) ($start_date ?? ''), ENT_QUOTES, 'UTF-8');
-    $end_date = htmlspecialchars((string) ($end_date ?? ''), ENT_QUOTES, 'UTF-8');
+    $start_val = htmlspecialchars((string) ($start_date ?? ''), ENT_QUOTES, 'UTF-8');
+    $end_val = htmlspecialchars((string) ($end_date ?? ''), ENT_QUOTES, 'UTF-8');
+
+    // Quick-select preset links.
+    $presets = [
+      'Last 30 days'  => [date('Y-m-d', strtotime('-30 days')),  date('Y-m-d')],
+      'Last 90 days'  => [date('Y-m-d', strtotime('-90 days')),  date('Y-m-d')],
+      'Last 6 months' => [date('Y-m-d', strtotime('-6 months')), date('Y-m-d')],
+      'This year'     => [date('Y-01-01'),                        date('Y-m-d')],
+    ];
+    $preset_html = '<div class="mb-2">';
+    foreach ($presets as $label => [$ps, $pe]) {
+      $active = ($start_val === $ps && $end_val === $pe) ? ' btn-secondary' : ' btn-outline-secondary';
+      $preset_html .= '<a href="' . $current_path . '?start_date=' . $ps . '&end_date=' . $pe . '" class="btn btn-sm' . $active . ' me-1">' . $label . '</a>';
+    }
+    $preset_html .= '</div>';
 
     $html = '
+      <h5 class="mb-2">Filter by Date Range</h5>
+      ' . $preset_html . '
       <form method="get" action="' . $current_path . '" class="row g-3 align-items-end">
         <div class="col-md-3">
-          <label class="form-label">Start Date</label>
-          <input type="date" name="start_date" class="form-control" value="' . $start_date . '">
+          <label class="form-label fw-semibold">Start Date</label>
+          <input type="date" name="start_date" class="form-control" value="' . $start_val . '">
         </div>
         <div class="col-md-3">
-          <label class="form-label">End Date</label>
-          <input type="date" name="end_date" class="form-control" value="' . $end_date . '">
+          <label class="form-label fw-semibold">End Date</label>
+          <input type="date" name="end_date" class="form-control" value="' . $end_val . '">
         </div>
         <div class="col-md-2">
-          <button type="submit" class="btn btn-primary">Filter</button>
-          <a href="' . $current_path . '" class="btn btn-secondary">Clear</a>
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <a href="' . $current_path . '" class="btn btn-secondary">Reset</a>
         </div>
         <div class="col-md-4 text-end">
-          <strong>Export:</strong>
-          <a href="' . Url::fromRoute('makerspace_member_success.export_all', [], ['query' => ['start_date' => $start_date, 'end_date' => $end_date]])->toString() . '" class="btn btn-success btn-sm">📊 All Data</a>
+          <span class="me-2 text-muted small fw-bold">Export:</span>
+          <a href="' . Url::fromRoute('makerspace_member_success.export_staff_performance', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-outline-success btn-sm me-1" title="Per-person breakdown: contacts made, resolved, resolution rate">📥 By Person</a>
+          <a href="' . Url::fromRoute('makerspace_member_success.export_all', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-success btn-sm" title="Every outreach contact log row: member, staff, channel, outcome, date">📊 Full Contact Log</a>
         </div>
       </form>
     ';

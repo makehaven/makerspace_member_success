@@ -36,6 +36,27 @@ final class MemberSuccessRiskScorer {
       $reasons[] = 'payment_failed';
     }
 
+    if ($data['stage'] === MemberSuccessLifecycle::STAGE_PAUSED) {
+      $pause_duration_days = 0;
+      if (!empty($data['pause_start_date'])) {
+        $pause_start_ts = strtotime($data['pause_start_date'] . ' 00:00:00');
+        if ($pause_start_ts) {
+          $pause_duration_days = (int) floor(($now_ts - $pause_start_ts) / 86400);
+        }
+      }
+      // High-risk window: approaching the 3-month Chargebee pause limit (days 61–90).
+      if ($pause_duration_days >= 61) {
+        $penalty = 40;
+        // Sustaining members are statistically more likely to return.
+        if (($data['tenure_bucket'] ?? NULL) === 'sustaining') {
+          $penalty = 30;
+        }
+        $score += $penalty;
+        $reasons[] = 'pause_ending';
+      }
+      // Low-risk window (days 1–60): planned break, no penalty.
+    }
+
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_ONBOARDING) {
       // Calculate days since join to determine if in grace period
       $days_since_join = 0;

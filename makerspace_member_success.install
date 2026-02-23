@@ -1075,3 +1075,18 @@ function makerspace_member_success_update_9016(): void {
     $config->set('outreach_send_hour_local', 10)->save(TRUE);
   }
 }
+
+/**
+ * Adds pause_start_date column to track when a payment pause began.
+ */
+function makerspace_member_success_update_9017(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'pause_start_date')) {
+    $schema->addField('ms_member_success_snapshot', 'pause_start_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date member\'s payment pause began (YYYY-MM-DD)',
+    ]);
+  }
+}

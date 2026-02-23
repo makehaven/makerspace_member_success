@@ -50,6 +50,7 @@ class RiskReasonsField extends FieldPluginBase {
       'no_badge_1' => 'NO-BADGE',
       'no_badge_4' => 'STALLED',
       'inactive' => 'ABSENT',
+      'pause_ending' => 'PAUSE-END',
     ];
 
     $codes = [];

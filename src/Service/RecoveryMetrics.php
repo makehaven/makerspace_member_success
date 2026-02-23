@@ -129,7 +129,10 @@ class RecoveryMetrics {
    * @return float
    *   Average days from first contact to resolution
    */
-  public function getAverageDaysToResolution() {
+  public function getAverageDaysToResolution($start_date = NULL, $end_date = NULL) {
+    $params = [];
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+
     $query = "
       SELECT AVG(days_to_resolution) as avg_days
       FROM (
@@ -144,12 +147,12 @@ class RecoveryMetrics {
           SELECT DISTINCT uid
           FROM {ms_member_outreach_log}
           WHERE outcome = 'payment_updated'
-        )
+        )" . $date_where . "
         GROUP BY uid
       ) resolved
     ";
 
-    $result = $this->database->query($query)->fetchField();
+    $result = $this->database->query($query, $params)->fetchField();
     return round((float) $result, 1);
   }
 
@@ -296,23 +299,24 @@ class RecoveryMetrics {
 
     $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
 
-    // Get average days to resolution per staff member using subquery
+    // Get average days to resolution per staff member using subquery.
+    // Note: inner subquery uses 'log' alias so $date_where (log.contact_date) works.
     $days_query = "
       SELECT
         staff_uid,
         AVG(days_to_resolution) as avg_days
       FROM (
         SELECT
-          staff_uid,
-          uid,
+          log.staff_uid,
+          log.uid,
           DATEDIFF(
-            MAX(CASE WHEN outcome = 'payment_updated' THEN contact_date END),
-            MIN(contact_date)
+            MAX(CASE WHEN log.outcome = 'payment_updated' THEN log.contact_date END),
+            MIN(log.contact_date)
           ) as days_to_resolution
-        FROM {ms_member_outreach_log}
-        WHERE staff_uid IS NOT NULL
-          AND outcome = 'payment_updated'" . $date_where . "
-        GROUP BY staff_uid, uid
+        FROM {ms_member_outreach_log} log
+        WHERE log.staff_uid IS NOT NULL
+          AND log.outcome = 'payment_updated'" . $date_where . "
+        GROUP BY log.staff_uid, log.uid
       ) as member_resolution_times
       WHERE days_to_resolution IS NOT NULL
       GROUP BY staff_uid

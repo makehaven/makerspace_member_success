@@ -183,6 +183,27 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('sms_template_recovery'),
     ];
 
+    $form['template_variants'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Template Variants By Issue'),
+      '#description' => $this->t('Optional overrides by stage + risk reason. Format each line as <code>stage.reason=template_id</code> (example: <code>recovery.payment_failed=123</code>). Wildcards supported: <code>*.payment_failed=123</code>, <code>retention.inactive_*=456</code>.'),
+      '#open' => FALSE,
+    ];
+
+    $form['template_variants']['email_template_overrides'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Email template overrides'),
+      '#description' => $this->t('These overrides are checked before the stage default email template.'),
+      '#default_value' => implode("\n", (array) $config->get('email_template_overrides')),
+    ];
+
+    $form['template_variants']['sms_template_overrides'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('SMS template overrides'),
+      '#description' => $this->t('These overrides are checked before the stage default SMS template.'),
+      '#default_value' => implode("\n", (array) $config->get('sms_template_overrides')),
+    ];
+
     $form['advanced'] = [
       '#type' => 'details',
       '#title' => $this->t('Advanced Mappings'),
@@ -249,6 +270,8 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('sms_template_engagement', $form_state->getValue('sms_template_engagement'))
       ->set('sms_template_retention', $form_state->getValue('sms_template_retention'))
       ->set('sms_template_recovery', $form_state->getValue('sms_template_recovery'))
+      ->set('email_template_overrides', $this->sanitizeTemplateOverrides($form_state->getValue('email_template_overrides')))
+      ->set('sms_template_overrides', $this->sanitizeTemplateOverrides($form_state->getValue('sms_template_overrides')))
       ->set('payment_risk_fields', $this->sanitizeList($form_state->getValue('payment_risk_fields')))
       ->set('civicrm_preferred_method_field', trim((string) $form_state->getValue('civicrm_preferred_method_field')))
       ->set('civicrm_member_followup_field', trim((string) $form_state->getValue('civicrm_member_followup_field')))
@@ -266,6 +289,44 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
     $lines = preg_split('/\r\n|\r|\n/', (string) $value);
     $lines = array_map('trim', $lines ?: []);
     return array_values(array_filter($lines, 'strlen'));
+  }
+
+  /**
+   * Normalizes template override lines and keeps valid entries only.
+   *
+   * Expected format: stage.reason=template_id
+   * Example: recovery.payment_failed=123
+   */
+  private function sanitizeTemplateOverrides(?string $value): array {
+    $lines = preg_split('/\r\n|\r|\n/', (string) $value);
+    $lines = array_map('trim', $lines ?: []);
+    $clean = [];
+
+    foreach ($lines as $line) {
+      if ($line === '' || !str_contains($line, '=')) {
+        continue;
+      }
+      [$left, $template] = array_map('trim', explode('=', $line, 2));
+      if ($left === '' || $template === '' || !str_contains($left, '.')) {
+        continue;
+      }
+      [$stage, $reason] = array_map('trim', explode('.', $left, 2));
+      if ($stage === '' || $reason === '') {
+        continue;
+      }
+
+      // Keep only numeric CiviCRM template IDs and safe key chars.
+      if (!preg_match('/^\d+$/', $template)) {
+        continue;
+      }
+      if (!preg_match('/^[a-z0-9_*.-]+$/', strtolower($stage . '.' . $reason))) {
+        continue;
+      }
+
+      $clean[] = strtolower($stage . '.' . $reason) . '=' . $template;
+    }
+
+    return array_values(array_unique($clean));
   }
 
 }

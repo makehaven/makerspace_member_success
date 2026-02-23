@@ -193,6 +193,14 @@ function makerspace_member_success_views_data(): array {
     'sort' => ['id' => 'standard'],
   ];
 
+  $data['ms_member_success_snapshot']['pause_start_date'] = [
+    'title' => t('Pause start date'),
+    'help' => t('Date the member\'s payment pause began (YYYY-MM-DD).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
   $data['ms_member_success_snapshot']['payment_status'] = [
     'title' => t('Payment status'),
     'help' => t('Payment status label.'),

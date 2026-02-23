@@ -55,6 +55,9 @@ makerspace_member_success.settings:
     template_recovery:
       type: string
       label: 'CiviCRM template for recovery stage'
+    template_paused:
+      type: string
+      label: 'Paused stage default email template ID'
     sms_template_onboarding:
       type: string
       label: 'CiviCRM SMS template for onboarding stage'
@@ -67,6 +70,19 @@ makerspace_member_success.settings:
     sms_template_recovery:
       type: string
       label: 'CiviCRM SMS template for recovery stage'
+    sms_template_paused:
+      type: string
+      label: 'Paused stage default SMS template ID'
+    email_template_overrides:
+      type: sequence
+      label: 'Email template override rules (stage.reason=template_id)'
+      sequence:
+        type: string
+    sms_template_overrides:
+      type: sequence
+      label: 'SMS template override rules (stage.reason=template_id)'
+      sequence:
+        type: string
     automation_enabled:
       type: boolean
       label: 'Whether automated outreach sending is enabled'
@@ -130,6 +146,15 @@ makerspace_member_success.settings:
     stage_recovery_require_manual_approval:
       type: boolean
       label: 'Recovery requires manual approval'
+    paused_min_risk_to_contact:
+      type: integer
+      label: 'Paused stage: minimum risk score to trigger outreach'
+    paused_cooldown_days:
+      type: integer
+      label: 'Paused stage: days between outreach attempts'
+    paused_max_attempts:
+      type: integer
+      label: 'Paused stage: maximum outreach attempts'
     civicrm_activity_type_phone:
       type: integer
       label: 'CiviCRM activity type for phone outreach'

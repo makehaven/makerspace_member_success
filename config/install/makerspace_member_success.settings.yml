@@ -29,6 +29,8 @@ sms_template_onboarding: ''
 sms_template_engagement: ''
 sms_template_retention: ''
 sms_template_recovery: ''
+email_template_overrides: []
+sms_template_overrides: []
 automation_enabled: false
 automation_policy_version: 'v1'
 pause_all: false

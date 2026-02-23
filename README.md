@@ -52,6 +52,34 @@ Go to `/admin/config/makerspace/member-success` to configure:
 *   `drush ms-snapshot:build` (alias: `ms-build`): Generates daily snapshots for all active members.
 *   `drush ms-build [uid]`: Generates a snapshot for a specific user ID.
 
+## Template Variants (Issue-Based)
+
+Use stage defaults as your baseline, then add targeted variants in settings:
+
+- `Email template overrides`
+- `SMS template overrides`
+
+Rule format (one per line):
+
+`stage.reason=template_id`
+
+Examples:
+
+- `recovery.payment_failed=123`
+- `onboarding.door_badge_pending=456`
+- `retention.inactive_*=789`
+- `*.payment_failed=123` (applies to all stages)
+
+Matching behavior:
+
+1. Exact stage + exact reason (highest priority)
+2. Exact stage + wildcard reason
+3. Wildcard stage + exact reason
+4. Wildcard stage + wildcard reason
+5. Stage default template fallback
+
+This keeps template branching in policy/config, instead of large conditional blocks in one message template.
+
 ## Key URLs
 
 After installation, access these dashboards:

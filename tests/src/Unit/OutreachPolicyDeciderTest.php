@@ -64,6 +64,8 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
       'pause_sms' => FALSE,
       'template_retention' => 'tpl_email_ret',
       'sms_template_retention' => 'tpl_sms_ret',
+      'email_template_overrides' => [],
+      'sms_template_overrides' => [],
     ];
 
     $base_snapshot = [
@@ -98,7 +100,18 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
         ],
         'email',
         'tpl_email_ret',
-        'email_fallback_no_sms',
+        'email_fallback_no_pref',
+      ],
+      'no_preference_defaults_to_email_even_with_sms_consent' => [
+        $base_config,
+        $base_snapshot + ['preferred_outreach_method' => '', 'sms_consent' => 1],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'email',
+        'tpl_email_ret',
+        'email_fallback_no_pref',
       ],
       'preferred_email_missing_template_falls_to_sms' => [
         array_replace($base_config, ['template_retention' => '']),
@@ -109,7 +122,7 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
         ],
         'sms',
         'tpl_sms_ret',
-        'sms_fallback_no_pref',
+        'sms_fallback_no_email',
       ],
       'no_templates_returns_manual_only' => [
         array_replace($base_config, ['template_retention' => '', 'sms_template_retention' => '']),
@@ -132,6 +145,39 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
         'manual_only',
         NULL,
         'suppressed_paused',
+      ],
+      'exact_stage_reason_override_beats_default' => [
+        array_replace($base_config, [
+          'email_template_overrides' => ['retention.payment_failed=777'],
+        ]),
+        $base_snapshot + [
+          'preferred_outreach_method' => 'email',
+          'risk_reasons' => ['payment_failed', 'inactive_30'],
+        ],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'email',
+        '777',
+        'pref_email',
+      ],
+      'wildcard_reason_override_applies' => [
+        array_replace($base_config, [
+          'sms_template_retention' => 'tpl_sms_ret',
+          'sms_template_overrides' => ['retention.inactive_*=888'],
+        ]),
+        $base_snapshot + [
+          'preferred_outreach_method' => 'sms',
+          'risk_reasons' => ['inactive_60'],
+        ],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'sms',
+        '888',
+        'pref_sms',
       ],
     ];
   }

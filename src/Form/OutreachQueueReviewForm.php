@@ -51,6 +51,12 @@ class OutreachQueueReviewForm extends FormBase {
       $status_filter = 'queued';
     }
 
+    $stage_filter = (string) ($this->getRequest()->query->get('stage') ?? '');
+    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused'];
+    if (!in_array($stage_filter, $allowed_stages, TRUE)) {
+      $stage_filter = '';
+    }
+
     $form['filters'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['container-inline']],
@@ -62,19 +68,64 @@ class OutreachQueueReviewForm extends FormBase {
       '#options' => array_combine($allowed_statuses, $allowed_statuses),
       '#default_value' => $status_filter,
     ];
+    $form['filters']['stage'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Stage'),
+      '#title_display' => 'invisible',
+      '#options' => [
+        '' => $this->t('All stages'),
+        'onboarding' => $this->t('Onboarding'),
+        'engagement' => $this->t('Engagement'),
+        'retention' => $this->t('Retention'),
+        'recovery' => $this->t('Recovery'),
+        'paused' => $this->t('Paused'),
+      ],
+      '#default_value' => $stage_filter,
+    ];
     $form['filters']['apply'] = [
       '#type' => 'submit',
       '#name' => 'apply_filter',
       '#value' => $this->t('Filter'),
       '#submit' => ['::submitFilter'],
     ];
+    $form['filters']['select_all'] = [
+      '#type' => 'submit',
+      '#name' => 'select_all_visible',
+      '#value' => $this->t('Select all visible'),
+      '#submit' => ['::submitSelectAllVisible'],
+      '#limit_validation_errors' => [],
+      '#attributes' => ['class' => ['button', 'button--small']],
+    ];
     $form['filters']['generate'] = [
       '#type' => 'submit',
       '#name' => 'generate_candidates',
-      '#value' => $this->t('Generate Queue Candidates'),
+      '#value' => $this->t('Generate/Refresh Queue Candidates'),
       '#submit' => ['::submitGenerateCandidates'],
       '#attributes' => ['class' => ['button', 'button--primary']],
     ];
+
+    $status_counts = $this->loadStatusCounts($allowed_statuses);
+    $form['status_summary'] = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['container-inline']],
+    ];
+    foreach ($allowed_statuses as $status) {
+      $query = ['status' => $status];
+      if ($stage_filter !== '') {
+        $query['stage'] = $stage_filter;
+      }
+      $form['status_summary']['status_' . $status] = [
+        '#type' => 'link',
+        '#title' => $this->t('@status: @count', [
+          '@status' => ucfirst($status),
+          '@count' => $status_counts[$status] ?? 0,
+        ]),
+        '#url' => Url::fromRoute('makerspace_member_success.queue_review', [], ['query' => $query]),
+        '#attributes' => [
+          'class' => $status === $status_filter ? ['button', 'button--primary', 'button--small'] : ['button', 'button--small'],
+        ],
+      ];
+    }
 
     $form['help'] = [
       '#type' => 'markup',
@@ -83,15 +134,26 @@ class OutreachQueueReviewForm extends FormBase {
         . $this->t('Queued items are NOT sent automatically at this time. Staff must select rows and apply actions manually.')
         . '</p>'
         . '<strong>' . $this->t('How to use this queue') . ':</strong> '
-        . $this->t('1) Click "Generate Queue Candidates" to refresh recommendations from latest snapshots. ')
+        . $this->t('1) Click "Generate/Refresh Queue Candidates" to refresh recommendations from latest snapshots. ')
         . $this->t('2) Review rows and reasons. ')
         . $this->t('3) Select rows, choose a bulk action, and apply. ')
+        . $this->t('Tip: not every generated candidate lands in "queued". Many will be intentionally placed in "suppressed" based on risk threshold, cooldown, max attempts, consent, or missing templates.')
         . $this->t('SMS is only recommended when explicit CiviCRM SMS consent is present. ')
         . $this->t('Rows are suppressed when templates are missing.')
         . '</div>',
     ];
 
     $form['bulk'] = ['#type' => 'details', '#title' => $this->t('Bulk actions'), '#open' => TRUE];
+    $form['bulk']['howto'] = [
+      '#type' => 'markup',
+      '#markup' => '<div class="messages messages--warning">'
+        . '<strong>' . $this->t('Bulk action behavior') . ':</strong> '
+        . $this->t('Approve selected: marks rows ready to send. ')
+        . $this->t('Mark selected as sent (manual): records rows as already handled outside the queue. ')
+        . $this->t('Suppress selected: hides rows from active queue work using the selected reason code.')
+        . '</div>',
+    ];
+
     $form['bulk']['action'] = [
       '#type' => 'select',
       '#title' => $this->t('Action'),
@@ -116,10 +178,22 @@ class OutreachQueueReviewForm extends FormBase {
       '#default_value' => 'manual_suppressed',
       '#states' => [
         'visible' => [
-          ':input[name="bulk[action]"]' => ['value' => 'suppress'],
+          [
+            ':input[name="action"]' => ['value' => 'suppress'],
+          ],
+          'or',
+          [
+            ':input[name="bulk[action]"]' => ['value' => 'suppress'],
+          ],
         ],
         'required' => [
-          ':input[name="bulk[action]"]' => ['value' => 'suppress'],
+          [
+            ':input[name="action"]' => ['value' => 'suppress'],
+          ],
+          'or',
+          [
+            ':input[name="bulk[action]"]' => ['value' => 'suppress'],
+          ],
         ],
       ],
     ];
@@ -129,7 +203,7 @@ class OutreachQueueReviewForm extends FormBase {
       '#button_type' => 'primary',
     ];
 
-    $rows = $this->loadRows($status_filter);
+    $rows = $this->loadRows($status_filter, $stage_filter);
     $uids = [];
     foreach ($rows as $row) {
       $uids[] = (int) $row->uid;
@@ -150,6 +224,7 @@ class OutreachQueueReviewForm extends FormBase {
         'scheduled' => $this->t('Scheduled'),
       ],
       '#options' => [],
+      '#default_value' => (array) ($form_state->get('selected_queue_items') ?? []),
       '#empty' => $this->t('No queue items found for status "@status".', ['@status' => $status_filter]),
     ];
 
@@ -190,7 +265,13 @@ class OutreachQueueReviewForm extends FormBase {
    */
   public function submitFilter(array &$form, FormStateInterface $form_state): void {
     $status = (string) $form_state->getValue('status');
-    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => ['status' => $status]]);
+    $stage = (string) ($form_state->getValue('stage') ?? '');
+    $form_state->set('selected_queue_items', []);
+    $query = ['status' => $status];
+    if ($stage !== '') {
+      $query['stage'] = $stage;
+    }
+    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => $query]);
   }
 
   /**
@@ -203,9 +284,66 @@ class OutreachQueueReviewForm extends FormBase {
       $generated++;
     }
 
+    $counts = $this->loadStatusCounts(['queued', 'approved', 'suppressed', 'failed', 'sent', 'cancelled']);
     $this->messenger()->addStatus($this->t('Generated/updated queue candidates from @count latest snapshots.', ['@count' => $generated]));
+    $this->messenger()->addStatus($this->t(
+      'Current queue totals: queued @queued, suppressed @suppressed, approved @approved, failed @failed, sent @sent, cancelled @cancelled.',
+      [
+        '@queued' => $counts['queued'] ?? 0,
+        '@suppressed' => $counts['suppressed'] ?? 0,
+        '@approved' => $counts['approved'] ?? 0,
+        '@failed' => $counts['failed'] ?? 0,
+        '@sent' => $counts['sent'] ?? 0,
+        '@cancelled' => $counts['cancelled'] ?? 0,
+      ]
+    ));
+    $form_state->set('selected_queue_items', []);
     $status = (string) $form_state->getValue('status', 'queued');
-    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => ['status' => $status]]);
+    $stage = (string) ($this->getRequest()->query->get('stage') ?? '');
+    $query = ['status' => $status];
+    if ($stage !== '') {
+      $query['stage'] = $stage;
+    }
+    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => $query]);
+  }
+
+  /**
+   * Selects all currently visible rows (respecting active status + stage filter).
+   */
+  public function submitSelectAllVisible(array &$form, FormStateInterface $form_state): void {
+    $status = (string) $this->getRequest()->query->get('status', 'queued');
+    $allowed_statuses = ['queued', 'approved', 'suppressed', 'failed', 'sent', 'cancelled'];
+    if (!in_array($status, $allowed_statuses, TRUE)) {
+      $status = 'queued';
+    }
+    $stage = (string) ($this->getRequest()->query->get('stage') ?? '');
+    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused'];
+    if (!in_array($stage, $allowed_stages, TRUE)) {
+      $stage = '';
+    }
+
+    $selected = [];
+    foreach ($this->loadRows($status, $stage) as $row) {
+      $id = (int) $row->id;
+      if ($id > 0) {
+        $selected[$id] = $id;
+      }
+    }
+
+    $form_state->set('selected_queue_items', $selected);
+
+    // Drupal tableselect ignores #default_value on rebuild because submitted
+    // POST values take precedence. Override the user input so the checkboxes
+    // actually render as checked after setRebuild().
+    $input = $form_state->getUserInput();
+    $input['queue_items'] = [];
+    foreach (array_keys($selected) as $id) {
+      $input['queue_items'][$id] = (string) $id;
+    }
+    $form_state->setUserInput($input);
+
+    $form_state->setRebuild(TRUE);
+    $this->messenger()->addStatus($this->t('Selected @count visible rows.', ['@count' => count($selected)]));
   }
 
   /**
@@ -241,22 +379,50 @@ class OutreachQueueReviewForm extends FormBase {
     }
 
     $this->messenger()->addStatus($this->t('Updated @count queue items.', ['@count' => $count]));
+    $form_state->set('selected_queue_items', []);
     $status = (string) $this->getRequest()->query->get('status', 'queued');
-    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => ['status' => $status]]);
+    $stage = (string) ($this->getRequest()->query->get('stage') ?? '');
+    $query = ['status' => $status];
+    if ($stage !== '') {
+      $query['stage'] = $stage;
+    }
+    $form_state->setRedirect('makerspace_member_success.queue_review', [], ['query' => $query]);
   }
 
   /**
    * Loads queue rows for the review table.
    */
-  protected function loadRows(string $status): array {
-    return $this->database->select('ms_member_outreach_queue', 'q')
+  protected function loadRows(string $status, string $stage = ''): array {
+    $query = $this->database->select('ms_member_outreach_queue', 'q')
       ->fields('q')
-      ->condition('q.status', $status)
+      ->condition('q.status', $status);
+    if ($stage !== '') {
+      $query->condition('q.stage', $stage);
+    }
+    return $query
       ->orderBy('q.scheduled_at', 'ASC')
       ->orderBy('q.id', 'ASC')
       ->range(0, 250)
       ->execute()
       ->fetchAll();
+  }
+
+  /**
+   * Loads status counts for quick queue visibility.
+   */
+  protected function loadStatusCounts(array $allowedStatuses): array {
+    $counts = array_fill_keys($allowedStatuses, 0);
+    $query = $this->database->select('ms_member_outreach_queue', 'q');
+    $query->addExpression('COUNT(*)', 'count');
+    $query->fields('q', ['status']);
+    $query->condition('q.status', $allowedStatuses, 'IN');
+    $query->groupBy('q.status');
+    $rows = $query->execute()->fetchAllAssoc('status');
+    foreach ($rows as $status => $row) {
+      $counts[$status] = (int) ($row->count ?? 0);
+    }
+
+    return $counts;
   }
 
   /**
@@ -556,6 +722,7 @@ class OutreachQueueReviewForm extends FormBase {
       'missing_serial' => (string) $this->t('Missing key serial'),
       'no_badge_1' => (string) $this->t('No first badge in window'),
       'no_badge_4' => (string) $this->t('Low badge count'),
+      'pause_ending' => (string) $this->t('Pause ending soon'),
     ];
     if (isset($map[$reason])) {
       return $map[$reason];

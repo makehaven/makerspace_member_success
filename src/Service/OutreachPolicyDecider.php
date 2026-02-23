@@ -25,6 +25,7 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     $stage = (string) ($snapshot['stage'] ?? 'retention');
     $preferred = strtolower(trim((string) ($snapshot['preferred_outreach_method'] ?? '')));
     $risk_score = (int) ($snapshot['risk_score'] ?? 0);
+    $risk_reasons = $this->decodeRiskReasons($snapshot['risk_reasons'] ?? NULL);
 
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $context = [
@@ -40,8 +41,18 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     ];
 
     $priority = $risk_score >= 50 ? 100 : ($risk_score >= 20 ? 70 : 30);
-    $email_template = (string) ($config->get("template_$stage") ?? '');
-    $sms_template = (string) ($config->get("sms_template_$stage") ?? '');
+    $email_template = $this->resolveTemplateForChannel(
+      $stage,
+      $risk_reasons,
+      (string) ($config->get("template_$stage") ?? ''),
+      (array) ($config->get('email_template_overrides') ?? [])
+    );
+    $sms_template = $this->resolveTemplateForChannel(
+      $stage,
+      $risk_reasons,
+      (string) ($config->get("sms_template_$stage") ?? ''),
+      (array) ($config->get('sms_template_overrides') ?? [])
+    );
     $template_reason = NULL;
 
     if (str_contains($preferred, 'sms')) {
@@ -64,24 +75,134 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
       }
     }
 
-    $sms_check = $this->suppressionChecker->check($uid, 'sms', $context);
-    if ($sms_check->allowed) {
-      if ($sms_template !== '') {
-        return new OutreachDecision('sms', $sms_template, 'sms_fallback_no_pref', $priority);
-      }
-      $template_reason = $template_reason ?? 'suppressed_missing_template_sms';
-    }
-
+    // Email is the default channel when no preference is stated.
+    // SMS is only used as a fallback after email fails, and still requires
+    // explicit consent (enforced by the suppression checker).
     $email_check = $this->suppressionChecker->check($uid, 'email', $context);
     if ($email_check->allowed) {
       if ($email_template !== '') {
-        return new OutreachDecision('email', $email_template, 'email_fallback_no_sms', $priority);
+        return new OutreachDecision('email', $email_template, 'email_fallback_no_pref', $priority);
       }
       $template_reason = $template_reason ?? 'suppressed_missing_template_email';
     }
 
-    $reason = $template_reason ?? $sms_check->reasonCode ?? $email_check->reasonCode ?? 'suppressed_no_allowed_channel';
+    $sms_check = $this->suppressionChecker->check($uid, 'sms', $context);
+    if ($sms_check->allowed) {
+      if ($sms_template !== '') {
+        return new OutreachDecision('sms', $sms_template, 'sms_fallback_no_email', $priority);
+      }
+      $template_reason = $template_reason ?? 'suppressed_missing_template_sms';
+    }
+
+    $reason = $template_reason ?? $email_check->reasonCode ?? $sms_check->reasonCode ?? 'suppressed_no_allowed_channel';
     return new OutreachDecision('manual_only', NULL, $reason, $priority);
+  }
+
+  /**
+   * Selects a template ID with optional stage/reason overrides.
+   *
+   * Precedence: matching override rule > stage default template.
+   */
+  protected function resolveTemplateForChannel(
+    string $stage,
+    array $riskReasons,
+    string $defaultTemplate,
+    array $overrideRules
+  ): string {
+    $stage = strtolower(trim($stage));
+    $best_score = -1;
+    $best_template = '';
+
+    foreach ($overrideRules as $raw_rule) {
+      if (!is_string($raw_rule) || !str_contains($raw_rule, '=')) {
+        continue;
+      }
+
+      [$left, $template_id] = array_map('trim', explode('=', $raw_rule, 2));
+      if ($left === '' || $template_id === '' || !str_contains($left, '.')) {
+        continue;
+      }
+      if (!preg_match('/^\d+$/', $template_id)) {
+        continue;
+      }
+
+      [$stage_pattern, $reason_pattern] = array_map('trim', explode('.', strtolower($left), 2));
+      if ($stage_pattern === '' || $reason_pattern === '') {
+        continue;
+      }
+
+      foreach ($riskReasons as $reason) {
+        $score = $this->matchScore($stage, strtolower($reason), $stage_pattern, $reason_pattern);
+        if ($score > $best_score) {
+          $best_score = $score;
+          $best_template = $template_id;
+        }
+      }
+    }
+
+    if ($best_template !== '') {
+      return $best_template;
+    }
+
+    return $defaultTemplate;
+  }
+
+  /**
+   * Scores a stage/reason rule match. Higher score means stronger match.
+   */
+  protected function matchScore(
+    string $stage,
+    string $reason,
+    string $stagePattern,
+    string $reasonPattern
+  ): int {
+    if (!$this->matchPattern($stagePattern, $stage) || !$this->matchPattern($reasonPattern, $reason)) {
+      return -1;
+    }
+
+    $stage_score = $stagePattern === '*' ? 10 : 100;
+    $reason_score = str_contains($reasonPattern, '*') ? 20 + strlen(str_replace('*', '', $reasonPattern)) : 50;
+    return $stage_score + $reason_score;
+  }
+
+  /**
+   * Returns TRUE when value matches '*' wildcard pattern.
+   */
+  protected function matchPattern(string $pattern, string $value): bool {
+    if ($pattern === '*') {
+      return TRUE;
+    }
+    if (!str_contains($pattern, '*')) {
+      return $pattern === $value;
+    }
+
+    $regex = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/';
+    return (bool) preg_match($regex, $value);
+  }
+
+  /**
+   * Decodes risk reasons from array/serialized values.
+   */
+  protected function decodeRiskReasons(mixed $raw): array {
+    if (is_array($raw)) {
+      return array_values(array_filter(array_map('strval', $raw), 'strlen'));
+    }
+    if (!is_string($raw) || trim($raw) === '') {
+      return [];
+    }
+
+    $decoded = @unserialize($raw);
+    if (is_array($decoded)) {
+      return array_values(array_filter(array_map('strval', $decoded), 'strlen'));
+    }
+    if (is_string($decoded) && trim($decoded) !== '') {
+      $nested = @unserialize($decoded);
+      if (is_array($nested)) {
+        return array_values(array_filter(array_map('strval', $nested), 'strlen'));
+      }
+    }
+
+    return [];
   }
 
 }

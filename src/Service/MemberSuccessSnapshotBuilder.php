@@ -90,7 +90,7 @@ class MemberSuccessSnapshotBuilder {
 
     // Load previous snapshot to preserve outreach tracking fields
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts'])
+      ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts', 'payment_pause', 'pause_start_date'])
       ->condition('uid', $uid)
       ->condition('is_latest', 1)
       ->condition('snapshot_type', 'daily')
@@ -118,10 +118,13 @@ class MemberSuccessSnapshotBuilder {
     }
 
     $stage = MemberSuccessLifecycle::STAGE_ONBOARDING;
-    // Only payment FAILED goes to recovery (needs action)
-    // Payment paused is OK (planned break) - member stays in normal lifecycle
+    // Only payment FAILED goes to recovery (needs action).
+    // Payment paused gets STAGE_PAUSED (intentional break with time-aware risk).
     if ($payment_failed) {
       $stage = MemberSuccessLifecycle::STAGE_RECOVERY;
+    }
+    elseif ($payment_pause) {
+      $stage = MemberSuccessLifecycle::STAGE_PAUSED;
     }
     elseif ($door_badge['status'] === 'active' && $serial_present) {
       $engagement_window = $badge_four_days * 86400;
@@ -145,6 +148,18 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
+    // Compute pause_start_date: carry forward from previous snapshot or set to
+    // today as the first day of a new pause.
+    $pause_start_date = NULL;
+    if ($payment_pause) {
+      if (!empty($previous['payment_pause']) && !empty($previous['pause_start_date'])) {
+        $pause_start_date = $previous['pause_start_date'];
+      }
+      else {
+        $pause_start_date = $snapshot_date;
+      }
+    }
+
     [$risk_score, $risk_reasons] = MemberSuccessRiskScorer::calculate([
       'stage' => $stage,
       'payment_failed' => $payment_failed,
@@ -157,6 +172,7 @@ class MemberSuccessSnapshotBuilder {
       'last_visit_ts' => $visit_stats['last_visit_ts'],
       'tenure_bucket' => $tenure_bucket,
       'join_date' => $profile['join_date'],
+      'pause_start_date' => $pause_start_date,
     ], $badge_one_days, $badge_four_days, $recency_days, $now_ts);
 
     // Detect stage transition - if stage changed, reset outreach tracking
@@ -217,6 +233,7 @@ class MemberSuccessSnapshotBuilder {
       'visit_count_30d' => $visit_stats['visit_count_30d'],
       'payment_failed' => $payment_failed ? 1 : 0,
       'payment_pause' => $payment_pause ? 1 : 0,
+      'pause_start_date' => $pause_start_date,
       'payment_status' => $profile['payment_status'],
       'member_followup_status' => $member_followup_status,
       'civicrm_do_not_phone' => $civi_data['do_not_phone'],
