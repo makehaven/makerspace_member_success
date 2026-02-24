@@ -85,6 +85,8 @@ class MemberNameWithIdsField extends FieldPluginBase {
 
     // Get user name
     $name = $user->getDisplayName();
+    $username = $user->getAccountName();
+    $email = $user->getEmail();
 
     // Get photo from main profile (with static cache)
     $photo_html = '';
@@ -214,6 +216,15 @@ class MemberNameWithIdsField extends FieldPluginBase {
     $output .= $photo_html;
     $output .= '<div>';
     $output .= $name_link;
+    $meta_parts = [];
+    if (!empty($username)) {
+      $meta_parts[] = '@' . htmlspecialchars($username);
+    }
+    if (!empty($email)) {
+      $meta_parts[] = htmlspecialchars($email);
+    }
+    $meta_parts[] = 'UID ' . (int) $uid;
+    $output .= '<br><small class="text-muted">' . implode(' | ', $meta_parts) . '</small>';
     if ($id_string) {
       $output .= '<br><small class="text-muted">' . $id_string . '</small>';
     }

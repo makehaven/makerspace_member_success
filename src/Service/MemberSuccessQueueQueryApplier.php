@@ -59,21 +59,44 @@ class MemberSuccessQueueQueryApplier {
    *   Current date in Y-m-d format.
    */
   public function applyVisibilityFilters(Sql $query, string $alias, string $today): void {
-    $group = $query->setWhereGroup('AND');
-
-    $followup_group = $query->setWhereGroup('OR', $group);
-    $query->addWhere($followup_group, "{$alias}.next_followup_date", NULL, 'IS NULL');
-    $query->addWhere($followup_group, "{$alias}.next_followup_date", $today, '<=');
+    // Keep this as explicit expressions to avoid mutating root where-group
+    // operators (which can unintentionally turn all queue filters into OR).
+    $query->addWhereExpression(
+      0,
+      "({$alias}.next_followup_date IS NULL OR {$alias}.next_followup_date <= :ms_today)",
+      [':ms_today' => $today]
+    );
 
     $resolved_statuses = MemberSuccessLifecycle::resolvedFollowupStatuses();
+    if (empty($resolved_statuses)) {
+      return;
+    }
 
-    $outreach_status_group = $query->setWhereGroup('OR', $group);
-    $query->addWhere($outreach_status_group, "{$alias}.outreach_status", NULL, 'IS NULL');
-    $query->addWhere($outreach_status_group, "{$alias}.outreach_status", $resolved_statuses, 'NOT IN');
+    $outreach_args = [];
+    $outreach_placeholders = [];
+    foreach ($resolved_statuses as $index => $status) {
+      $placeholder = ":ms_outreach_resolved_{$index}";
+      $outreach_placeholders[] = $placeholder;
+      $outreach_args[$placeholder] = $status;
+    }
+    $query->addWhereExpression(
+      0,
+      "({$alias}.outreach_status IS NULL OR {$alias}.outreach_status NOT IN (" . implode(', ', $outreach_placeholders) . '))',
+      $outreach_args
+    );
 
-    $followup_status_group = $query->setWhereGroup('OR', $group);
-    $query->addWhere($followup_status_group, "{$alias}.member_followup_status", NULL, 'IS NULL');
-    $query->addWhere($followup_status_group, "{$alias}.member_followup_status", $resolved_statuses, 'NOT IN');
+    $followup_args = [];
+    $followup_placeholders = [];
+    foreach ($resolved_statuses as $index => $status) {
+      $placeholder = ":ms_followup_resolved_{$index}";
+      $followup_placeholders[] = $placeholder;
+      $followup_args[$placeholder] = $status;
+    }
+    $query->addWhereExpression(
+      0,
+      "({$alias}.member_followup_status IS NULL OR {$alias}.member_followup_status NOT IN (" . implode(', ', $followup_placeholders) . '))',
+      $followup_args
+    );
   }
 
 }

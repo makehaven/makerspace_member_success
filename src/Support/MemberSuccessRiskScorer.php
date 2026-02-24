@@ -13,7 +13,8 @@ final class MemberSuccessRiskScorer {
    * @param array $data
    *   Snapshot data array with keys: stage, payment_failed, payment_pause,
    *   door_badge_status, serial_present, activation_ts, badge_count_total,
-   *   badge_count_window, last_visit_ts, tenure_bucket, join_date.
+   *   badge_count_window, visit_count_30d, last_visit_ts, tenure_bucket,
+   *   join_date.
    * @param int $badge_one_days
    *   Days threshold for first badge check.
    * @param int $badge_four_days
@@ -85,7 +86,16 @@ final class MemberSuccessRiskScorer {
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_ENGAGEMENT && !empty($data['activation_ts'])) {
       $since_activation = $now_ts - $data['activation_ts'];
-      if ($since_activation >= ($badge_one_days * 86400) && $data['badge_count_window'] < 1) {
+      $recent_visit_days = (int) ($data['visit_count_30d'] ?? 0);
+      // Frequent entry activity indicates ongoing in-space engagement even
+      // when new badge requests are not being filed.
+      $frequent_visit_days_threshold = 4;
+
+      if (
+        $since_activation >= ($badge_one_days * 86400)
+        && $data['badge_count_window'] < 1
+        && $recent_visit_days < $frequent_visit_days_threshold
+      ) {
         $score += 20;
         $reasons[] = 'no_badge_1';
       }

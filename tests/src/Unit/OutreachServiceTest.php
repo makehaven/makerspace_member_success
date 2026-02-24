@@ -7,8 +7,8 @@ use Drupal\Core\Database\Query\Insert;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\Query\Update;
 use Drupal\Core\Database\StatementInterface;
-use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\makerspace_member_success\Service\CiviCrmActivityLogger;
@@ -17,6 +17,7 @@ use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\Entity\User;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Tests OutreachService business logic.
@@ -24,6 +25,25 @@ use Psr\Log\LoggerInterface;
  * @group makerspace_member_success
  */
 class OutreachServiceTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $container = new ContainerBuilder();
+    $container->set('cache_tags.invalidator', $this->createMock(CacheTagsInvalidatorInterface::class));
+    \Drupal::setContainer($container);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    \Drupal::unsetContainer();
+    parent::tearDown();
+  }
 
   /**
    * Builds a minimal OutreachService with mock dependencies.
@@ -34,11 +54,21 @@ class OutreachServiceTest extends UnitTestCase {
    *   Captured fields from the snapshot UPDATE query.
    * @param int|null $civicrm_activity_id
    *   Value returned by activity_logger->logRetentionContact().
+   * @param array $queue_update
+   *   Captured fields from the queue UPDATE query.
+   * @param array $queue_update_conditions
+   *   Captured conditions from the queue UPDATE query.
    *
    * @return \Drupal\makerspace_member_success\Service\OutreachService
    *   The service under test.
    */
-  protected function buildService(array $snapshot_fields, array &$snapshot_update, ?int $civicrm_activity_id = NULL): OutreachService {
+  protected function buildService(
+    array $snapshot_fields,
+    array &$snapshot_update,
+    ?int $civicrm_activity_id = NULL,
+    array &$queue_update = [],
+    array &$queue_update_conditions = []
+  ): OutreachService {
     // Statement stub for SELECT.
     $stmt = $this->createMock(StatementInterface::class);
     $stmt->method('fetchField')->willReturn($snapshot_fields['contact_count'] ?? 0);
@@ -54,20 +84,34 @@ class OutreachServiceTest extends UnitTestCase {
     $insert->method('fields')->willReturnSelf();
     $insert->method('execute')->willReturn(NULL);
 
-    // Update query stub — capture the fields passed to it.
-    $update = $this->createMock(Update::class);
-    $update->method('fields')->willReturnCallback(function (array $fields) use (&$snapshot_update, $update) {
+    // Snapshot update query stub — capture snapshot updates.
+    $snapshot_update_query = $this->createMock(Update::class);
+    $snapshot_update_query->method('fields')->willReturnCallback(function (array $fields) use (&$snapshot_update, $snapshot_update_query) {
       $snapshot_update = $fields;
-      return $update;
+      return $snapshot_update_query;
     });
-    $update->method('condition')->willReturnSelf();
-    $update->method('execute')->willReturn(NULL);
+    $snapshot_update_query->method('condition')->willReturnSelf();
+    $snapshot_update_query->method('execute')->willReturn(NULL);
+
+    // Queue update query stub — capture queue handled fields and conditions.
+    $queue_update_query = $this->createMock(Update::class);
+    $queue_update_query->method('fields')->willReturnCallback(function (array $fields) use (&$queue_update, $queue_update_query) {
+      $queue_update = $fields;
+      return $queue_update_query;
+    });
+    $queue_update_query->method('condition')->willReturnCallback(function ($field, $value = NULL, $operator = '=') use (&$queue_update_conditions, $queue_update_query) {
+      $queue_update_conditions[] = [$field, $value, $operator];
+      return $queue_update_query;
+    });
+    $queue_update_query->method('execute')->willReturn(NULL);
 
     // Database mock.
     $database = $this->createMock(Connection::class);
     $database->method('select')->willReturn($select);
     $database->method('insert')->willReturn($insert);
-    $database->method('update')->willReturn($update);
+    $database->method('update')->willReturnCallback(function (string $table) use ($snapshot_update_query, $queue_update_query) {
+      return $table === 'ms_member_outreach_queue' ? $queue_update_query : $snapshot_update_query;
+    });
 
     // Entity type manager (not called unless confirmed_cancel with reason).
     $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
@@ -123,7 +167,9 @@ class OutreachServiceTest extends UnitTestCase {
     );
 
     $this->assertArrayHasKey('outreach_status', $snapshot_update);
+    $this->assertArrayHasKey('member_followup_status', $snapshot_update);
     $this->assertSame(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE, $snapshot_update['outreach_status']);
+    $this->assertSame(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE, $snapshot_update['member_followup_status']);
   }
 
   /**
@@ -270,6 +316,41 @@ class OutreachServiceTest extends UnitTestCase {
     );
 
     $this->assertSame(999, $result['civicrm_activity_id']);
+  }
+
+  /**
+   * Tests queue rows for same member/stage are marked sent after contact log.
+   */
+  public function testRecordContactMarksMatchingQueueItemsHandledAsSent(): void {
+    $snapshot_update = [];
+    $queue_update = [];
+    $queue_update_conditions = [];
+    $service = $this->buildService(
+      ['contact_count' => 1],
+      $snapshot_update,
+      NULL,
+      $queue_update,
+      $queue_update_conditions
+    );
+
+    $service->recordContact(
+      $this->buildUser(42),
+      MemberSuccessLifecycle::STAGE_RECOVERY,
+      'email',
+      MemberSuccessLifecycle::OUTCOME_EMAIL_SENT,
+      'manual follow-up',
+      FALSE,
+      FALSE
+    );
+
+    $this->assertSame('sent', $queue_update['status'] ?? NULL);
+    $this->assertNull($queue_update['failure_code'] ?? 'not-null');
+    $this->assertNull($queue_update['failure_message'] ?? 'not-null');
+    $this->assertNotEmpty($queue_update['sent_at'] ?? NULL);
+    $this->assertNotEmpty($queue_update['updated_at'] ?? NULL);
+    $this->assertContains(['uid', 42, '='], $queue_update_conditions);
+    $this->assertContains(['stage', MemberSuccessLifecycle::STAGE_RECOVERY, '='], $queue_update_conditions);
+    $this->assertContains(['status', ['queued', 'approved'], 'IN'], $queue_update_conditions);
   }
 
 }

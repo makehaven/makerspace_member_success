@@ -373,6 +373,12 @@ function makerspace_member_success_views_query_alter(\Drupal\views\ViewExecutabl
   $alias = $query->ensureTable('ms_member_success_snapshot');
   $query->addWhere(0, "{$alias}.is_latest", 1);
 
+  // Paused action queue should prioritize high-risk pauses (61+ days) while
+  // lower-risk bulk handling remains in Queue Review.
+  if ($view->current_display === 'paused') {
+    $query->addWhere(0, "{$alias}.risk_score", 20, '>=');
+  }
+
   /** @var \Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier $query_applier */
   $query_applier = \Drupal::service('makerspace_member_success.queue_query_applier');
   $query_applier->applyDefaultOrdering($query, $alias);
@@ -386,6 +392,8 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
   if ($view->id() !== 'member_success_queue') {
     return;
   }
+
+  makerspace_member_success_adjust_queue_runtime_layout($view);
 
   // Add helpful header text to each queue display
   $guidance = [];
@@ -485,6 +493,23 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
       ];
       break;
 
+    case 'paused':
+      $guidance = [
+        '#type' => 'markup',
+        '#markup' => $dashboard_link . $legend . '<div class="alert alert-warning mb-3">' .
+          '<h5>⏸️ Paused Queue - Re-Engage Before Pause Expiry</h5>' .
+          '<p><strong>What makes someone actionable here?</strong> Members on payment pause, prioritized as pause age approaches the limit.</p>' .
+          '<ul>' .
+          '<li>🟡 Days 1-60: Planned pause (low urgency)</li>' .
+          '<li>🔴 Day 61+: High risk of churn if no return plan is set</li>' .
+          '</ul>' .
+          '<p><strong>Your Goal:</strong> Confirm return timing, offer extension/reactivation path, and prevent silent lapse.</p>' .
+          '<p class="mb-0"><strong>Bulk processing:</strong> Use Queue Review for broad campaigns; this page is the person-by-person action queue.</p>' .
+          '</div>',
+        '#weight' => -100,
+      ];
+      break;
+
     case 'lifecycle':
       $guidance = [
         '#type' => 'markup',
@@ -544,6 +569,7 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
       'engagement' => MemberSuccessLifecycle::STAGE_ENGAGEMENT,
       'retention' => MemberSuccessLifecycle::STAGE_RETENTION,
       'recovery' => MemberSuccessLifecycle::STAGE_RECOVERY,
+      'paused' => MemberSuccessLifecycle::STAGE_PAUSED,
     ];
 
     if (isset($stage_map[$view->current_display])) {
@@ -574,5 +600,329 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
     ];
 
     $view->attachment_before[] = $summary;
+  }
+}
+
+/**
+ * Applies runtime layout fixes for queue displays.
+ */
+function makerspace_member_success_adjust_queue_runtime_layout(\Drupal\views\ViewExecutable $view): void {
+  if ($view->current_display === 'engagement') {
+    makerspace_member_success_adjust_engagement_columns($view);
+  }
+
+  if (in_array($view->current_display, ['recovery', 'paused'], TRUE)) {
+    makerspace_member_success_adjust_recovery_columns($view);
+  }
+
+  if ($view->current_display === 'lifecycle') {
+    makerspace_member_success_hide_duplicate_lifecycle_fields($view);
+  }
+}
+
+/**
+ * Adds access context columns to engagement queue.
+ */
+function makerspace_member_success_adjust_engagement_columns(\Drupal\views\ViewExecutable $view): void {
+  if (empty($view->style_plugin) || empty($view->style_plugin->options)) {
+    return;
+  }
+
+  foreach (['last_visit_ts', 'visit_count_30d'] as $field_id) {
+    if (!empty($view->field[$field_id])) {
+      $view->field[$field_id]->options['exclude'] = FALSE;
+    }
+  }
+  if (!empty($view->field['last_visit_ts'])) {
+    $view->field['last_visit_ts']->options['label'] = 'Last Door Entry';
+  }
+  if (!empty($view->field['visit_count_30d'])) {
+    $view->field['visit_count_30d']->options['label'] = 'Visits (30d)';
+  }
+
+  $columns = [
+    'name' => 'name',
+    'membership_type' => 'membership_type',
+    'tenure_bucket' => 'tenure_bucket',
+    'last_visit_ts' => 'last_visit_ts',
+    'visit_count_30d' => 'visit_count_30d',
+    'badge_count_window' => 'badge_count_window',
+    'badge_count_total' => 'badge_count_total',
+    'last_badge_ts' => 'last_badge_ts',
+    'risk_score' => 'risk_score',
+    'action_engagement' => 'action_engagement',
+  ];
+  $info = [
+    'name' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'membership_type' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'tenure_bucket' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'last_visit_ts' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'visit_count_30d' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'badge_count_window' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'badge_count_total' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'last_badge_ts' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'risk_score' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'action_engagement' => ['sortable' => FALSE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+  ];
+
+  $view->style_plugin->options['columns'] = $columns;
+  $view->style_plugin->options['info'] = $info;
+}
+
+/**
+ * Replaces redundant recovery columns with activity context columns.
+ */
+function makerspace_member_success_adjust_recovery_columns(\Drupal\views\ViewExecutable $view): void {
+  if (empty($view->style_plugin) || empty($view->style_plugin->options)) {
+    return;
+  }
+
+  // Hide link-only IDs now already shown in the member block.
+  foreach (['id_1', 'field_user_chargebee_id', 'field_stripe_customer_id'] as $field_id) {
+    if (!empty($view->field[$field_id])) {
+      $view->field[$field_id]->options['exclude'] = TRUE;
+    }
+  }
+
+  // Show useful recovery context.
+  $labels = [
+    'badge_count_total' => 'Badges',
+    'last_visit_ts' => 'Last Door Entry',
+    'visit_count_30d' => 'Visits (30d)',
+  ];
+  foreach ($labels as $field_id => $label) {
+    if (!empty($view->field[$field_id])) {
+      $view->field[$field_id]->options['exclude'] = FALSE;
+      $view->field[$field_id]->options['label'] = $label;
+    }
+  }
+
+  $columns = [
+    'name' => 'name',
+    'membership_type' => 'membership_type',
+    'last_visit_ts' => 'last_visit_ts',
+    'visit_count_30d' => 'visit_count_30d',
+    'badge_count_total' => 'badge_count_total',
+    'payment_risk_combined' => 'payment_risk_combined',
+    'member_followup_status' => 'member_followup_status',
+    'risk_score' => 'risk_score',
+    'action_recovery' => 'action_recovery',
+  ];
+
+  $info = [
+    'name' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'membership_type' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'last_visit_ts' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'visit_count_30d' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'badge_count_total' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'payment_risk_combined' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'member_followup_status' => ['sortable' => TRUE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => TRUE, 'responsive' => ''],
+    'risk_score' => ['sortable' => TRUE, 'default_sort_order' => 'desc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+    'action_recovery' => ['sortable' => FALSE, 'default_sort_order' => 'asc', 'align' => '', 'separator' => '', 'empty_column' => FALSE, 'responsive' => ''],
+  ];
+
+  if (!empty($view->field['action_recovery']) && $view->current_display === 'paused') {
+    $view->field['action_recovery']->options['label'] = 'Suggested Action';
+  }
+
+  $view->style_plugin->options['columns'] = $columns;
+  $view->style_plugin->options['info'] = $info;
+}
+
+/**
+ * Hides duplicate lifecycle last-door-entry field.
+ */
+function makerspace_member_success_hide_duplicate_lifecycle_fields(\Drupal\views\ViewExecutable $view): void {
+  foreach (['last_door_entry', 'member_tenure'] as $field_id) {
+    if (!empty($view->field[$field_id])) {
+      $view->field[$field_id]->options['exclude'] = TRUE;
+    }
+  }
+
+  foreach (['last_door_entry', 'member_tenure'] as $field_id) {
+    if (!empty($view->style_plugin->options['columns'][$field_id])) {
+      unset($view->style_plugin->options['columns'][$field_id]);
+    }
+    if (!empty($view->style_plugin->options['info'][$field_id])) {
+      unset($view->style_plugin->options['info'][$field_id]);
+    }
+  }
+}
+
+/**
+ * Implements hook_civicrm_buildForm().
+ */
+function makerspace_member_success_civicrm_buildForm($formName, &$form) {
+  if ($formName === 'CRM_Contact_Form_Task_Email') {
+    $ms_auto = (int) (\Drupal::request()->query->get('ms_member_success_auto') ?? ($_REQUEST['ms_member_success_auto'] ?? 0));
+    $template_id = CRM_Utils_Request::retrieve('template', 'Positive', $form);
+    if (!$template_id) {
+      $template_id = CRM_Utils_Request::retrieve('template_id', 'Positive', $form);
+    }
+
+    if ($template_id) {
+      $defaults = [
+        'template' => $template_id,
+      ];
+
+      $template_defaults = makerspace_member_success_load_message_template((int) $template_id);
+      if ($template_defaults !== NULL) {
+        if (array_key_exists('msg_subject', $template_defaults)) {
+          $defaults['subject'] = (string) $template_defaults['msg_subject'];
+        }
+        if (array_key_exists('msg_text', $template_defaults)) {
+          $defaults['text_message'] = (string) $template_defaults['msg_text'];
+        }
+        if (array_key_exists('msg_html', $template_defaults)) {
+          $defaults['html_message'] = (string) $template_defaults['msg_html'];
+        }
+      }
+
+      if ($ms_auto === 1 && method_exists($form, 'add')) {
+        $form->add('hidden', 'ms_member_success_auto');
+        $defaults['ms_member_success_auto'] = 1;
+      }
+
+      $form->setDefaults($defaults);
+    }
+  }
+
+  if ($formName === 'CRM_Contact_Form_Task_SMS') {
+    $sms_template_id = CRM_Utils_Request::retrieve('SMStemplate', 'Positive', $form);
+    if (!$sms_template_id) {
+      $sms_template_id = CRM_Utils_Request::retrieve('template_id', 'Positive', $form);
+    }
+
+    if ($sms_template_id) {
+      $defaults = [
+        'SMStemplate' => $sms_template_id,
+      ];
+
+      $template_defaults = makerspace_member_success_load_message_template((int) $sms_template_id);
+      if ($template_defaults !== NULL && array_key_exists('msg_text', $template_defaults)) {
+        $defaults['sms_text_message'] = (string) $template_defaults['msg_text'];
+      }
+
+      $form->setDefaults($defaults);
+    }
+  }
+}
+
+/**
+ * Loads a CiviCRM message template via supported API calls.
+ *
+ * @param int $template_id
+ *   CiviCRM message template ID.
+ *
+ * @return array<string, mixed>|null
+ *   Message template fields, or NULL on failure.
+ */
+function makerspace_member_success_load_message_template(int $template_id): ?array {
+  if ($template_id <= 0 || !function_exists('civicrm_api3')) {
+    return NULL;
+  }
+
+  try {
+    $template = civicrm_api3('MessageTemplate', 'getsingle', [
+      'id' => $template_id,
+      'return' => ['msg_subject', 'msg_text', 'msg_html'],
+    ]);
+    return is_array($template) ? $template : NULL;
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('makerspace_member_success')->warning(
+      'Unable to load CiviCRM message template @id: @message',
+      ['@id' => $template_id, '@message' => $e->getMessage()]
+    );
+    return NULL;
+  }
+}
+
+/**
+ * Implements hook_civicrm_postProcess().
+ */
+function makerspace_member_success_civicrm_postProcess($formName, &$form): void {
+  if ($formName !== 'CRM_Contact_Form_Task_Email') {
+    return;
+  }
+
+  // Only auto-sync sends launched from member-success queue action links.
+  $is_member_success_send = 0;
+  if (method_exists($form, 'getSubmittedValue')) {
+    $is_member_success_send = (int) ($form->getSubmittedValue('ms_member_success_auto') ?? 0);
+  }
+  if ($is_member_success_send !== 1) {
+    $is_member_success_send = (int) (\Drupal::request()->query->get('ms_member_success_auto') ?? ($_REQUEST['ms_member_success_auto'] ?? 0));
+  }
+  if ($is_member_success_send !== 1) {
+    return;
+  }
+
+  $contact_ids = [];
+  if (property_exists($form, '_toContactIds') && is_array($form->_toContactIds) && !empty($form->_toContactIds)) {
+    $contact_ids = array_map('intval', $form->_toContactIds);
+  }
+  elseif (method_exists($form, 'get')) {
+    $cid = $form->get('cid');
+    if (is_string($cid) && $cid !== '') {
+      $contact_ids = array_map('intval', array_filter(array_map('trim', explode(',', $cid))));
+    }
+  }
+
+  if (empty($contact_ids)) {
+    return;
+  }
+
+  $database = \Drupal::database();
+  $uid_by_contact = $database->select('civicrm_uf_match', 'uf')
+    ->fields('uf', ['contact_id', 'uf_id'])
+    ->condition('contact_id', $contact_ids, 'IN')
+    ->execute()
+    ->fetchAllKeyed();
+
+  if (empty($uid_by_contact)) {
+    return;
+  }
+
+  $uids = array_values(array_unique(array_map('intval', $uid_by_contact)));
+  $stage_rows = $database->select('ms_member_success_snapshot', 'ms')
+    ->fields('ms', ['uid', 'stage'])
+    ->condition('uid', $uids, 'IN')
+    ->condition('is_latest', 1)
+    ->condition('snapshot_type', 'daily')
+    ->execute()
+    ->fetchAllAssoc('uid');
+
+  if (empty($stage_rows)) {
+    return;
+  }
+
+  /** @var \Drupal\makerspace_member_success\Service\OutreachService $outreach_service */
+  $outreach_service = \Drupal::service('makerspace_member_success.outreach_service');
+  $users = \Drupal::entityTypeManager()->getStorage('user')->loadMultiple(array_map('intval', array_keys($stage_rows)));
+
+  foreach ($uid_by_contact as $contact_id => $uid_raw) {
+    $uid = (int) $uid_raw;
+    if ($uid <= 0 || empty($stage_rows[$uid]) || empty($users[$uid])) {
+      continue;
+    }
+
+    try {
+      $outreach_service->recordContact(
+        $users[$uid],
+        (string) $stage_rows[$uid]->stage,
+        'email',
+        \Drupal\makerspace_member_success\Support\MemberSuccessLifecycle::OUTCOME_EMAIL_SENT,
+        'Auto-synced from CiviCRM email form submission',
+        FALSE,
+        FALSE
+      );
+    }
+    catch (\Throwable $e) {
+      \Drupal::logger('makerspace_member_success')->error(
+        'Auto-sync failed in postProcess for uid @uid (contact @contact_id): @message',
+        ['@uid' => $uid, '@contact_id' => (int) $contact_id, '@message' => $e->getMessage()]
+      );
+    }
   }
 }

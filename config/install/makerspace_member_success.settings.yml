@@ -21,14 +21,87 @@ outreach_activity_types:
   - 'Email'
   - 'Phone Call'
   - 'SMS'
-template_onboarding: ''
-template_engagement: ''
-template_retention: ''
-template_recovery: ''
-sms_template_onboarding: ''
-sms_template_engagement: ''
-sms_template_retention: ''
-sms_template_recovery: ''
+template_onboarding: |
+  Subject: Followup: Getting Started at Makehaven
+
+  Hi {contact.first_name},
+
+  It looks like you started the signup process at MakeHaven (welcome!) but didn't quite make it through all the pieces. We want to get you into the space making as soon as possible!
+
+  To jump back in, please:
+  1. Log into your account: {domain.base_url}/user/login
+  2. Complete your profile: {domain.base_url}/user/current/main
+  3. Watch the safety orientation: {domain.base_url}/video
+  4. Take the safety quiz (look for the red button!)
+
+  Once that's done, you can schedule a time to pick up your key and have a safety walkthrough with staff.
+
+  Sorry for all the required clicking – but it will be worth it!
+
+  If you get stuck at any point, please reach out. You can reply to this email or call/text me at (203) 401-8815.
+
+  Looking forward to seeing you at the space!
+template_engagement: |
+  Subject: Let's get started & Make Something!
+
+  Hi {contact.first_name},
+
+  I noticed you've started your adventure at MakeHaven and have your access card, but you haven't had a chance to get badged for any areas yet. We really want to make sure you are getting the most out of your membership!
+
+  Is there anything holding you back? If you're not sure where to start, I recommend:
+  1. Choosing a tool or area you're interested in (woodshop, 3D printing, textiles, etc.).
+  2. Watching the training video and taking the quiz on our website.
+  3. Scheduling a badging appointment with one of our facilitators here: {domain.base_url}/facilitator/schedules
+
+  The facilitator will show you the ropes and make sure you're safe and comfortable using the equipment.
+
+  If you need any assistance or have questions about how to get started, please let me know.
+
+  Happy Making!
+
+  Christina Quinonez
+  (203) 401-8815
+  christina.quinonez@makehaven.org
+template_retention: |
+  Subject: Monthly Membership Fee Not Processed
+
+  Hi {contact.first_name},
+
+  I wanted to reach out regarding your monthly membership fee. We've been attempting to process it, but it seems the card on file wasn't successful. 
+
+  To avoid any interruption to your membership or access, please update your payment information or retry the payment here: {domain.base_url}/pay (Note: You'll need to be logged in to access your account).
+
+  If you're having any technical trouble with the site or need to discuss your account, please don't hesitate to reach out. We're here to help!
+
+  We love having you as part of the MakeHaven community and look forward to seeing what you create next.
+
+  Best,
+
+  Christina Quinonez
+  (203) 401-8815
+  christina.quinonez@makehaven.org
+template_recovery: |
+  Subject: We'd love to have you back at MakeHaven!
+
+  Hi {contact.first_name},
+
+  I noticed your membership at MakeHaven recently ended. We're sorry to see you go, but we hope your time with us was productive and inspiring!
+
+  If you ever find you have more time or a new project in mind, jumping back in is easy. You can reactivate your membership at any time here: {domain.base_url}/payment
+
+  Also, if finances are ever a barrier, we want to make sure the makerspace stays accessible. We offer a sliding scale plan with a very simple application process: {domain.base_url}/sliding
+
+  We'd love to see you back in the space whenever the time is right. Until then, best wishes on all your future making endeavors!
+
+  Happy Making,
+
+  Christina Quinonez
+  (203) 401-8815
+  christina.quinonez@makehaven.org
+sms_template_onboarding: 'Hi {contact.first_name}! Your MakeHaven signup is incomplete. Log in at {domain.base_url}/user/login to finish and get your key! - Christina'
+sms_template_engagement: 'Hi {contact.first_name}! Ready to start making? Check facilitator schedules at {domain.base_url}/facilitator/schedules to get badged! - Christina'
+sms_template_retention: 'Hi {contact.first_name}! Your MakeHaven payment was unsuccessful. Update your card at {domain.base_url}/pay to keep your access active. - Christina'
+sms_template_recovery: 'Hi {contact.first_name}! We miss you at MakeHaven. If you''re ready to come back, reactivate here: {domain.base_url}/payment - Christina'
 email_template_overrides: []
 sms_template_overrides: []
 automation_enabled: false

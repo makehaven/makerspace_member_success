@@ -8,6 +8,8 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\user\Entity\User;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -205,10 +207,16 @@ class OutreachQueueReviewForm extends FormBase {
 
     $rows = $this->loadRows($status_filter, $stage_filter);
     $uids = [];
+    $template_ids = [];
     foreach ($rows as $row) {
       $uids[] = (int) $row->uid;
+      $template_id = isset($row->recommended_template_id) ? (int) $row->recommended_template_id : 0;
+      if ($template_id > 0) {
+        $template_ids[] = $template_id;
+      }
     }
     $user_names = $this->loadUserNames(array_unique($uids));
+    $template_titles = $this->loadTemplateTitles(array_unique($template_ids));
 
     $form['queue_items'] = [
       '#type' => 'tableselect',
@@ -241,7 +249,9 @@ class OutreachQueueReviewForm extends FormBase {
       $scheduled = !empty($row->scheduled_at) ? date('Y-m-d H:i', (int) $row->scheduled_at) : '—';
       $recommended = (string) $row->recommended_channel;
       if (!empty($row->recommended_template_id)) {
-        $recommended .= ' / tpl ' . $row->recommended_template_id;
+        $template_id = (int) $row->recommended_template_id;
+        $template_label = $template_titles[$template_id] ?? ('tpl ' . $template_id);
+        $recommended .= ' / ' . $template_label . ' (#' . $template_id . ')';
       }
 
       $form['queue_items']['#options'][(int) $row->id] = [
@@ -399,6 +409,47 @@ class OutreachQueueReviewForm extends FormBase {
     if ($stage !== '') {
       $query->condition('q.stage', $stage);
     }
+
+    // Hide stale/snoozed queued work so recent manual outreach does not lead to
+    // duplicate bulk sends. We only apply this to actionable queue states.
+    if (in_array($status, ['queued', 'approved'], TRUE)) {
+      $today = MemberSuccessQueueRules::todayYmd();
+      $resolved = MemberSuccessLifecycle::resolvedFollowupStatuses();
+
+      $query->innerJoin(
+        'ms_member_success_snapshot',
+        'ms',
+        "ms.uid = q.uid AND ms.is_latest = 1 AND ms.snapshot_type = 'daily'"
+      );
+      $query->where('ms.stage = q.stage');
+
+      $followup_group = $query->orConditionGroup()
+        ->isNull('ms.next_followup_date')
+        ->condition('ms.next_followup_date', $today, '<=');
+      $query->condition($followup_group);
+
+      $outreach_group = $query->orConditionGroup()
+        ->isNull('ms.outreach_status')
+        ->condition('ms.outreach_status', $resolved, 'NOT IN');
+      $query->condition($outreach_group);
+
+      $member_followup_group = $query->orConditionGroup()
+        ->isNull('ms.member_followup_status')
+        ->condition('ms.member_followup_status', $resolved, 'NOT IN');
+      $query->condition($member_followup_group);
+
+      // If any outreach was logged after this queue row was generated, treat
+      // the row as stale to avoid duplicate sends in bulk queue review.
+      $query->where(
+        'NOT EXISTS (SELECT 1 FROM {ms_member_outreach_log} log WHERE log.uid = q.uid AND log.created_at >= q.created_at)'
+      );
+      $recent_cutoff = date('Y-m-d', strtotime($today . ' -7 days'));
+      $query->where(
+        'NOT EXISTS (SELECT 1 FROM {ms_member_outreach_log} recent_log WHERE recent_log.uid = q.uid AND recent_log.contact_date >= :ms_recent_cutoff)',
+        [':ms_recent_cutoff' => $recent_cutoff]
+      );
+    }
+
     return $query
       ->orderBy('q.scheduled_at', 'ASC')
       ->orderBy('q.id', 'ASC')
@@ -438,6 +489,26 @@ class OutreachQueueReviewForm extends FormBase {
       $names[(int) $user->id()] = $user->getDisplayName();
     }
     return $names;
+  }
+
+  /**
+   * Loads CiviCRM message template titles by template ID.
+   */
+  protected function loadTemplateTitles(array $templateIds): array {
+    $titles = [];
+    $templateIds = array_values(array_unique(array_map('intval', $templateIds)));
+    if (empty($templateIds)) {
+      return $titles;
+    }
+
+    $query = $this->database->select('civicrm_msg_template', 'mt');
+    $query->fields('mt', ['id', 'msg_title']);
+    $query->condition('mt.id', $templateIds, 'IN');
+    foreach ($query->execute()->fetchAllAssoc('id') as $id => $row) {
+      $titles[(int) $id] = trim((string) ($row->msg_title ?? ''));
+    }
+
+    return $titles;
   }
 
   /**
@@ -600,6 +671,7 @@ class OutreachQueueReviewForm extends FormBase {
         ];
         if ($template_id !== '') {
           $query['template_id'] = $template_id;
+          $query['msg_template_id'] = $template_id;
         }
         $url = Url::fromUserInput('/civicrm/activity/email/add', ['query' => $query]);
       }

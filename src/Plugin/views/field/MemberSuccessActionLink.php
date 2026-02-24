@@ -123,10 +123,16 @@ class MemberSuccessActionLink extends FieldPluginBase {
         'cid' => $contact_id,
         'selectedChild' => 'activity',
         'atype' => 3, // 3 = Email activity type usually
+        // Flag to enable member-success auto-sync on CiviCRM form submit.
+        'ms_member_success_auto' => 1,
     ];
     
     if ($template_id) {
+        // CiviCRM's email compose form reads "template" on initial load.
+        $query['template'] = $template_id;
+        // Keep legacy keys for compatibility with older integrations.
         $query['template_id'] = $template_id;
+        $query['msg_template_id'] = $template_id;
     }
 
     // Logic per stage
@@ -196,6 +202,12 @@ class MemberSuccessActionLink extends FieldPluginBase {
                 $email_label = 'Email';
             }
             break;
+
+        case 'paused':
+            $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
+            $action_text = '→ Confirm return timeline before pause limit';
+            $email_label = 'Email';
+            break;
     }
 
     // Build action buttons
@@ -226,6 +238,9 @@ class MemberSuccessActionLink extends FieldPluginBase {
             'selectedChild' => 'activity',
           ];
           if (!empty($sms_template_id)) {
+            // CiviCRM SMS compose form reads "SMStemplate" on initial load.
+            $sms_query['SMStemplate'] = $sms_template_id;
+            // Keep legacy keys for compatibility with older integrations.
             // Support either query key used by SMS form integrations.
             $sms_query['template_id'] = $sms_template_id;
             $sms_query['msg_template_id'] = $sms_template_id;

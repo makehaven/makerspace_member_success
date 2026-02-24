@@ -61,6 +61,8 @@ class OutreachService {
    *   If TRUE, creates a CiviCRM activity for the contact.
    * @param string $cancellation_reason
    *   Optional cancellation reason when outcome is confirmed_cancel.
+   * @param int|null $existing_civicrm_activity_id
+   *   Existing CiviCRM activity ID to associate with this outreach log row.
    *
    * @return array{civicrm_activity_id: int|null, contact_count: int}
    *   Activity ID (if created) and new contact count for messenger feedback.
@@ -73,7 +75,8 @@ class OutreachService {
     string $notes,
     bool $mark_exhausted,
     bool $log_in_civicrm,
-    string $cancellation_reason = ''
+    string $cancellation_reason = '',
+    ?int $existing_civicrm_activity_id = NULL
   ): array {
     $uid = (int) $user->id();
     $today = date('Y-m-d');
@@ -128,8 +131,8 @@ class OutreachService {
     }
 
     // 5. Create CiviCRM activity if requested.
-    $civicrm_activity_id = NULL;
-    if ($log_in_civicrm) {
+    $civicrm_activity_id = $existing_civicrm_activity_id;
+    if ($log_in_civicrm && !$civicrm_activity_id) {
       $civicrm_activity_id = $this->activityLogger->logRetentionContact(
         $user,
         $contact_method,
@@ -180,10 +183,21 @@ class OutreachService {
         'contact_count' => $new_count,
         'last_outreach_ts' => time(),
         'outreach_status' => $followup_status,
+        // Keep queue display field in sync immediately (not only on next
+        // nightly snapshot rebuild).
+        'member_followup_status' => $followup_status,
       ])
       ->condition('uid', $uid)
       ->condition('is_latest', 1)
       ->execute();
+
+    // Prevent duplicate outreach: once a manual or auto interaction is logged,
+    // pending queue rows for the same member/stage are considered handled.
+    $this->markQueueItemsHandled($uid, $stage);
+
+    // Queue views use tag-based caching; direct table writes must explicitly
+    // invalidate the view config tag so updated queue visibility is immediate.
+    \Drupal\Core\Cache\Cache::invalidateTags(['config:views.view.member_success_queue']);
 
     $this->logger->notice(
       'Outreach recorded for uid @uid: @method → @outcome (attempt #@count)',
@@ -194,6 +208,33 @@ class OutreachService {
       'civicrm_activity_id' => $civicrm_activity_id,
       'contact_count' => $new_count,
     ];
+  }
+
+  /**
+   * Marks queued/approved queue rows as sent for this member and stage.
+   */
+  protected function markQueueItemsHandled(int $uid, string $stage): void {
+    $now = time();
+    try {
+      $this->database->update('ms_member_outreach_queue')
+        ->fields([
+          'status' => 'sent',
+          'sent_at' => $now,
+          'updated_at' => $now,
+          'failure_code' => NULL,
+          'failure_message' => NULL,
+        ])
+        ->condition('uid', $uid)
+        ->condition('stage', $stage)
+        ->condition('status', ['queued', 'approved'], 'IN')
+        ->execute();
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning(
+        'Unable to sync queue status for uid @uid stage @stage: @message',
+        ['@uid' => $uid, '@stage' => $stage, '@message' => $e->getMessage()]
+      );
+    }
   }
 
 }

@@ -270,7 +270,22 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       ->execute()
       ->fetchAssoc();
 
-    return is_array($row) ? $row : [];
+    $state = is_array($row) ? $row : [];
+    if (empty($state['last_contact_date'])) {
+      $last_logged_date = $this->database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['contact_date'])
+        ->condition('log.uid', $uid)
+        ->orderBy('log.contact_date', 'DESC')
+        ->orderBy('log.id', 'DESC')
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+      if (!empty($last_logged_date)) {
+        $state['last_contact_date'] = (string) $last_logged_date;
+      }
+    }
+
+    return $state;
   }
 
   /**

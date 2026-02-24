@@ -165,6 +165,70 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests cooldown uses outreach-log fallback when snapshot date is empty.
+   */
+  public function testEnqueueUsesOutreachLogFallbackForCooldownSuppression(): void {
+    $this->installSchema('system', ['sequences']);
+    $this->installSchema('makerspace_member_success', [
+      'ms_member_outreach_queue',
+      'ms_member_success_snapshot',
+      'ms_member_outreach_log',
+    ]);
+
+    $this->config('makerspace_member_success.settings')
+      ->set('stage_retention_min_risk_to_contact', 20)
+      ->set('stage_retention_max_attempts', 3)
+      ->set('stage_retention_cooldown_days', 7)
+      ->save();
+
+    $now = time();
+    $uid = 105;
+    $this->container->get('database')->insert('ms_member_success_snapshot')
+      ->fields([
+        'uid' => $uid,
+        'snapshot_type' => 'daily',
+        'snapshot_date' => date('Y-m-d'),
+        'is_latest' => 1,
+        'stage' => 'retention',
+        'risk_score' => 55,
+        'contact_count' => 0,
+        'created_at' => $now,
+      ])
+      ->execute();
+
+    $last_contact = date('Y-m-d', strtotime('-1 day'));
+    $this->container->get('database')->insert('ms_member_outreach_log')
+      ->fields([
+        'uid' => $uid,
+        'contact_date' => $last_contact,
+        'contact_method' => 'email',
+        'outcome' => 'email_sent',
+        'notes' => 'recent outreach',
+        'staff_uid' => 1,
+        'created_at' => $now - 3600,
+      ])
+      ->execute();
+
+    $service = $this->buildQueueService();
+    $id = $service->enqueueCandidate($uid, 'retention', [
+      'stage' => 'retention',
+      'risk_score' => 55,
+      'risk_reasons' => ['inactive_30'],
+      'contact_count' => 0,
+      'last_contact_date' => '',
+      'email' => 'member105@example.com',
+      'phone' => '',
+      'is_opt_out' => 0,
+      'do_not_email' => 0,
+      'do_not_sms' => 0,
+    ]);
+
+    $row = $this->databaseRow($id);
+    $this->assertSame('suppressed', (string) $row['status']);
+    $this->assertSame('suppressed_cooldown', (string) $row['suppression_reason_code']);
+  }
+
+  /**
    * Builds a queue service with deterministic channel/template decisioning.
    */
   protected function buildQueueService(): OutreachQueueService {

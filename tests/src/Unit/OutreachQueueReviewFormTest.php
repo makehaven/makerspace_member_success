@@ -3,6 +3,8 @@
 namespace Drupal\Tests\makerspace_member_success\Unit;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\Select;
+use Drupal\Core\Database\StatementInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\Tests\UnitTestCase;
@@ -38,5 +40,53 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $this->assertSame([], $form->decodeForTest(NULL));
   }
 
-}
+  /**
+   * Tests queue reason formatting for new suppression labels.
+   */
+  public function testFormatQueueReasonSuppressionLabels(): void {
+    $form = new class(
+      $this->createMock(Connection::class),
+      $this->createMock(OutreachQueueServiceInterface::class)
+    ) extends OutreachQueueReviewForm {
+      public function formatReasonForTest(object $row): string {
+        return $this->formatQueueReason($row);
+      }
+    };
 
+    $cooldown = (object) ['suppression_reason_code' => 'suppressed_cooldown'];
+    $missing_template = (object) ['suppression_reason_code' => 'suppressed_missing_template_email'];
+
+    $this->assertSame('In cooldown window', $form->formatReasonForTest($cooldown));
+    $this->assertSame('Missing email template', $form->formatReasonForTest($missing_template));
+  }
+
+  /**
+   * Tests template title lookup trims and keys by template ID.
+   */
+  public function testLoadTemplateTitles(): void {
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAllAssoc')->with('id')->willReturn([
+      167 => (object) ['msg_title' => ' Success Recovery '],
+      200 => (object) ['msg_title' => 'Retention Nudge'],
+    ]);
+
+    $select = $this->createMock(Select::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('select')->with('civicrm_msg_template', 'mt')->willReturn($select);
+
+    $form = new class($database, $this->createMock(OutreachQueueServiceInterface::class)) extends OutreachQueueReviewForm {
+      public function loadTemplateTitlesForTest(array $templateIds): array {
+        return $this->loadTemplateTitles($templateIds);
+      }
+    };
+
+    $titles = $form->loadTemplateTitlesForTest([167, 200, 167]);
+    $this->assertSame('Success Recovery', $titles[167] ?? NULL);
+    $this->assertSame('Retention Nudge', $titles[200] ?? NULL);
+  }
+
+}

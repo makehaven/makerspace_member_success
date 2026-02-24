@@ -112,9 +112,14 @@ class MemberSuccessSnapshotBuilder {
     $payment_failed = $user_flags['payment_failed'];
     $payment_pause = $user_flags['payment_pause'];
 
-    $activation_ts = $door_badge['created'] ?? NULL;
+    // Use profile created timestamp as the primary lifecycle anchor because
+    // legacy join-date field data can be inconsistent.
+    $activation_ts = $profile['profile_created_ts'] ?? NULL;
     if ($activation_ts === NULL && $profile['join_date']) {
       $activation_ts = strtotime($profile['join_date'] . ' 00:00:00');
+    }
+    if ($activation_ts === NULL) {
+      $activation_ts = $door_badge['created'] ?? NULL;
     }
 
     $stage = MemberSuccessLifecycle::STAGE_ONBOARDING;
@@ -140,10 +145,9 @@ class MemberSuccessSnapshotBuilder {
     if ($stage === MemberSuccessLifecycle::STAGE_ONBOARDING) {
       $tenure_bucket = MemberSuccessLifecycle::STAGE_ONBOARDING;
     }
-    elseif (!empty($profile['join_date'])) {
-      $join_ts = strtotime($profile['join_date'] . ' 00:00:00');
-      if ($join_ts) {
-        $tenure_days = (int) floor(($now_ts - $join_ts) / 86400);
+    elseif ($activation_ts !== NULL) {
+      $tenure_days = (int) floor(($now_ts - $activation_ts) / 86400);
+      if ($tenure_days >= 0) {
         $tenure_bucket = $tenure_days <= $new_member_days ? 'new_member' : 'sustaining';
       }
     }
@@ -181,6 +185,14 @@ class MemberSuccessSnapshotBuilder {
     $stage_changed = $previous_stage && $previous_stage !== $stage;
 
     if ($stage_changed) {
+      if (
+        $previous_stage === MemberSuccessLifecycle::STAGE_RECOVERY
+        && $stage !== MemberSuccessLifecycle::STAGE_RECOVERY
+        && !empty($previous['contact_count'])
+      ) {
+        $this->recordAutomaticRecoverySuccess($uid, $snapshot_date, $now_ts);
+      }
+
       // Stage transition detected - clear sleep period and reset tracking
       $this->logger->info('Stage transition detected for user @uid: @old_stage → @new_stage. Clearing sleep period.', [
         '@uid' => $uid,
@@ -213,6 +225,25 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
+    if (
+      empty($previous['last_contact_date'])
+      && empty($previous['next_followup_date'])
+      && empty($previous['contact_count'])
+    ) {
+      $log_state = $this->loadLatestOutreachLogState($uid);
+      if (!empty($log_state)) {
+        $previous['last_contact_date'] = $log_state['last_contact_date'] ?? NULL;
+        $previous['next_followup_date'] = $log_state['next_followup_date'] ?? NULL;
+        $previous['outreach_status'] = $log_state['outreach_status'] ?? ($previous['outreach_status'] ?? NULL);
+        $previous['contact_count'] = max((int) ($previous['contact_count'] ?? 0), (int) ($log_state['contact_count'] ?? 0));
+      }
+    }
+
+    $outreach_status = $previous['outreach_status'] ?? ($stage === MemberSuccessLifecycle::STAGE_RECOVERY ? MemberSuccessLifecycle::OUTREACH_STATUS_PENDING : NULL);
+    // Keep queue-visible status populated even when the dedicated followup
+    // profile field is unset.
+    $effective_member_followup_status = $member_followup_status ?: $outreach_status;
+
     return [
       'uid' => $uid,
       'snapshot_date' => $snapshot_date,
@@ -235,7 +266,7 @@ class MemberSuccessSnapshotBuilder {
       'payment_pause' => $payment_pause ? 1 : 0,
       'pause_start_date' => $pause_start_date,
       'payment_status' => $profile['payment_status'],
-      'member_followup_status' => $member_followup_status,
+      'member_followup_status' => $effective_member_followup_status,
       'civicrm_do_not_phone' => $civi_data['do_not_phone'],
       'civicrm_do_not_email' => $civi_data['do_not_email'],
       'civicrm_do_not_sms' => $civi_data['do_not_sms'],
@@ -243,7 +274,7 @@ class MemberSuccessSnapshotBuilder {
       'preferred_outreach_method' => $civi_data['preferred_outreach_method'],
       // Preserve outreach tracking from previous snapshot (set by LogContactForm)
       'last_outreach_ts' => $previous['last_outreach_ts'] ?? NULL,
-      'outreach_status' => $previous['outreach_status'] ?? ($stage === MemberSuccessLifecycle::STAGE_RECOVERY ? MemberSuccessLifecycle::OUTREACH_STATUS_PENDING : NULL),
+      'outreach_status' => $outreach_status,
       'last_contact_date' => $previous['last_contact_date'] ?? NULL,
       'next_followup_date' => $previous['next_followup_date'] ?? NULL,
       'contact_count' => $previous['contact_count'] ?? 0,
@@ -336,6 +367,86 @@ class MemberSuccessSnapshotBuilder {
   }
 
   /**
+   * Records a one-time automatic "payment updated" outreach outcome.
+   */
+  protected function recordAutomaticRecoverySuccess(int $uid, string $contact_date, int $created_at): void {
+    try {
+      $existing = $this->database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['id'])
+        ->condition('uid', $uid)
+        ->condition('contact_method', 'system')
+        ->condition('outcome', MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED)
+        ->condition('contact_date', $contact_date)
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+
+      if (!empty($existing)) {
+        return;
+      }
+
+      $this->database->insert('ms_member_outreach_log')
+        ->fields([
+          'uid' => $uid,
+          'contact_date' => $contact_date,
+          'contact_method' => 'system',
+          'outcome' => MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
+          'notes' => 'Automatic success: member exited recovery after payment issue resolved.',
+          'sleep_days' => MemberSuccessLifecycle::sleepDaysForOutcome(MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED),
+          'created_at' => $created_at,
+        ])
+        ->execute();
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning(
+        'Unable to record automatic recovery success for uid @uid: @message',
+        ['@uid' => $uid, '@message' => $e->getMessage()]
+      );
+    }
+  }
+
+  /**
+   * Loads latest outreach-log state as a fallback for snapshot outreach fields.
+   */
+  protected function loadLatestOutreachLogState(int $uid): array {
+    $row = $this->database->select('ms_member_outreach_log', 'log')
+      ->fields('log', ['contact_date', 'followup_status', 'sleep_days', 'created_at'])
+      ->condition('log.uid', $uid)
+      ->orderBy('log.created_at', 'DESC')
+      ->orderBy('log.id', 'DESC')
+      ->range(0, 1)
+      ->execute()
+      ->fetchAssoc();
+
+    if (!is_array($row) || empty($row['contact_date'])) {
+      return [];
+    }
+
+    $contact_date = (string) $row['contact_date'];
+    $sleep_days = isset($row['sleep_days']) ? (int) $row['sleep_days'] : 0;
+    $next_followup_date = NULL;
+    if ($sleep_days > 0) {
+      $next_followup_date = date('Y-m-d', strtotime($contact_date . ' +' . $sleep_days . ' days'));
+    }
+    elseif ($sleep_days === -1) {
+      $next_followup_date = '9999-12-31';
+    }
+
+    $contact_count = (int) $this->database->select('ms_member_outreach_log', 'log_count')
+      ->condition('log_count.uid', $uid)
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+
+    return [
+      'last_contact_date' => $contact_date,
+      'next_followup_date' => $next_followup_date,
+      'outreach_status' => $row['followup_status'] ?? NULL,
+      'contact_count' => max(1, $contact_count),
+    ];
+  }
+
+  /**
    * Loads active member ids (including pending approvals).
    *
    * @return int[]
@@ -375,6 +486,7 @@ class MemberSuccessSnapshotBuilder {
     $query->addField('term', 'name', 'membership_type');
 
     $record = $query->execute()->fetchAssoc() ?: [];
+    $profile_created_ts = !empty($record['created']) ? (int) $record['created'] : NULL;
     $join_date = $record['join_date'] ?? NULL;
     if (empty($join_date) && !empty($record['created'])) {
       $join_date = date('Y-m-d', (int) $record['created']);
@@ -388,11 +500,15 @@ class MemberSuccessSnapshotBuilder {
         ->fetchField();
       if (!empty($user_created)) {
         $join_date = date('Y-m-d', (int) $user_created);
+        if ($profile_created_ts === NULL) {
+          $profile_created_ts = (int) $user_created;
+        }
       }
     }
 
     return [
       'join_date' => $join_date,
+      'profile_created_ts' => $profile_created_ts,
       'serial_present' => !empty($record['profile_serial']),
       'payment_status' => $record['payment_status'] ?? NULL,
       'membership_type' => $record['membership_type'] ?? NULL,
