@@ -47,6 +47,24 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
   }
 
   /**
+   * Tests approve action when form values are flattened (non-tree input).
+   */
+  public function testApproveActionWithFlattenedValues(): void {
+    $queue_service = $this->createMock(OutreachQueueServiceInterface::class);
+    $queue_service->expects($this->once())
+      ->method('approve')
+      ->with(321, 99);
+
+    $form = $this->buildForm($queue_service, 99);
+    $form_state = new FormState();
+    $form_state->setValue('queue_items', [321 => 321]);
+    $form_state->setValue('action', 'approve');
+    $form_state->setValue('reason', 'manual_suppressed');
+    $render = [];
+    $form->submitForm($render, $form_state);
+  }
+
+  /**
    * Tests suppress action delegates to queue service suppress().
    */
   public function testSuppressAction(): void {
@@ -121,4 +139,3 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
   }
 
 }
-

@@ -366,8 +366,12 @@ class OutreachQueueReviewForm extends FormBase {
       return;
     }
 
-    $action = (string) $form_state->getValue(['bulk', 'action']);
-    $reason = trim((string) $form_state->getValue(['bulk', 'reason']));
+    $action = (string) ($form_state->getValue(['bulk', 'action']) ?? $form_state->getValue('action') ?? '');
+    $reason = trim((string) ($form_state->getValue(['bulk', 'reason']) ?? $form_state->getValue('reason') ?? ''));
+    if ($action === '') {
+      $this->messenger()->addWarning($this->t('No bulk action was detected. Please choose an action and try again.'));
+      return;
+    }
     $count = 0;
     foreach ($selected as $id) {
       $queue_id = (int) $id;
