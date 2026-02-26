@@ -51,6 +51,11 @@ Go to `/admin/config/makerspace/member-success` to configure:
 
 *   `drush ms-snapshot:build` (alias: `ms-build`): Generates daily snapshots for all active members.
 *   `drush ms-build [uid]`: Generates a snapshot for a specific user ID.
+*   `drush ms:followup-audit`: Audits canonical followup field population and legacy mismatch state.
+*   `drush ms:chargebee-pull-followup [uid]`: Pulls one user's followup status from Chargebee into Drupal.
+*   `drush ms:chargebee-pull-followup-bulk`: Bulk-pulls followup status from Chargebee into Drupal.
+*   `drush ms:chargebee-push-followup [uid]`: Pushes one user's Drupal followup status to Chargebee.
+*   `drush ms:chargebee-push-followup-bulk`: Bulk-pushes Drupal followup statuses to Chargebee.
 
 ## Template Variants (Issue-Based)
 
@@ -114,3 +119,6 @@ Incremental refactor plan is documented in:
 
 Production deployment checklist is documented in:
 - `web/modules/custom/makerspace_member_success/docs/PANTHEON_GO_LIVE_CHECKLIST.md`
+
+Chargebee followup backfill runbook is documented in:
+- `web/modules/custom/makerspace_member_success/docs/CHARGEBEE_FOLLOWUP_PULL_PLAYBOOK.md`

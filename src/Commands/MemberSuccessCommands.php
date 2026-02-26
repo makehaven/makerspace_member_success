@@ -383,6 +383,201 @@ class MemberSuccessCommands extends DrushCommands {
   }
 
   /**
+   * Pulls one user's followup status from Chargebee into Drupal.
+   *
+   * @param int $uid
+   *   Drupal user ID.
+   * @param array $options
+   *   Command options.
+   *
+   * @option dry-run
+   *   Do not save user changes; only report what would change.
+   * @option overwrite
+   *   Overwrite non-empty Drupal followup value when it differs.
+   *
+   * @command ms:chargebee-pull-followup
+   * @aliases ms-cb-pull-followup
+   */
+  public function chargebeePullFollowup(
+    int $uid,
+    array $options = ['dry-run' => FALSE, 'overwrite' => FALSE]
+  ): void {
+    $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
+    $user = $this->entityTypeManager->getStorage('user')->load($uid);
+    if (!$user) {
+      $this->logger()->error(dt('User @uid not found.', ['@uid' => $uid]));
+      return;
+    }
+
+    $result = $sync->pullUserStatus(
+      $user,
+      (bool) ($options['dry-run'] ?? FALSE),
+      (bool) ($options['overwrite'] ?? FALSE)
+    );
+
+    $rows = [
+      ['UID', (string) $uid],
+      ['Customer ID', (string) ($result['customer_id'] ?? '')],
+      ['Chargebee value', (string) ($result['chargebee_value'] ?? '')],
+      ['Mapped status', (string) ($result['mapped_status'] ?? '')],
+      ['Current status', (string) ($result['current_status'] ?? '')],
+      ['Subscriptions examined', (string) ($result['subscriptions_examined'] ?? 0)],
+      ['Changed', !empty($result['changed']) ? 'yes' : 'no'],
+      ['Updated', !empty($result['updated']) ? 'yes' : 'no'],
+      ['Dry run', !empty($result['dry_run']) ? 'yes' : 'no'],
+      ['Skipped reason', (string) ($result['skipped_reason'] ?? '')],
+    ];
+    if (!empty($result['error'])) {
+      $rows[] = ['Error', (string) $result['error']];
+    }
+
+    $this->io()->table(['Metric', 'Value'], $rows);
+  }
+
+  /**
+   * Bulk-pulls followup status from Chargebee into Drupal.
+   *
+   * @param array $options
+   *   Command options.
+   *
+   * @option uids
+   *   Optional comma-separated user IDs to target.
+   * @option limit
+   *   Max users to process (default 200).
+   * @option offset
+   *   Starting offset for selected users (default 0).
+   * @option only-empty
+   *   Only process users with empty canonical followup status.
+   * @option dry-run
+   *   Do not save user changes; only report what would change.
+   * @option overwrite
+   *   Overwrite non-empty Drupal followup value when it differs.
+   *
+   * @command ms:chargebee-pull-followup-bulk
+   * @aliases ms-cb-pull-followup-bulk
+   */
+  public function chargebeePullFollowupBulk(
+    array $options = [
+      'uids' => NULL,
+      'limit' => 200,
+      'offset' => 0,
+      'only-empty' => FALSE,
+      'dry-run' => FALSE,
+      'overwrite' => FALSE,
+    ]
+  ): void {
+    $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
+    $database = \Drupal::database();
+    $schema = $database->schema();
+    $storage = $this->entityTypeManager->getStorage('user');
+
+    $limit = max(1, (int) ($options['limit'] ?? 200));
+    $offset = max(0, (int) ($options['offset'] ?? 0));
+    $dry_run = (bool) ($options['dry-run'] ?? FALSE);
+    $overwrite = (bool) ($options['overwrite'] ?? FALSE);
+    $only_empty = (bool) ($options['only-empty'] ?? FALSE);
+
+    $uids_option = trim((string) ($options['uids'] ?? ''));
+    $uids = [];
+    if ($uids_option !== '') {
+      foreach (explode(',', $uids_option) as $part) {
+        $uid = (int) trim($part);
+        if ($uid > 0) {
+          $uids[] = $uid;
+        }
+      }
+      $uids = array_values(array_unique($uids));
+      if (empty($uids)) {
+        $this->logger()->warning('No valid UIDs parsed from --uids option.');
+        return;
+      }
+      $uids = array_slice($uids, $offset, $limit);
+    }
+    else {
+      if (!$schema->tableExists('user__field_user_chargebee_id')) {
+        $this->logger()->error('Missing required table user__field_user_chargebee_id.');
+        return;
+      }
+
+      $query = $database->select('user__field_user_chargebee_id', 'cb');
+      $query->fields('cb', ['entity_id']);
+      $query->condition('cb.field_user_chargebee_id_value', '', '<>');
+
+      if ($only_empty) {
+        if (!$schema->tableExists('user__field_member_followup_status')) {
+          $this->logger()->error('Cannot use --only-empty: canonical followup field table is missing.');
+          return;
+        }
+        $query->leftJoin('user__field_member_followup_status', 'mf', 'mf.entity_id = cb.entity_id');
+        $or = $query->orConditionGroup();
+        $or->isNull('mf.field_member_followup_status_value');
+        $or->condition('mf.field_member_followup_status_value', '');
+        $query->condition($or);
+      }
+
+      $query->orderBy('cb.entity_id', 'ASC');
+      $query->range($offset, $limit);
+      $uids = array_map('intval', $query->execute()->fetchCol());
+    }
+
+    if (empty($uids)) {
+      $this->logger()->notice('No users matched the selection criteria.');
+      return;
+    }
+
+    $summary = [
+      'users_targeted' => count($uids),
+      'users_processed' => 0,
+      'users_changed' => 0,
+      'users_updated' => 0,
+      'subscriptions_examined' => 0,
+    ];
+    $skip_reasons = [];
+
+    foreach (array_chunk($uids, 100) as $chunk) {
+      $users = $storage->loadMultiple($chunk);
+      foreach ($chunk as $uid) {
+        if (empty($users[$uid])) {
+          $skip_reasons['user_not_found'] = ($skip_reasons['user_not_found'] ?? 0) + 1;
+          continue;
+        }
+
+        $result = $sync->pullUserStatus($users[$uid], $dry_run, $overwrite);
+        $summary['users_processed']++;
+        $summary['subscriptions_examined'] += (int) ($result['subscriptions_examined'] ?? 0);
+        $summary['users_changed'] += !empty($result['changed']) ? 1 : 0;
+        $summary['users_updated'] += (int) ($result['updated'] ?? 0);
+
+        $reason = (string) ($result['skipped_reason'] ?? '');
+        if ($reason !== '') {
+          $skip_reasons[$reason] = ($skip_reasons[$reason] ?? 0) + 1;
+        }
+      }
+    }
+
+    $rows = [
+      ['Users targeted', (string) $summary['users_targeted']],
+      ['Users processed', (string) $summary['users_processed']],
+      ['Users changed', (string) $summary['users_changed']],
+      ['Users updated', (string) $summary['users_updated']],
+      ['Subscriptions examined', (string) $summary['subscriptions_examined']],
+      ['Dry run', $dry_run ? 'yes' : 'no'],
+      ['Overwrite', $overwrite ? 'yes' : 'no'],
+      ['Only empty', $only_empty ? 'yes' : 'no'],
+    ];
+    $this->io()->table(['Metric', 'Value'], $rows);
+
+    if (!empty($skip_reasons)) {
+      ksort($skip_reasons);
+      $reason_rows = [];
+      foreach ($skip_reasons as $reason => $count) {
+        $reason_rows[] = [$reason, (string) $count];
+      }
+      $this->io()->table(['Skipped reason', 'Count'], $reason_rows);
+    }
+  }
+
+  /**
    * Bulk-pushes followup status to Chargebee for cleanup/synchronization.
    *
    * @param array $options

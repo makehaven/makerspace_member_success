@@ -89,6 +89,56 @@ class ChargebeeFollowupStatusSyncTest extends UnitTestCase {
   }
 
   /**
+   * Builds a user mock with canonical followup field support.
+   */
+  protected function buildPullUser(
+    int $uid = 2,
+    ?string $chargebeeId = 'cust_123',
+    ?string $currentFollowup = NULL,
+    int $expectedSaves = 0
+  ): User {
+    $chargebeeItem = new class($chargebeeId) {
+      public function __construct(public ?string $value) {}
+      public function isEmpty(): bool {
+        return $this->value === NULL || trim($this->value) === '';
+      }
+    };
+    $followupItem = new class($currentFollowup) {
+      public function __construct(public ?string $value) {}
+      public function isEmpty(): bool {
+        return $this->value === NULL || trim($this->value) === '';
+      }
+    };
+
+    $fields = [
+      'field_user_chargebee_id' => $chargebeeItem,
+      'field_member_followup_status' => $followupItem,
+    ];
+
+    $user = $this->createMock(User::class);
+    $user->method('id')->willReturn($uid);
+    $user->method('hasField')->willReturnCallback(static function (string $field) use (&$fields): bool {
+      return array_key_exists($field, $fields);
+    });
+    $user->method('get')->willReturnCallback(static function (string $field) use (&$fields) {
+      return $fields[$field] ?? new class {
+        public ?string $value = NULL;
+        public function isEmpty(): bool {
+          return TRUE;
+        }
+      };
+    });
+    $user->method('set')->willReturnCallback(static function (string $field, ?string $value) use (&$fields) {
+      if (isset($fields[$field])) {
+        $fields[$field]->value = $value;
+      }
+      return NULL;
+    });
+    $user->expects($this->exactly($expectedSaves))->method('save');
+    return $user;
+  }
+
+  /**
    * Ensures push is skipped when disabled.
    */
   public function testPushSkippedWhenDisabled(): void {
@@ -236,6 +286,189 @@ class ChargebeeFollowupStatusSyncTest extends UnitTestCase {
     $this->assertStringContainsString('/update_for_items', $calls[1][1]);
     $this->assertSame('POST', $calls[2][0]);
     $this->assertStringNotContainsString('/update_for_items', $calls[2][1]);
+  }
+
+  /**
+   * Ensures pull maps Chargebee status and saves to Drupal followup field.
+   */
+  public function testPullMapsAndUpdatesWhenEmpty(): void {
+    $calls = [];
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) {
+      if ($method === 'GET') {
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'Return Intent',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    $result = $service->pullUserStatus($this->buildPullUser(2, 'cust_123', NULL, 1));
+    $this->assertSame('Return Intent', $result['chargebee_value']);
+    $this->assertSame(MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT, $result['mapped_status']);
+    $this->assertTrue($result['changed']);
+    $this->assertSame(1, $result['updated']);
+    $this->assertCount(1, $calls);
+    $this->assertSame('GET', $calls[0][0]);
+  }
+
+  /**
+   * Ensures pull dry-run reports changes but does not save.
+   */
+  public function testPullDryRunSkipsSave(): void {
+    $calls = [];
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) {
+      if ($method === 'GET') {
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'No Action Needed',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    $result = $service->pullUserStatus($this->buildPullUser(2, 'cust_123', NULL, 0), TRUE, FALSE);
+    $this->assertTrue($result['changed']);
+    $this->assertSame(0, $result['updated']);
+    $this->assertTrue($result['dry_run']);
+    $this->assertCount(1, $calls);
+  }
+
+  /**
+   * Ensures pull skips with already_synced when Drupal value matches Chargebee.
+   */
+  public function testPullSkipsWhenAlreadySynced(): void {
+    $calls = [];
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) {
+      if ($method === 'GET') {
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'Outreach Active',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    $result = $service->pullUserStatus(
+      $this->buildPullUser(2, 'cust_123', MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE, 0),
+      FALSE,
+      FALSE
+    );
+    $this->assertSame('already_synced', $result['skipped_reason']);
+    $this->assertFalse($result['changed']);
+    $this->assertSame(0, $result['updated']);
+    $this->assertCount(1, $calls);
+  }
+
+  /**
+   * Ensures pull overwrites existing differing status when overwrite is set.
+   */
+  public function testPullOverwritesWhenFlagSet(): void {
+    $calls = [];
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) {
+      if ($method === 'GET') {
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'Outreach Exhausted',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    // User currently has return_intent; Chargebee says outreach_exhausted.
+    $result = $service->pullUserStatus(
+      $this->buildPullUser(2, 'cust_123', MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT, 1),
+      FALSE,
+      TRUE
+    );
+    $this->assertSame(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, $result['mapped_status']);
+    $this->assertSame(MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT, $result['current_status']);
+    $this->assertTrue($result['changed']);
+    $this->assertSame(1, $result['updated']);
+    $this->assertNull($result['skipped_reason']);
+    $this->assertCount(1, $calls);
+  }
+
+  /**
+   * Ensures pull does not overwrite existing differing status by default.
+   */
+  public function testPullSkipsWhenCurrentValueExistsWithoutOverwrite(): void {
+    $calls = [];
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) {
+      if ($method === 'GET') {
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'Outreach Exhausted',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    $result = $service->pullUserStatus($this->buildPullUser(2, 'cust_123', MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT, 0), FALSE, FALSE);
+    $this->assertSame('existing_value_present', $result['skipped_reason']);
+    $this->assertFalse($result['changed']);
+    $this->assertSame(0, $result['updated']);
+    $this->assertCount(1, $calls);
   }
 
 }

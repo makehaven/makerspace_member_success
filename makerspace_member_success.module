@@ -48,11 +48,20 @@ function makerspace_member_success_cron(): void {
   $query = $database->select('user__field_user_chargebee_id', 'cb');
   $query->fields('cb', ['entity_id']);
   $query->condition('cb.field_user_chargebee_id_value', '', '<>');
+  $has_status_source = FALSE;
+  $or = $query->orConditionGroup();
   if ($schema->tableExists('user__field_member_followup_status')) {
     $query->leftJoin('user__field_member_followup_status', 'mf', 'mf.entity_id = cb.entity_id');
+    $or->condition('mf.field_member_followup_status_value', '', '<>');
+    $has_status_source = TRUE;
   }
   if ($schema->tableExists('user__field_chargebee_followup')) {
     $query->leftJoin('user__field_chargebee_followup', 'lf', 'lf.entity_id = cb.entity_id');
+    $or->condition('lf.field_chargebee_followup_value', '', '<>');
+    $has_status_source = TRUE;
+  }
+  if ($has_status_source) {
+    $query->condition($or);
   }
   $query->orderBy('cb.entity_id', 'ASC');
   $query->range(0, $limit);
