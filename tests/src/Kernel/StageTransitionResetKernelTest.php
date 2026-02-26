@@ -6,6 +6,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\user\Entity\User;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Kernel tests for stage transition suppression reset behavior.
@@ -23,10 +24,19 @@ class StageTransitionResetKernelTest extends KernelTestBase {
     'profile',
     'node',
     'taxonomy',
-    'civicrm',
-    'civicrm_entity',
     'makerspace_member_success',
   ];
+
+  /**
+   * {@inheritdoc}
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+
+    $container->register('civicrm', 'Drupal\civicrm\Civicrm')
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
 
   /**
    * Tests suppression resets when stage changes.
@@ -34,7 +44,16 @@ class StageTransitionResetKernelTest extends KernelTestBase {
   public function testSuppressionResetsOnStageChange(): void {
     $this->installSchema('system', ['sequences']);
     $this->installEntitySchema('user');
-    $this->installSchema('makerspace_member_success', ['ms_member_success_snapshot']);
+    $this->installSchema('makerspace_member_success', ['ms_member_success_snapshot', 'ms_member_outreach_log']);
+    $this->container->set('civicrm', $this->createMock(\Drupal\civicrm\Civicrm::class));
+    $schema = $this->container->get('database')->schema();
+    if (!$schema->fieldExists('ms_member_success_snapshot', 'pause_start_date')) {
+      $schema->addField('ms_member_success_snapshot', 'pause_start_date', [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+      ]);
+    }
 
     $user = User::create([
       'name' => 'stage-reset-user',
@@ -125,7 +144,8 @@ class StageTransitionResetKernelTest extends KernelTestBase {
     );
 
     $this->assertSame(MemberSuccessLifecycle::STAGE_RECOVERY, $row['stage']);
-    $this->assertNull($row['member_followup_status']);
+    $this->assertSame(MemberSuccessLifecycle::OUTREACH_STATUS_PENDING, $row['outreach_status']);
+    $this->assertSame(MemberSuccessLifecycle::OUTREACH_STATUS_PENDING, $row['member_followup_status']);
     $this->assertNull($row['last_contact_date']);
     $this->assertNull($row['next_followup_date']);
     $this->assertSame(0, (int) $row['contact_count']);

@@ -404,23 +404,22 @@ class RecoveryMetrics {
    *   Value metrics including total at risk and value saved
    */
   public function getRetentionValue($start_date = NULL, $end_date = NULL) {
-    // Build date filter
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
 
-    // Get all members who were contacted for recovery
+    // Single query: join monthly payment directly to avoid N+1 per member.
     $query = "
-      SELECT DISTINCT
+      SELECT
         log.uid,
-        u.uid as user_id,
-        MAX(CASE
-          WHEN log.outcome = 'payment_updated'
-          THEN 1 ELSE 0
-        END) as was_resolved
+        MAX(CASE WHEN log.outcome = 'payment_updated' THEN 1 ELSE 0 END) as was_resolved,
+        COALESCE(payment.field_member_payment_monthly_value, 0) as monthly_payment
       FROM {ms_member_outreach_log} log
-      INNER JOIN {users_field_data} u ON u.uid = log.uid
+      LEFT JOIN {profile} p
+        ON p.uid = log.uid AND p.type = 'main' AND p.is_default = 1 AND p.status = 1
+      LEFT JOIN {profile__field_member_payment_monthly} payment
+        ON payment.entity_id = p.profile_id AND payment.deleted = 0
       WHERE 1=1" . $date_where . "
-      GROUP BY log.uid, u.uid
+      GROUP BY log.uid, payment.field_member_payment_monthly_value
     ";
 
     $members = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
@@ -430,22 +429,7 @@ class RecoveryMetrics {
     $resolved_count = 0;
 
     foreach ($members as $member) {
-      $uid = (int) $member['uid'];
-
-      // Get monthly payment amount from profile
-      $payment_query = $this->database->select('profile', 'p');
-      $payment_query->condition('p.uid', $uid);
-      $payment_query->condition('p.type', 'main');
-      $payment_query->condition('p.is_default', 1);
-      $payment_query->condition('p.status', 1);
-      $payment_query->leftJoin('profile__field_member_payment_monthly', 'payment', 'payment.entity_id = p.profile_id AND payment.deleted = 0');
-      $payment_query->addField('payment', 'field_member_payment_monthly_value', 'monthly_payment');
-      $payment_query->range(0, 1);
-
-      $monthly_payment = (float) ($payment_query->execute()->fetchField() ?? 0);
-
-      // Calculate annual value (monthly * 12)
-      $annual_value = $monthly_payment * 12;
+      $annual_value = (float) $member['monthly_payment'] * 12;
       $total_at_risk += $annual_value;
 
       if ((int) $member['was_resolved'] === 1) {

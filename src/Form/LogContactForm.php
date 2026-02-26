@@ -298,10 +298,6 @@ class LogContactForm extends FormBase {
       ));
     }
 
-    // If this interaction came from queue processing, mark matching queue items
-    // as handled so they no longer appear as pending work.
-    $this->markQueueItemsHandled((int) $user->id(), (string) $stage);
-
     // Redirect to destination param if provided, otherwise stage-aware queue.
     $destination = $this->getRequest()->query->get('destination');
     if ($destination) {
@@ -310,24 +306,6 @@ class LogContactForm extends FormBase {
     else {
       $form_state->setRedirectUrl($this->stageUrl($stage));
     }
-  }
-
-  /**
-   * Marks queued/approved items for this user+stage as sent after manual log.
-   */
-  protected function markQueueItemsHandled(int $uid, string $stage): void {
-    $this->database->update('ms_member_outreach_queue')
-      ->fields([
-        'status' => 'sent',
-        'sent_at' => \Drupal::time()->getCurrentTime(),
-        'updated_at' => \Drupal::time()->getCurrentTime(),
-        'failure_code' => NULL,
-        'failure_message' => NULL,
-      ])
-      ->condition('uid', $uid)
-      ->condition('stage', $stage)
-      ->condition('status', ['queued', 'approved'], 'IN')
-      ->execute();
   }
 
   /**
@@ -366,20 +344,7 @@ class LogContactForm extends FormBase {
    *   Filtered outcome options.
    */
   protected function getOutcomeOptions(string $method, string $stage): array {
-    $suppressed_by_stage = match ($stage) {
-      MemberSuccessLifecycle::STAGE_ONBOARDING,
-      MemberSuccessLifecycle::STAGE_ENGAGEMENT => [
-        MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
-        MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
-      ],
-      MemberSuccessLifecycle::STAGE_RETENTION => [
-        MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
-      ],
-      MemberSuccessLifecycle::STAGE_RECOVERY => [
-        MemberSuccessLifecycle::OUTCOME_NO_ACTION_NEEDED,
-      ],
-      default => [],
-    };
+    $suppressed_by_stage = MemberSuccessLifecycle::getSuppressedOutcomesForStage($stage);
 
     $all = ['' => $this->t('- Select outcome -')];
 
@@ -484,12 +449,19 @@ class LogContactForm extends FormBase {
       '@outcome' => $outcome_labels[$outcome] ?? $outcome,
     ]));
 
-    $civicrm_activity_id = $result['civicrm_activity_id'];
+    $civicrm_activity_id = $result['civicrm_activity_id'] ?? NULL;
     if ($civicrm_activity_id) {
       $this->messenger()->addStatus($this->t('CiviCRM activity @id created.', ['@id' => $civicrm_activity_id]));
     }
     elseif ($log_in_civicrm && !$civicrm_activity_id) {
       $this->messenger()->addWarning($this->t('Contact logged in Drupal, but CiviCRM activity creation failed. Please check logs.'));
+    }
+
+    $cb = $result['chargebee_sync'] ?? NULL;
+    if ($cb && !empty($cb['error'])) {
+      $this->messenger()->addWarning($this->t('Followup status updated in Drupal, but failed to sync to Chargebee: @message', [
+        '@message' => $cb['error'],
+      ]));
     }
   }
 

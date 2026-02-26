@@ -6,6 +6,8 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
+use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
+use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\Tests\UnitTestCase;
 
@@ -22,8 +24,13 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
   public function testDecodeRiskReasons(): void {
     $form = new class(
       $this->createMock(Connection::class),
-      $this->createMock(OutreachQueueServiceInterface::class)
+      $this->createMock(OutreachQueueServiceInterface::class),
+      $this->createMock(CiviFollowupGroupSync::class),
+      $this->createMock(ChargebeeFollowupStatusSync::class)
     ) extends OutreachQueueReviewForm {
+      protected function t($string, array $args = [], array $options = []) {
+        return strtr((string) $string, $args);
+      }
       public function decodeForTest(mixed $raw): array {
         return $this->decodeRiskReasons($raw);
       }
@@ -46,8 +53,13 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
   public function testFormatQueueReasonSuppressionLabels(): void {
     $form = new class(
       $this->createMock(Connection::class),
-      $this->createMock(OutreachQueueServiceInterface::class)
+      $this->createMock(OutreachQueueServiceInterface::class),
+      $this->createMock(CiviFollowupGroupSync::class),
+      $this->createMock(ChargebeeFollowupStatusSync::class)
     ) extends OutreachQueueReviewForm {
+      protected function t($string, array $args = [], array $options = []) {
+        return strtr((string) $string, $args);
+      }
       public function formatReasonForTest(object $row): string {
         return $this->formatQueueReason($row);
       }
@@ -78,7 +90,15 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $database = $this->createMock(Connection::class);
     $database->method('select')->with('civicrm_msg_template', 'mt')->willReturn($select);
 
-    $form = new class($database, $this->createMock(OutreachQueueServiceInterface::class)) extends OutreachQueueReviewForm {
+    $form = new class(
+      $database,
+      $this->createMock(OutreachQueueServiceInterface::class),
+      $this->createMock(CiviFollowupGroupSync::class),
+      $this->createMock(ChargebeeFollowupStatusSync::class)
+    ) extends OutreachQueueReviewForm {
+      protected function t($string, array $args = [], array $options = []) {
+        return strtr((string) $string, $args);
+      }
       public function loadTemplateTitlesForTest(array $templateIds): array {
         return $this->loadTemplateTitles($templateIds);
       }

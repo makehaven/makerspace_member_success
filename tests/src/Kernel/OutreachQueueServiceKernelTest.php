@@ -6,6 +6,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\makerspace_member_success\Service\OutreachPolicyDeciderInterface;
 use Drupal\makerspace_member_success\Service\OutreachQueueService;
 use Drupal\makerspace_member_success\Support\OutreachDecision;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Kernel tests for outreach queue normalization and transitions.
@@ -23,10 +24,27 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
     'profile',
     'node',
     'taxonomy',
-    'civicrm',
-    'civicrm_entity',
     'makerspace_member_success',
   ];
+
+  /**
+   * {@inheritdoc}
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+
+    $container->register('civicrm', 'Drupal\civicrm\Civicrm')
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->container->set('civicrm', $this->createMock(\Drupal\civicrm\Civicrm::class));
+  }
 
   /**
    * Tests enqueue normalizes serialized risk reasons from snapshots.
@@ -107,7 +125,8 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
 
     $row = $this->databaseRow($id);
     $this->assertSame('sent', (string) $row['status']);
-    $this->assertStringStartsWith('provider_message_id:manual', (string) ($row['failure_message'] ?? ''));
+    $this->assertSame('manual', (string) ($row['provider_message_id'] ?? ''));
+    $this->assertNull($row['failure_message'] ?? NULL);
     $this->assertNotEmpty($row['sent_at']);
   }
 

@@ -3,6 +3,8 @@
 namespace Drupal\makerspace_member_success\Commands;
 
 use Drush\Commands\DrushCommands;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
 use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
 use Drupal\makerspace_member_success\Service\RecoveryMetrics;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -34,6 +36,13 @@ class MemberSuccessCommands extends DrushCommands {
   protected $recoveryMetrics;
 
   /**
+   * Chargebee followup status sync service.
+   *
+   * @var \Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync|null
+   */
+  protected $chargebeeFollowupStatusSync;
+
+  /**
    * Constructs a MemberSuccessCommands object.
    *
    * @param \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $snapshot_builder
@@ -43,11 +52,17 @@ class MemberSuccessCommands extends DrushCommands {
    * @param \Drupal\makerspace_member_success\Service\RecoveryMetrics $recovery_metrics
    *   The recovery metrics service (optional for backwards compatibility).
    */
-  public function __construct(MemberSuccessSnapshotBuilder $snapshot_builder, EntityTypeManagerInterface $entity_type_manager, RecoveryMetrics $recovery_metrics = NULL) {
+  public function __construct(
+    MemberSuccessSnapshotBuilder $snapshot_builder,
+    EntityTypeManagerInterface $entity_type_manager,
+    ?RecoveryMetrics $recovery_metrics = NULL,
+    ?ChargebeeFollowupStatusSync $chargebee_followup_status_sync = NULL
+  ) {
     parent::__construct();
     $this->snapshotBuilder = $snapshot_builder;
     $this->entityTypeManager = $entity_type_manager;
     $this->recoveryMetrics = $recovery_metrics;
+    $this->chargebeeFollowupStatusSync = $chargebee_followup_status_sync;
   }
 
   /**
@@ -193,6 +208,370 @@ class MemberSuccessCommands extends DrushCommands {
     $this->output()->writeln('');
     $this->output()->writeln('<info>Dashboard: /admin/makerspace/member-success/contractor-performance</info>');
     $this->output()->writeln('');
+  }
+
+  /**
+   * Audits followup status storage consistency.
+   *
+   * @command ms:followup-audit
+   * @aliases ms-followup-audit
+   */
+  public function followupAudit(): void {
+    $database = \Drupal::database();
+    $schema = $database->schema();
+
+    $hasCanonical = $schema->tableExists('user__field_member_followup_status');
+    $hasLegacy = $schema->tableExists('user__field_chargebee_followup');
+
+    $totalWithChargebeeId = (int) $database->select('user__field_user_chargebee_id', 'cb')
+      ->condition('cb.field_user_chargebee_id_value', '', '<>')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+
+    $canonicalCount = 0;
+    if ($hasCanonical) {
+      $canonicalCount = (int) $database->select('user__field_member_followup_status', 'f')
+        ->condition('f.field_member_followup_status_value', '', '<>')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+    }
+
+    $legacyCount = 0;
+    if ($hasLegacy) {
+      $legacyCount = (int) $database->select('user__field_chargebee_followup', 'f')
+        ->condition('f.field_chargebee_followup_value', '', '<>')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+    }
+
+    $mismatchCount = 0;
+    if ($hasCanonical && $hasLegacy) {
+      $query = $database->select('user__field_member_followup_status', 'new');
+      $query->innerJoin('user__field_chargebee_followup', 'old', 'old.entity_id = new.entity_id');
+      $query->condition('new.field_member_followup_status_value', '', '<>');
+      $query->condition('old.field_chargebee_followup_value', '', '<>');
+      $query->where('new.field_member_followup_status_value <> old.field_chargebee_followup_value');
+      $mismatchCount = (int) $query->countQuery()->execute()->fetchField();
+    }
+
+    $rows = [
+      ['Users with Chargebee ID', (string) $totalWithChargebeeId],
+      ['Canonical field present', $hasCanonical ? 'yes' : 'no'],
+      ['Legacy field present', $hasLegacy ? 'yes' : 'no'],
+      ['Canonical values populated', (string) $canonicalCount],
+      ['Legacy values populated', (string) $legacyCount],
+      ['Canonical vs legacy mismatches', (string) $mismatchCount],
+    ];
+    $this->io()->table(['Metric', 'Value'], $rows);
+  }
+
+  /**
+   * Backfills canonical followup status from legacy field where missing.
+   *
+   * @command ms:followup-backfill-legacy
+   * @aliases ms-followup-backfill
+   */
+  public function followupBackfillLegacy(): void {
+    $database = \Drupal::database();
+    $schema = $database->schema();
+    if (
+      !$schema->tableExists('user__field_member_followup_status')
+      || !$schema->tableExists('user__field_chargebee_followup')
+    ) {
+      $this->logger()->warning('Backfill skipped: canonical or legacy followup field table is missing.');
+      return;
+    }
+
+    $uids = $database->select('user__field_chargebee_followup', 'old')
+      ->fields('old', ['entity_id'])
+      ->condition('old.field_chargebee_followup_value', '', '<>')
+      ->execute()
+      ->fetchCol();
+    if (empty($uids)) {
+      $this->logger()->notice('No legacy followup values found to backfill.');
+      return;
+    }
+
+    $storage = $this->entityTypeManager->getStorage('user');
+    $updated = 0;
+    foreach (array_chunk(array_map('intval', $uids), 100) as $chunk) {
+      $users = $storage->loadMultiple($chunk);
+      foreach ($users as $user) {
+        if (!$user->hasField('field_member_followup_status') || !$user->hasField('field_chargebee_followup')) {
+          continue;
+        }
+        $legacy = trim((string) $user->get('field_chargebee_followup')->value);
+        $canonical = trim((string) $user->get('field_member_followup_status')->value);
+        if ($legacy !== '' && $canonical === '') {
+          $user->set('field_member_followup_status', $legacy);
+          $user->save();
+          $updated++;
+        }
+      }
+    }
+
+    $this->logger()->success(dt('Backfill complete. Updated @count users.', ['@count' => $updated]));
+  }
+
+  /**
+   * Pushes one user's followup status to Chargebee for testing/operations.
+   *
+   * @param int $uid
+   *   Drupal user ID.
+   * @param array $options
+   *   Command options.
+   *
+   * @option status
+   *   Optional followup status override. If omitted, uses current user field.
+   * @option force
+   *   Force push even when push is disabled in config.
+   * @option dry-run
+   *   Do not POST updates; only report what would change.
+   *
+   * @command ms:chargebee-push-followup
+   * @aliases ms-cb-push-followup
+   */
+  public function chargebeePushFollowup(
+    int $uid,
+    array $options = ['status' => NULL, 'force' => FALSE, 'dry-run' => FALSE]
+  ): void {
+    $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
+    $user = $this->entityTypeManager->getStorage('user')->load($uid);
+    if (!$user) {
+      $this->logger()->error(dt('User @uid not found.', ['@uid' => $uid]));
+      return;
+    }
+
+    $status = $options['status'];
+    if ($status === NULL || trim((string) $status) === '') {
+      if ($user->hasField('field_member_followup_status')) {
+        $status = $user->get('field_member_followup_status')->value;
+      }
+      elseif ($user->hasField('field_chargebee_followup')) {
+        $status = $user->get('field_chargebee_followup')->value;
+      }
+      else {
+        $status = NULL;
+      }
+    }
+
+    $result = $sync->pushUserStatus(
+      $user,
+      $status !== NULL ? trim((string) $status) : NULL,
+      (bool) $options['force'],
+      (bool) $options['dry-run']
+    );
+
+    $rows = [
+      ['UID', (string) $uid],
+      ['Customer ID', (string) ($result['customer_id'] ?? '')],
+      ['Mapped value', (string) ($result['mapped_value'] ?? '')],
+      ['Subscriptions examined', (string) ($result['subscriptions_examined'] ?? 0)],
+      ['Subscriptions updated', (string) ($result['subscriptions_updated'] ?? 0)],
+      ['Subscriptions skipped (same)', (string) ($result['subscriptions_skipped_same'] ?? 0)],
+      ['Dry run', !empty($result['dry_run']) ? 'yes' : 'no'],
+      ['Skipped reason', (string) ($result['skipped_reason'] ?? '')],
+    ];
+    if (!empty($result['error'])) {
+      $rows[] = ['Error', (string) $result['error']];
+    }
+
+    $this->io()->table(['Metric', 'Value'], $rows);
+  }
+
+  /**
+   * Bulk-pushes followup status to Chargebee for cleanup/synchronization.
+   *
+   * @param array $options
+   *   Command options.
+   *
+   * @option status
+   *   Optional status override to push for all targeted users.
+   * @option only-status
+   *   Optional filter: only users currently at this followup status.
+   * @option uids
+   *   Optional comma-separated user IDs to target.
+   * @option limit
+   *   Max users to process (default 200).
+   * @option offset
+   *   Starting offset for selected users (default 0).
+   * @option force
+   *   Force push even when push is disabled in config.
+   * @option dry-run
+   *   Do not POST updates; only report what would change.
+   *
+   * @command ms:chargebee-push-followup-bulk
+   * @aliases ms-cb-push-followup-bulk
+   */
+  public function chargebeePushFollowupBulk(
+    array $options = [
+      'status' => NULL,
+      'only-status' => NULL,
+      'uids' => NULL,
+      'limit' => 200,
+      'offset' => 0,
+      'force' => FALSE,
+      'dry-run' => FALSE,
+    ]
+  ): void {
+    $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
+    $database = \Drupal::database();
+    $schema = $database->schema();
+    $storage = $this->entityTypeManager->getStorage('user');
+
+    $allowed_statuses = [
+      MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE,
+      MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED,
+      MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT,
+      MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION,
+      MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED,
+    ];
+
+    $override_status = trim((string) ($options['status'] ?? ''));
+    $override_status = $override_status !== '' ? $override_status : NULL;
+    if ($override_status !== NULL && !in_array($override_status, $allowed_statuses, TRUE)) {
+      $this->logger()->error(dt('Invalid --status value "@value".', ['@value' => $override_status]));
+      return;
+    }
+
+    $only_status = trim((string) ($options['only-status'] ?? ''));
+    $only_status = $only_status !== '' ? $only_status : NULL;
+    if ($only_status !== NULL && !in_array($only_status, $allowed_statuses, TRUE)) {
+      $this->logger()->error(dt('Invalid --only-status value "@value".', ['@value' => $only_status]));
+      return;
+    }
+
+    $limit = max(1, (int) ($options['limit'] ?? 200));
+    $offset = max(0, (int) ($options['offset'] ?? 0));
+    $force = (bool) ($options['force'] ?? FALSE);
+    $dry_run = (bool) ($options['dry-run'] ?? FALSE);
+
+    $uids_option = trim((string) ($options['uids'] ?? ''));
+    $uids = [];
+    if ($uids_option !== '') {
+      foreach (explode(',', $uids_option) as $part) {
+        $uid = (int) trim($part);
+        if ($uid > 0) {
+          $uids[] = $uid;
+        }
+      }
+      $uids = array_values(array_unique($uids));
+      if (empty($uids)) {
+        $this->logger()->warning('No valid UIDs parsed from --uids option.');
+        return;
+      }
+      $uids = array_slice($uids, $offset, $limit);
+    }
+    else {
+      if (!$schema->tableExists('user__field_user_chargebee_id')) {
+        $this->logger()->error('Missing required table user__field_user_chargebee_id.');
+        return;
+      }
+
+      $query = $database->select('user__field_user_chargebee_id', 'cb');
+      $query->fields('cb', ['entity_id']);
+      $query->condition('cb.field_user_chargebee_id_value', '', '<>');
+
+      if ($only_status !== NULL) {
+        if (!$schema->tableExists('user__field_member_followup_status')) {
+          $this->logger()->error('Cannot use --only-status: canonical followup field table is missing.');
+          return;
+        }
+        $query->innerJoin('user__field_member_followup_status', 'mf', 'mf.entity_id = cb.entity_id');
+        $query->condition('mf.field_member_followup_status_value', $only_status);
+      }
+      elseif ($override_status === NULL) {
+        $or = $query->orConditionGroup();
+        $has_status_source = FALSE;
+        if ($schema->tableExists('user__field_member_followup_status')) {
+          $query->leftJoin('user__field_member_followup_status', 'mf', 'mf.entity_id = cb.entity_id');
+          $or->condition('mf.field_member_followup_status_value', '', '<>');
+          $has_status_source = TRUE;
+        }
+        if ($schema->tableExists('user__field_chargebee_followup')) {
+          $query->leftJoin('user__field_chargebee_followup', 'lf', 'lf.entity_id = cb.entity_id');
+          $or->condition('lf.field_chargebee_followup_value', '', '<>');
+          $has_status_source = TRUE;
+        }
+        if ($has_status_source) {
+          $query->condition($or);
+        }
+      }
+
+      $query->orderBy('cb.entity_id', 'ASC');
+      $query->range($offset, $limit);
+      $uids = array_map('intval', $query->execute()->fetchCol());
+    }
+
+    if (empty($uids)) {
+      $this->logger()->notice('No users matched the selection criteria.');
+      return;
+    }
+
+    $summary = [
+      'users_targeted' => count($uids),
+      'users_processed' => 0,
+      'subscriptions_examined' => 0,
+      'subscriptions_updated' => 0,
+      'subscriptions_skipped_same' => 0,
+    ];
+    $skip_reasons = [];
+
+    foreach (array_chunk($uids, 100) as $chunk) {
+      $users = $storage->loadMultiple($chunk);
+      foreach ($chunk as $uid) {
+        if (empty($users[$uid])) {
+          $skip_reasons['user_not_found'] = ($skip_reasons['user_not_found'] ?? 0) + 1;
+          continue;
+        }
+
+        $user = $users[$uid];
+        $status = $override_status;
+        if ($status === NULL) {
+          if ($user->hasField('field_member_followup_status')) {
+            $status = trim((string) $user->get('field_member_followup_status')->value);
+          }
+          if (($status === NULL || $status === '') && $user->hasField('field_chargebee_followup')) {
+            $status = trim((string) $user->get('field_chargebee_followup')->value);
+          }
+          $status = $status !== '' ? $status : NULL;
+        }
+
+        $result = $sync->pushUserStatus($user, $status, $force, $dry_run);
+        $summary['users_processed']++;
+        $summary['subscriptions_examined'] += (int) ($result['subscriptions_examined'] ?? 0);
+        $summary['subscriptions_updated'] += (int) ($result['subscriptions_updated'] ?? 0);
+        $summary['subscriptions_skipped_same'] += (int) ($result['subscriptions_skipped_same'] ?? 0);
+
+        $reason = (string) ($result['skipped_reason'] ?? '');
+        if ($reason !== '') {
+          $skip_reasons[$reason] = ($skip_reasons[$reason] ?? 0) + 1;
+        }
+      }
+    }
+
+    $rows = [
+      ['Users targeted', (string) $summary['users_targeted']],
+      ['Users processed', (string) $summary['users_processed']],
+      ['Subscriptions examined', (string) $summary['subscriptions_examined']],
+      ['Subscriptions updated', (string) $summary['subscriptions_updated']],
+      ['Subscriptions skipped (same)', (string) $summary['subscriptions_skipped_same']],
+      ['Dry run', $dry_run ? 'yes' : 'no'],
+      ['Forced', $force ? 'yes' : 'no'],
+    ];
+    $this->io()->table(['Metric', 'Value'], $rows);
+
+    if (!empty($skip_reasons)) {
+      ksort($skip_reasons);
+      $reason_rows = [];
+      foreach ($skip_reasons as $reason => $count) {
+        $reason_rows[] = [$reason, (string) $count];
+      }
+      $this->io()->table(['Skipped reason', 'Count'], $reason_rows);
+    }
   }
 
 }

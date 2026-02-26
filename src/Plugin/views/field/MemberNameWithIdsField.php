@@ -200,7 +200,7 @@ class MemberNameWithIdsField extends FieldPluginBase {
       // Get Chargebee site name from config
       $config = \Drupal::config('chargebee_portal.settings');
       $site = $config->get('site') ?? 'makehaven';
-      $cb_url = 'https://' . $site . '.chargebee.com/customers/' . urlencode($chargebee_id);
+      $cb_url = 'https://' . $site . '.chargebee.com/d/customers/' . urlencode($chargebee_id);
       $id_parts[] = '<a href="' . $cb_url . '" target="_blank" title="View in Chargebee" class="text-decoration-none">CB</a>';
     }
 

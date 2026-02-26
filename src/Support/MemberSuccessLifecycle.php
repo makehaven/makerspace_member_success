@@ -126,4 +126,30 @@ final class MemberSuccessLifecycle {
     return $mapping[$outcome] ?? NULL;
   }
 
+  /**
+   * Returns outcomes that are suppressed/hidden for a given stage.
+   *
+   * @param string $stage
+   *   Lifecycle stage machine name.
+   *
+   * @return string[]
+   *   Suppressed outcome machine names.
+   */
+  public static function getSuppressedOutcomesForStage(string $stage): array {
+    return match ($stage) {
+      self::STAGE_ONBOARDING,
+      self::STAGE_ENGAGEMENT => [
+        self::OUTCOME_NO_ACTION_NEEDED,
+        self::OUTCOME_PAYMENT_UPDATED,
+      ],
+      self::STAGE_RETENTION => [
+        self::OUTCOME_PAYMENT_UPDATED,
+      ],
+      self::STAGE_RECOVERY => [
+        self::OUTCOME_NO_ACTION_NEEDED,
+      ],
+      default => [],
+    };
+  }
+
 }

@@ -436,6 +436,12 @@ function makerspace_member_success_schema() {
           'type' => 'text',
           'not null' => FALSE,
         ],
+        'provider_message_id' => [
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => FALSE,
+          'description' => 'Provider-assigned message ID returned on successful send (e.g. Twilio SID).',
+        ],
         'scheduled_at' => [
           'type' => 'int',
           'unsigned' => TRUE,
@@ -1088,5 +1094,169 @@ function makerspace_member_success_update_9017(): void {
       'not null' => FALSE,
       'description' => 'Date member\'s payment pause began (YYYY-MM-DD)',
     ]);
+  }
+}
+
+/**
+ * Normalizes followup config key and migrates legacy followup field values.
+ */
+function makerspace_member_success_update_9018(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $legacy_key = 'civicrm_member_followup_status_field';
+  $canonical_key = 'civicrm_member_followup_field';
+  $legacy_value = $config->get($legacy_key);
+  $canonical_value = $config->get($canonical_key);
+
+  if ($canonical_value === NULL && $legacy_value !== NULL) {
+    $config->set($canonical_key, $legacy_value);
+  }
+  if ($legacy_value !== NULL) {
+    $config->clear($legacy_key);
+  }
+  $config->save(TRUE);
+
+  $field_manager = \Drupal::service('entity_field.manager');
+  $definitions = $field_manager->getFieldDefinitions('user', 'user');
+  if (
+    empty($definitions['field_member_followup_status'])
+    || empty($definitions['field_chargebee_followup'])
+  ) {
+    return;
+  }
+
+  $user_storage = \Drupal::entityTypeManager()->getStorage('user');
+  $uids = \Drupal::entityQuery('user')
+    ->accessCheck(FALSE)
+    ->condition('field_chargebee_followup', NULL, 'IS NOT NULL')
+    ->execute();
+
+  if (empty($uids)) {
+    return;
+  }
+
+  $migrated = 0;
+  foreach (array_chunk(array_values($uids), 100) as $chunk) {
+    $users = $user_storage->loadMultiple($chunk);
+    foreach ($users as $user) {
+      if (
+        !$user->hasField('field_member_followup_status')
+        || !$user->hasField('field_chargebee_followup')
+      ) {
+        continue;
+      }
+
+      $legacy_status = trim((string) $user->get('field_chargebee_followup')->value);
+      $current_status = trim((string) $user->get('field_member_followup_status')->value);
+      if ($legacy_status !== '' && $current_status === '') {
+        $user->set('field_member_followup_status', $legacy_status);
+        $user->save();
+        $migrated++;
+      }
+    }
+  }
+
+  if ($migrated > 0) {
+    \Drupal::logger('makerspace_member_success')->notice('Migrated @count legacy followup values to field_member_followup_status.', [
+      '@count' => $migrated,
+    ]);
+  }
+}
+
+/**
+ * Seeds optional CiviCRM followup group mapping config defaults.
+ */
+function makerspace_member_success_update_9019(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'civicrm_group_outreach_active' => 0,
+    'civicrm_group_outreach_exhausted' => 0,
+    'civicrm_group_no_action_needed' => 0,
+    'civicrm_group_return_intent' => 0,
+    'civicrm_group_confirmed_cancellation' => 0,
+  ];
+
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save(TRUE);
+  }
+}
+
+/**
+ * Seeds Chargebee followup push config defaults.
+ */
+function makerspace_member_success_update_9020(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'chargebee_followup_push_enabled' => FALSE,
+    'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+  ];
+
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save(TRUE);
+  }
+}
+
+/**
+ * Adds provider_message_id column to outreach queue table.
+ *
+ * Previously, the provider-assigned message ID (e.g. Twilio SID) was incorrectly
+ * stored in the failure_message column with a "provider_message_id:" prefix.
+ * This column gives it a proper home.
+ */
+function makerspace_member_success_update_9022(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_outreach_queue', 'provider_message_id')) {
+    $schema->addField('ms_member_outreach_queue', 'provider_message_id', [
+      'type' => 'varchar',
+      'length' => 255,
+      'not null' => FALSE,
+      'description' => 'Provider-assigned message ID returned on successful send (e.g. Twilio SID).',
+    ]);
+  }
+
+  // Migrate any existing encoded values out of failure_message.
+  $database = \Drupal::database();
+  $database->query("
+    UPDATE {ms_member_outreach_queue}
+    SET provider_message_id = SUBSTRING(failure_message, LENGTH('provider_message_id:') + 1),
+        failure_message = NULL
+    WHERE failure_message LIKE 'provider_message_id:%'
+  ");
+}
+
+/**
+ * Seeds cron reconciliation config defaults for Chargebee followup sync.
+ */
+function makerspace_member_success_update_9021(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'chargebee_followup_reconcile_on_cron' => FALSE,
+    'chargebee_followup_reconcile_limit' => 200,
+    'chargebee_followup_reconcile_dry_run' => TRUE,
+    'chargebee_followup_reconcile_force' => FALSE,
+  ];
+
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save(TRUE);
   }
 }

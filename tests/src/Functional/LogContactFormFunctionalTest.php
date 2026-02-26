@@ -26,8 +26,6 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
     'system',
     'field',
     'views',
-    'civicrm',
-    'civicrm_entity',
   ];
 
   /**
@@ -48,6 +46,10 @@ class LogContactFormFunctionalTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected function setUp(): void {
+    if (getenv('MSS_ENABLE_CIVICRM_BROWSER_TESTS') !== '1') {
+      $this->markTestSkipped('Set MSS_ENABLE_CIVICRM_BROWSER_TESTS=1 to run CiviCRM-dependent Browser tests.');
+    }
+
     parent::setUp();
 
     // Create admin user with permission to log contacts

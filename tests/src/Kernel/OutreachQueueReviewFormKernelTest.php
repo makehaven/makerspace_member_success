@@ -4,7 +4,10 @@ namespace Drupal\Tests\makerspace_member_success\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
+use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
+use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Kernel tests for queue-review form row filtering behavior.
@@ -21,6 +24,25 @@ class OutreachQueueReviewFormKernelTest extends KernelTestBase {
     'user',
     'makerspace_member_success',
   ];
+
+  /**
+   * {@inheritdoc}
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+
+    $container->register('civicrm', 'Drupal\civicrm\Civicrm')
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->container->set('civicrm', $this->createMock(\Drupal\civicrm\Civicrm::class));
+  }
 
   /**
    * Tests queued rows are hidden when stale/recent outreach exists.
@@ -49,7 +71,9 @@ class OutreachQueueReviewFormKernelTest extends KernelTestBase {
 
     $form = new class(
       $this->container->get('database'),
-      $this->createMock(OutreachQueueServiceInterface::class)
+      $this->createMock(OutreachQueueServiceInterface::class),
+      $this->createMock(CiviFollowupGroupSync::class),
+      $this->createMock(ChargebeeFollowupStatusSync::class)
     ) extends OutreachQueueReviewForm {
       public function loadRowsForTest(string $status, string $stage = ''): array {
         return $this->loadRows($status, $stage);
@@ -122,4 +146,3 @@ class OutreachQueueReviewFormKernelTest extends KernelTestBase {
   }
 
 }
-

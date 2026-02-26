@@ -23,6 +23,20 @@ services:
       - '@current_user'
       - '@civicrm'
 
+  makerspace_member_success.civi_followup_group_sync:
+    class: Drupal\makerspace_member_success\Service\CiviFollowupGroupSync
+    arguments:
+      - '@civicrm'
+      - '@config.factory'
+      - '@logger.factory'
+
+  makerspace_member_success.chargebee_followup_status_sync:
+    class: Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@logger.factory'
+
   makerspace_member_success.outreach_service:
     class: Drupal\makerspace_member_success\Service\OutreachService
     arguments:
@@ -31,6 +45,8 @@ services:
       - '@current_user'
       - '@logger.factory'
       - '@makerspace_member_success.activity_logger'
+      - '@makerspace_member_success.civi_followup_group_sync'
+      - '@makerspace_member_success.chargebee_followup_status_sync'
 
   makerspace_member_success.recovery_metrics:
     class: Drupal\makerspace_member_success\Service\RecoveryMetrics
@@ -90,5 +106,6 @@ services:
       - '@makerspace_member_success.snapshot_builder'
       - '@entity_type.manager'
       - '@makerspace_member_success.recovery_metrics'
+      - '@makerspace_member_success.chargebee_followup_status_sync'
     tags:
       - { name: drush.command }

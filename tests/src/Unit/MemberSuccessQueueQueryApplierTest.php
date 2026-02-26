@@ -64,15 +64,11 @@ class MemberSuccessQueueQueryApplierTest extends UnitTestCase {
 
     $query = $this->getMockBuilder(Sql::class)
       ->disableOriginalConstructor()
-      ->onlyMethods(['setWhereGroup', 'addWhere'])
+      ->onlyMethods(['addWhereExpression'])
       ->getMock();
 
-    $query->expects($this->exactly(4))
-      ->method('setWhereGroup')
-      ->willReturnOnConsecutiveCalls(1, 2, 3, 4);
-
-    $query->expects($this->exactly(6))
-      ->method('addWhere');
+    $query->expects($this->exactly(3))
+      ->method('addWhereExpression');
 
     $applier = new MemberSuccessQueueQueryApplier($request_stack);
     $applier->applyVisibilityFilters($query, 'ms', '2026-02-17');

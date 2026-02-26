@@ -28,6 +28,107 @@ function makerspace_member_success_cron(): void {
   /** @var \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $builder */
   $builder = \Drupal::service('makerspace_member_success.snapshot_builder');
   $builder->buildDailySnapshots();
+
+  $config = \Drupal::config('makerspace_member_success.settings');
+  if (!(bool) $config->get('chargebee_followup_reconcile_on_cron')) {
+    return;
+  }
+
+  $limit = max(1, (int) ($config->get('chargebee_followup_reconcile_limit') ?? 200));
+  $dry_run = (bool) ($config->get('chargebee_followup_reconcile_dry_run') ?? TRUE);
+  $force = (bool) ($config->get('chargebee_followup_reconcile_force') ?? FALSE);
+
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  if (!$schema->tableExists('user__field_user_chargebee_id')) {
+    \Drupal::logger('makerspace_member_success')->warning('Chargebee cron reconcile skipped: missing user__field_user_chargebee_id table.');
+    return;
+  }
+
+  $query = $database->select('user__field_user_chargebee_id', 'cb');
+  $query->fields('cb', ['entity_id']);
+  $query->condition('cb.field_user_chargebee_id_value', '', '<>');
+  if ($schema->tableExists('user__field_member_followup_status')) {
+    $query->leftJoin('user__field_member_followup_status', 'mf', 'mf.entity_id = cb.entity_id');
+  }
+  if ($schema->tableExists('user__field_chargebee_followup')) {
+    $query->leftJoin('user__field_chargebee_followup', 'lf', 'lf.entity_id = cb.entity_id');
+  }
+  $query->orderBy('cb.entity_id', 'ASC');
+  $query->range(0, $limit);
+  $uids = array_map('intval', $query->execute()->fetchCol());
+  if (empty($uids)) {
+    \Drupal::logger('makerspace_member_success')->notice('Chargebee cron reconcile: no users with Chargebee IDs found.');
+    return;
+  }
+
+  $sync = \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
+  $storage = \Drupal::entityTypeManager()->getStorage('user');
+
+  $processed = 0;
+  $updated = 0;
+  $examined = 0;
+  $skipped_same = 0;
+  $skip_reasons = [];
+  $pushable_statuses = [
+    MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE,
+    MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED,
+    MemberSuccessLifecycle::FOLLOWUP_RETURN_INTENT,
+    MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION,
+    MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED,
+  ];
+  foreach (array_chunk($uids, 100) as $chunk) {
+    $users = $storage->loadMultiple($chunk);
+    foreach ($chunk as $uid) {
+      if (empty($users[$uid])) {
+        $skip_reasons['user_not_found'] = ($skip_reasons['user_not_found'] ?? 0) + 1;
+        continue;
+      }
+
+      $user = $users[$uid];
+      $status = NULL;
+      if ($user->hasField('field_member_followup_status')) {
+        $status = trim((string) $user->get('field_member_followup_status')->value);
+      }
+      if (($status === NULL || $status === '') && $user->hasField('field_chargebee_followup')) {
+        $status = trim((string) $user->get('field_chargebee_followup')->value);
+      }
+      $status = $status !== '' ? $status : NULL;
+      if ($status === NULL || !in_array($status, $pushable_statuses, TRUE)) {
+        $skip_reasons['unmapped_followup_status'] = ($skip_reasons['unmapped_followup_status'] ?? 0) + 1;
+        continue;
+      }
+
+      $result = $sync->pushUserStatus($user, $status, $force, $dry_run);
+      $processed++;
+      $updated += (int) ($result['subscriptions_updated'] ?? 0);
+      $examined += (int) ($result['subscriptions_examined'] ?? 0);
+      $skipped_same += (int) ($result['subscriptions_skipped_same'] ?? 0);
+
+      $reason = (string) ($result['skipped_reason'] ?? '');
+      if ($reason !== '') {
+        $skip_reasons[$reason] = ($skip_reasons[$reason] ?? 0) + 1;
+      }
+    }
+  }
+
+  ksort($skip_reasons);
+  $reason_summary = [];
+  foreach ($skip_reasons as $reason => $count) {
+    $reason_summary[] = $reason . ':' . $count;
+  }
+
+  \Drupal::logger('makerspace_member_success')->notice(
+    'Chargebee cron reconcile ran (processed: @processed, examined: @examined, updated: @updated, skipped_same: @skipped_same, dry_run: @dry_run, reasons: @reasons).',
+    [
+      '@processed' => $processed,
+      '@examined' => $examined,
+      '@updated' => $updated,
+      '@skipped_same' => $skipped_same,
+      '@dry_run' => $dry_run ? 'yes' : 'no',
+      '@reasons' => empty($reason_summary) ? 'none' : implode(', ', $reason_summary),
+    ]
+  );
 }
 
 /**

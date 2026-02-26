@@ -86,7 +86,8 @@ final class MemberSuccessRiskScorer {
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_ENGAGEMENT && !empty($data['activation_ts'])) {
       $since_activation = $now_ts - $data['activation_ts'];
-      $recent_visit_days = (int) ($data['visit_count_30d'] ?? 0);
+      // visit_count_30d is the count of distinct days visited in the last 30d.
+      $recent_visit_day_count = (int) ($data['visit_count_30d'] ?? 0);
       // Frequent entry activity indicates ongoing in-space engagement even
       // when new badge requests are not being filed.
       $frequent_visit_days_threshold = 4;
@@ -94,7 +95,7 @@ final class MemberSuccessRiskScorer {
       if (
         $since_activation >= ($badge_one_days * 86400)
         && $data['badge_count_window'] < 1
-        && $recent_visit_days < $frequent_visit_days_threshold
+        && $recent_visit_day_count < $frequent_visit_days_threshold
       ) {
         $score += 20;
         $reasons[] = 'no_badge_1';

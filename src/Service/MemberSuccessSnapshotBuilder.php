@@ -49,11 +49,10 @@ class MemberSuccessSnapshotBuilder {
     $uids = $this->loadActiveMemberIds();
     $count = 0;
 
-    // Reset is_latest for this type.
-    $this->database->update('ms_member_success_snapshot')
-      ->fields(['is_latest' => 0])
-      ->condition('snapshot_type', $snapshot_type)
-      ->execute();
+    // NOTE: is_latest is reset per-user inside upsertSnapshot() before each
+    // merge, so we do NOT do a bulk reset here. A bulk reset before the loop
+    // would leave all members with is_latest=0 if the process crashes or times
+    // out mid-run, causing queues to appear empty until the next full run.
 
     foreach ($uids as $uid) {
       $row = $this->buildSnapshotForUser($uid, $snapshot_date, $snapshot_type, $now_ts);
@@ -303,10 +302,6 @@ class MemberSuccessSnapshotBuilder {
       'member_followup_status' => NULL,
     ];
 
-    if (!$this->civicrm) {
-      return $default;
-    }
-
     try {
       $this->civicrm->initialize();
       $uf_match = civicrm_api3('UFMatch', 'get', [
@@ -321,7 +316,8 @@ class MemberSuccessSnapshotBuilder {
 
       $config = $this->configFactory->get('makerspace_member_success.settings');
       $pref_field = $config->get('civicrm_preferred_method_field') ?? 'preferred_communication_method';
-      $followup_field = $config->get('civicrm_member_followup_status_field');
+      $followup_field = $config->get('civicrm_member_followup_field')
+        ?? $config->get('civicrm_member_followup_status_field');
 
       $return_fields = ['do_not_phone', 'do_not_email', 'do_not_sms', 'do_not_mail', $pref_field];
       if ($followup_field) {

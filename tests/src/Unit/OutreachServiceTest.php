@@ -11,7 +11,9 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
 use Drupal\makerspace_member_success\Service\CiviCrmActivityLogger;
+use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
 use Drupal\makerspace_member_success\Service\OutreachService;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\Tests\UnitTestCase;
@@ -90,6 +92,7 @@ class OutreachServiceTest extends UnitTestCase {
       $snapshot_update = $fields;
       return $snapshot_update_query;
     });
+    $snapshot_update_query->method('expression')->willReturnSelf();
     $snapshot_update_query->method('condition')->willReturnSelf();
     $snapshot_update_query->method('execute')->willReturn(NULL);
 
@@ -112,6 +115,10 @@ class OutreachServiceTest extends UnitTestCase {
     $database->method('update')->willReturnCallback(function (string $table) use ($snapshot_update_query, $queue_update_query) {
       return $table === 'ms_member_outreach_queue' ? $queue_update_query : $snapshot_update_query;
     });
+    
+    $database->method('startTransaction')->willReturn(new class {
+      public function rollBack() {}
+    });
 
     // Entity type manager (not called unless confirmed_cancel with reason).
     $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
@@ -129,7 +136,18 @@ class OutreachServiceTest extends UnitTestCase {
     $activity_logger = $this->createMock(CiviCrmActivityLogger::class);
     $activity_logger->method('logRetentionContact')->willReturn($civicrm_activity_id);
 
-    return new OutreachService($database, $entity_type_manager, $current_user, $logger_factory, $activity_logger);
+    $followup_group_sync = $this->createMock(CiviFollowupGroupSync::class);
+    $chargebee_followup_sync = $this->createMock(ChargebeeFollowupStatusSync::class);
+
+    return new OutreachService(
+      $database,
+      $entity_type_manager,
+      $current_user,
+      $logger_factory,
+      $activity_logger,
+      $followup_group_sync,
+      $chargebee_followup_sync
+    );
   }
 
   /**
@@ -233,7 +251,8 @@ class OutreachServiceTest extends UnitTestCase {
     );
 
     $this->assertSame(3, $result['contact_count']);
-    $this->assertSame(3, $snapshot_update['contact_count']);
+    // contact_count is now updated via expression, so it's not in $snapshot_update.
+    $this->assertArrayNotHasKey('contact_count', $snapshot_update);
   }
 
   /**
@@ -344,8 +363,8 @@ class OutreachServiceTest extends UnitTestCase {
     );
 
     $this->assertSame('sent', $queue_update['status'] ?? NULL);
-    $this->assertNull($queue_update['failure_code'] ?? 'not-null');
-    $this->assertNull($queue_update['failure_message'] ?? 'not-null');
+    $this->assertTrue(!array_key_exists('failure_code', $queue_update) || $queue_update['failure_code'] === NULL);
+    $this->assertTrue(!array_key_exists('failure_message', $queue_update) || $queue_update['failure_message'] === NULL);
     $this->assertNotEmpty($queue_update['sent_at'] ?? NULL);
     $this->assertNotEmpty($queue_update['updated_at'] ?? NULL);
     $this->assertContains(['uid', 42, '='], $queue_update_conditions);

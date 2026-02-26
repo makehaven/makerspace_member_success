@@ -4,6 +4,7 @@ namespace Drupal\Tests\makerspace_member_success\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Tests the MemberSuccessSnapshotBuilder service.
@@ -21,8 +22,7 @@ class MemberSuccessSnapshotBuilderTest extends KernelTestBase {
     'profile',
     'node',
     'taxonomy',
-    'civicrm',
-    'civicrm_entity',
+    'text',
     'makerspace_member_success',
   ];
 
@@ -36,8 +36,20 @@ class MemberSuccessSnapshotBuilderTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+
+    $container->register('civicrm', 'Drupal\civicrm\Civicrm')
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp(): void {
     parent::setUp();
+    $this->container->set('civicrm', $this->createMock(\Drupal\civicrm\Civicrm::class));
 
     $this->installSchema('system', ['sequences']);
     $this->installEntitySchema('user');

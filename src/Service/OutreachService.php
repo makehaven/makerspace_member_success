@@ -25,6 +25,10 @@ class OutreachService {
 
   protected CiviCrmActivityLogger $activityLogger;
 
+  protected CiviFollowupGroupSync $followupGroupSync;
+
+  protected ChargebeeFollowupStatusSync $chargebeeFollowupSync;
+
   /**
    * Constructs an OutreachService object.
    */
@@ -33,13 +37,17 @@ class OutreachService {
     EntityTypeManagerInterface $entity_type_manager,
     AccountInterface $current_user,
     LoggerChannelFactoryInterface $logger_factory,
-    CiviCrmActivityLogger $activity_logger
+    CiviCrmActivityLogger $activity_logger,
+    CiviFollowupGroupSync $followup_group_sync,
+    ChargebeeFollowupStatusSync $chargebee_followup_sync
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->currentUser = $current_user;
     $this->logger = $logger_factory->get('makerspace_member_success');
     $this->activityLogger = $activity_logger;
+    $this->followupGroupSync = $followup_group_sync;
+    $this->chargebeeFollowupSync = $chargebee_followup_sync;
   }
 
   /**
@@ -64,8 +72,8 @@ class OutreachService {
    * @param int|null $existing_civicrm_activity_id
    *   Existing CiviCRM activity ID to associate with this outreach log row.
    *
-   * @return array{civicrm_activity_id: int|null, contact_count: int}
-   *   Activity ID (if created) and new contact count for messenger feedback.
+   * @return array{civicrm_activity_id: int|null, contact_count: int, chargebee_sync: array|null}
+   *   Activity ID (if created), new contact count, and Chargebee sync status.
    */
   public function recordContact(
     User $user,
@@ -96,53 +104,58 @@ class OutreachService {
     // 2. Compute followup status.
     $followup_status = MemberSuccessLifecycle::followupStatusForOutcome($outcome, $mark_exhausted);
 
-    // 3. Write field_member_followup_status to user entity if status changed.
-    if ($followup_status !== NULL && $user->hasField('field_member_followup_status')) {
-      $current_status = $user->get('field_member_followup_status')->value;
-      if ($followup_status !== $current_status) {
-        $user->set('field_member_followup_status', $followup_status);
-        $user->save();
-        $this->logger->notice(
-          'Updated followup status for user @uid from @old to @new (outcome: @outcome)',
-          ['@uid' => $uid, '@old' => $current_status ?? 'empty', '@new' => $followup_status, '@outcome' => $outcome]
-        );
-      }
-    }
+    $transaction = $this->database->startTransaction();
+    $chargebee_result = NULL;
 
-    // 4. Write field_member_end_reason to profile if confirmed_cancel.
-    if ($outcome === MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL && !empty($cancellation_reason)) {
-      $profiles = $this->entityTypeManager->getStorage('profile')->loadByProperties([
-        'uid' => $uid,
-        'type' => 'main',
-        'is_default' => TRUE,
-        'status' => TRUE,
-      ]);
-      if (!empty($profiles)) {
-        $profile = reset($profiles);
-        if ($profile->hasField('field_member_end_reason')) {
-          $profile->set('field_member_end_reason', $cancellation_reason);
-          $profile->save();
+    try {
+      // 3. Write field_member_followup_status to user entity if status changed.
+      if ($followup_status !== NULL && $user->hasField('field_member_followup_status')) {
+        $current_status = $user->get('field_member_followup_status')->value;
+        if ($followup_status !== $current_status) {
+          $user->set('field_member_followup_status', $followup_status);
+          $user->save();
+          $this->followupGroupSync->syncForUser($user, $followup_status);
+          $chargebee_result = $this->chargebeeFollowupSync->pushUserStatus($user, $followup_status);
           $this->logger->notice(
-            'Updated cancellation reason for user @uid to @reason',
-            ['@uid' => $uid, '@reason' => $cancellation_reason]
+            'Updated followup status for user @uid from @old to @new (outcome: @outcome)',
+            ['@uid' => $uid, '@old' => $current_status ?? 'empty', '@new' => $followup_status, '@outcome' => $outcome]
           );
         }
       }
-    }
 
-    // 5. Create CiviCRM activity if requested.
-    $civicrm_activity_id = $existing_civicrm_activity_id;
-    if ($log_in_civicrm && !$civicrm_activity_id) {
-      $civicrm_activity_id = $this->activityLogger->logRetentionContact(
-        $user,
-        $contact_method,
-        $outcome,
-        $notes
-      );
-    }
+      // 4. Write field_member_end_reason to profile if confirmed_cancel.
+      if ($outcome === MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL && !empty($cancellation_reason)) {
+        $profiles = $this->entityTypeManager->getStorage('profile')->loadByProperties([
+          'uid' => $uid,
+          'type' => 'main',
+          'is_default' => TRUE,
+          'status' => TRUE,
+        ]);
+        if (!empty($profiles)) {
+          $profile = reset($profiles);
+          if ($profile->hasField('field_member_end_reason')) {
+            $profile->set('field_member_end_reason', $cancellation_reason);
+            $profile->save();
+            $this->logger->notice(
+              'Updated cancellation reason for user @uid to @reason',
+              ['@uid' => $uid, '@reason' => $cancellation_reason]
+            );
+          }
+        }
+      }
 
-    // 6. Insert row into ms_member_outreach_log.
-    try {
+      // 5. Create CiviCRM activity if requested.
+      $civicrm_activity_id = $existing_civicrm_activity_id;
+      if ($log_in_civicrm && !$civicrm_activity_id) {
+        $civicrm_activity_id = $this->activityLogger->logRetentionContact(
+          $user,
+          $contact_method,
+          $outcome,
+          $notes
+        );
+      }
+
+      // 6. Insert row into ms_member_outreach_log.
       $this->database->insert('ms_member_outreach_log')
         ->fields([
           'uid' => $uid,
@@ -157,57 +170,66 @@ class OutreachService {
           'created_at' => time(),
         ])
         ->execute();
+
+      // 7. Read current contact count (for return value) before incrementing.
+      $current_count = (int) $this->database->select('ms_member_success_snapshot', 'ms')
+        ->fields('ms', ['contact_count'])
+        ->condition('ms.uid', $uid)
+        ->condition('ms.is_latest', 1)
+        ->condition('ms.snapshot_type', 'daily')
+        ->execute()
+        ->fetchField();
+      $new_count = $current_count + 1;
+
+      // 8. Update snapshot immediately — atomic increment for contact_count.
+      //
+      // Both outreach_status and member_followup_status are written here.
+      // outreach_status is the queue-internal state set by this service.
+      // member_followup_status mirrors the Drupal user field and is what
+      // the Views queue filters on. They are kept in sync so that queue
+      // visibility updates immediately without waiting for the nightly rebuild.
+      // buildSnapshotForUser() merges them with an effective-status fallback
+      // for the rare case where one column was populated but not the other.
+      $this->database->update('ms_member_success_snapshot')
+        ->fields([
+          'last_contact_date' => $today,
+          'next_followup_date' => $next_followup_date,
+          'last_outreach_ts' => time(),
+          'outreach_status' => $followup_status,
+          'member_followup_status' => $followup_status,
+        ])
+        ->expression('contact_count', 'contact_count + 1')
+        ->condition('uid', $uid)
+        ->condition('is_latest', 1)
+        ->execute();
+
+      // Prevent duplicate outreach: once a manual or auto interaction is logged,
+      // pending queue rows for the same member/stage are considered handled.
+      $this->markQueueItemsHandled($uid, $stage);
+
+      // Queue views use tag-based caching; direct table writes must explicitly
+      // invalidate the view config tag so updated queue visibility is immediate.
+      \Drupal\Core\Cache\Cache::invalidateTags(['config:views.view.member_success_queue']);
+
+      $this->logger->notice(
+        'Outreach recorded for uid @uid: @method → @outcome (attempt #@count)',
+        ['@uid' => $uid, '@method' => $contact_method, '@outcome' => $outcome, '@count' => $new_count]
+      );
+
+      return [
+        'civicrm_activity_id' => $civicrm_activity_id,
+        'contact_count' => $new_count,
+        'chargebee_sync' => $chargebee_result,
+      ];
     }
     catch (\Exception $e) {
+      $transaction->rollBack();
       $this->logger->error(
-        'Failed to insert outreach log for uid @uid: @message',
+        'Outreach recording failed for uid @uid: @message',
         ['@uid' => $uid, '@message' => $e->getMessage()]
       );
+      throw $e;
     }
-
-    // 7. Read current contact count and compute new count.
-    $current_count = (int) $this->database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['contact_count'])
-      ->condition('ms.uid', $uid)
-      ->condition('ms.is_latest', 1)
-      ->condition('ms.snapshot_type', 'daily')
-      ->execute()
-      ->fetchField();
-    $new_count = $current_count + 1;
-
-    // 8. Update snapshot immediately — fixes the outreach_status staleness bug.
-    $this->database->update('ms_member_success_snapshot')
-      ->fields([
-        'last_contact_date' => $today,
-        'next_followup_date' => $next_followup_date,
-        'contact_count' => $new_count,
-        'last_outreach_ts' => time(),
-        'outreach_status' => $followup_status,
-        // Keep queue display field in sync immediately (not only on next
-        // nightly snapshot rebuild).
-        'member_followup_status' => $followup_status,
-      ])
-      ->condition('uid', $uid)
-      ->condition('is_latest', 1)
-      ->execute();
-
-    // Prevent duplicate outreach: once a manual or auto interaction is logged,
-    // pending queue rows for the same member/stage are considered handled.
-    $this->markQueueItemsHandled($uid, $stage);
-
-    // Queue views use tag-based caching; direct table writes must explicitly
-    // invalidate the view config tag so updated queue visibility is immediate.
-    \Drupal\Core\Cache\Cache::invalidateTags(['config:views.view.member_success_queue']);
-
-    $this->logger->notice(
-      'Outreach recorded for uid @uid: @method → @outcome (attempt #@count)',
-      ['@uid' => $uid, '@method' => $contact_method, '@outcome' => $outcome, '@count' => $new_count]
-    );
-
-    return [
-      'civicrm_activity_id' => $civicrm_activity_id,
-      'contact_count' => $new_count,
-    ];
   }
 
   /**

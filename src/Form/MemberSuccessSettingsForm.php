@@ -230,6 +230,60 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('civicrm_member_followup_field'),
     ];
 
+    $form['advanced']['civicrm_group_outreach_active'] = [
+      '#type' => 'number',
+      '#title' => $this->t('CiviCRM group ID: Outreach Active'),
+      '#description' => $this->t('Optional group for members with followup status outreach_active.'),
+      '#default_value' => (int) ($config->get('civicrm_group_outreach_active') ?? 0),
+      '#min' => 0,
+    ];
+    $form['advanced']['civicrm_group_outreach_exhausted'] = [
+      '#type' => 'number',
+      '#title' => $this->t('CiviCRM group ID: Outreach Exhausted'),
+      '#description' => $this->t('Optional group for members with followup status outreach_exhausted.'),
+      '#default_value' => (int) ($config->get('civicrm_group_outreach_exhausted') ?? 0),
+      '#min' => 0,
+    ];
+    $form['advanced']['civicrm_group_no_action_needed'] = [
+      '#type' => 'number',
+      '#title' => $this->t('CiviCRM group ID: No Action Needed'),
+      '#description' => $this->t('Optional group for members with followup status no_action_needed.'),
+      '#default_value' => (int) ($config->get('civicrm_group_no_action_needed') ?? 0),
+      '#min' => 0,
+    ];
+    $form['advanced']['civicrm_group_return_intent'] = [
+      '#type' => 'number',
+      '#title' => $this->t('CiviCRM group ID: Return Intent'),
+      '#description' => $this->t('Optional group for members with followup status return_intent.'),
+      '#default_value' => (int) ($config->get('civicrm_group_return_intent') ?? 0),
+      '#min' => 0,
+    ];
+    $form['advanced']['civicrm_group_confirmed_cancellation'] = [
+      '#type' => 'number',
+      '#title' => $this->t('CiviCRM group ID: Confirmed Cancellation'),
+      '#description' => $this->t('Optional group for members with followup status confirmed_cancellation.'),
+      '#default_value' => (int) ($config->get('civicrm_group_confirmed_cancellation') ?? 0),
+      '#min' => 0,
+    ];
+
+    $form['advanced']['chargebee_followup_push_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Push followup status updates to Chargebee'),
+      '#description' => $this->t('If enabled, followup status changes in Member Success will be mirrored to Chargebee custom fields.'),
+      '#default_value' => (bool) ($config->get('chargebee_followup_push_enabled') ?? FALSE),
+    ];
+    $form['advanced']['chargebee_followup_push_field_param'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Chargebee followup field API parameter'),
+      '#description' => $this->t('Custom field parameter used in Chargebee API updates (for example: cf_Cancelation_Followup).'),
+      '#default_value' => $config->get('chargebee_followup_push_field_param') ?? 'cf_Cancelation_Followup',
+      '#states' => [
+        'visible' => [
+          ':input[name="chargebee_followup_push_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     $form['advanced']['civicrm_do_not_fields'] = [
       '#type' => 'textarea',
       '#title' => $this->t('CiviCRM do-not fields'),
@@ -275,6 +329,13 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('payment_risk_fields', $this->sanitizeList($form_state->getValue('payment_risk_fields')))
       ->set('civicrm_preferred_method_field', trim((string) $form_state->getValue('civicrm_preferred_method_field')))
       ->set('civicrm_member_followup_field', trim((string) $form_state->getValue('civicrm_member_followup_field')))
+      ->set('civicrm_group_outreach_active', (int) $form_state->getValue('civicrm_group_outreach_active'))
+      ->set('civicrm_group_outreach_exhausted', (int) $form_state->getValue('civicrm_group_outreach_exhausted'))
+      ->set('civicrm_group_no_action_needed', (int) $form_state->getValue('civicrm_group_no_action_needed'))
+      ->set('civicrm_group_return_intent', (int) $form_state->getValue('civicrm_group_return_intent'))
+      ->set('civicrm_group_confirmed_cancellation', (int) $form_state->getValue('civicrm_group_confirmed_cancellation'))
+      ->set('chargebee_followup_push_enabled', (bool) $form_state->getValue('chargebee_followup_push_enabled'))
+      ->set('chargebee_followup_push_field_param', trim((string) $form_state->getValue('chargebee_followup_push_field_param')))
       ->set('civicrm_do_not_fields', $this->sanitizeList($form_state->getValue('civicrm_do_not_fields')))
       ->set('outreach_activity_types', $this->sanitizeList($form_state->getValue('outreach_activity_types')))
       ->save();

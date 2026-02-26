@@ -7,6 +7,8 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
+use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
+use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
@@ -23,7 +25,9 @@ class OutreachQueueReviewForm extends FormBase {
    */
   public function __construct(
     protected Connection $database,
-    protected OutreachQueueServiceInterface $queueService
+    protected OutreachQueueServiceInterface $queueService,
+    protected CiviFollowupGroupSync $followupGroupSync,
+    protected ChargebeeFollowupStatusSync $chargebeeFollowupSync
   ) {}
 
   /**
@@ -32,7 +36,9 @@ class OutreachQueueReviewForm extends FormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('database'),
-      $container->get('makerspace_member_success.outreach_queue_service')
+      $container->get('makerspace_member_success.outreach_queue_service'),
+      $container->get('makerspace_member_success.civi_followup_group_sync'),
+      $container->get('makerspace_member_success.chargebee_followup_status_sync')
     );
   }
 
@@ -163,6 +169,8 @@ class OutreachQueueReviewForm extends FormBase {
         'approve' => $this->t('Approve selected'),
         'mark_sent_manual' => $this->t('Mark selected as sent (manual)'),
         'suppress' => $this->t('Suppress selected'),
+        'mark_exhausted_no_contact' => $this->t('Mark Outreach Exhausted (no interaction)'),
+        'mark_no_action_needed_no_contact' => $this->t('Mark No Action Needed / Leave Alone (no interaction)'),
       ],
       '#default_value' => 'approve',
       '#required' => TRUE,
@@ -390,6 +398,16 @@ class OutreachQueueReviewForm extends FormBase {
         $this->queueService->markSent($queue_id, ['provider_message_id' => 'manual']);
         $count++;
       }
+      elseif ($action === 'mark_exhausted_no_contact') {
+        if ($this->applyNoContactFollowupStatus($queue_id, MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, 'manual_exhausted_no_contact')) {
+          $count++;
+        }
+      }
+      elseif ($action === 'mark_no_action_needed_no_contact') {
+        if ($this->applyNoContactFollowupStatus($queue_id, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, 'manual_no_action_needed_no_contact')) {
+          $count++;
+        }
+      }
     }
 
     $this->messenger()->addStatus($this->t('Updated @count queue items.', ['@count' => $count]));
@@ -614,6 +632,8 @@ class OutreachQueueReviewForm extends FormBase {
       'not_actionable' => (string) $this->t('Not actionable'),
       'bad_contact_data' => (string) $this->t('Bad contact data'),
       'waiting_on_context' => (string) $this->t('Waiting on context'),
+      'manual_exhausted_no_contact' => (string) $this->t('Manually marked outreach exhausted (no interaction)'),
+      'manual_no_action_needed_no_contact' => (string) $this->t('Manually marked no action needed (no interaction)'),
     ];
 
     if (!empty($row->suppression_reason_code) && isset($suppression_labels[$row->suppression_reason_code])) {
@@ -634,6 +654,72 @@ class OutreachQueueReviewForm extends FormBase {
     }
 
     return implode('; ', $labels);
+  }
+
+  /**
+   * Applies a resolved followup status without creating a contact log entry.
+   */
+  protected function applyNoContactFollowupStatus(int $queue_id, string $followup_status, string $reason_code): bool {
+    $row = $this->database->select('ms_member_outreach_queue', 'q')
+      ->fields('q', ['id', 'uid', 'stage'])
+      ->condition('q.id', $queue_id)
+      ->range(0, 1)
+      ->execute()
+      ->fetchAssoc();
+    if (!$row) {
+      return FALSE;
+    }
+
+    $uid = (int) $row['uid'];
+    $stage = (string) $row['stage'];
+
+    $user = User::load($uid);
+    if ($user) {
+      if ($user->hasField('field_member_followup_status')) {
+        $user->set('field_member_followup_status', $followup_status);
+        $user->save();
+        $this->followupGroupSync->syncForUser($user, $followup_status);
+        $this->chargebeeFollowupSync->pushUserStatus($user, $followup_status);
+      }
+      elseif ($user->hasField('field_chargebee_followup')) {
+        // Backward-compatible fallback for older environments.
+        $user->set('field_chargebee_followup', $followup_status);
+        $user->save();
+        $this->followupGroupSync->syncForUser($user, $followup_status);
+        $this->chargebeeFollowupSync->pushUserStatus($user, $followup_status);
+      }
+    }
+
+    // Keep latest snapshot state aligned with user-level followup status.
+    $this->database->update('ms_member_success_snapshot')
+      ->fields([
+        'member_followup_status' => $followup_status,
+        'outreach_status' => $followup_status,
+      ])
+      ->condition('uid', $uid)
+      ->condition('is_latest', 1)
+      ->condition('snapshot_type', 'daily')
+      ->execute();
+
+    // Suppress open queue rows for the same member + stage.
+    $this->database->update('ms_member_outreach_queue')
+      ->fields([
+        'status' => 'suppressed',
+        'suppression_reason_code' => $reason_code,
+        'updated_at' => \Drupal::time()->getCurrentTime(),
+      ])
+      ->condition('uid', $uid)
+      ->condition('stage', $stage)
+      ->condition('status', ['queued', 'approved', 'failed', 'cancelled'], 'IN')
+      ->execute();
+
+    \Drupal::logger('makerspace_member_success')->notice(
+      'Queue review set followup status to @status without interaction for uid @uid (stage: @stage).',
+      ['@status' => $followup_status, '@uid' => $uid, '@stage' => $stage]
+    );
+    \Drupal\Core\Cache\Cache::invalidateTags(['config:views.view.member_success_queue']);
+
+    return TRUE;
   }
 
   /**

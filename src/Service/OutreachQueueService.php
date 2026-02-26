@@ -62,7 +62,7 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     $scheduled_at = isset($snapshot['scheduled_at'])
       ? (int) $snapshot['scheduled_at']
       : $this->computeDefaultScheduledAt($now, $config);
-    $existing = $this->findExistingOpenRow($uid, $stage, $scheduled_at);
+    $existing = $this->findExistingOpenRow($uid, $stage);
     if (!empty($existing['id'])) {
       $existing_id = (int) $existing['id'];
       $existing_status = (string) ($existing['status'] ?? '');
@@ -174,10 +174,8 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       'updated_at' => $this->time->getCurrentTime(),
       'failure_code' => NULL,
       'failure_message' => NULL,
+      'provider_message_id' => (string) ($providerMeta['provider_message_id'] ?? '') ?: NULL,
     ];
-    if (!empty($providerMeta['provider_message_id'])) {
-      $fields['failure_message'] = 'provider_message_id:' . $providerMeta['provider_message_id'];
-    }
 
     $this->database->update('ms_member_outreach_queue')
       ->fields($fields)
@@ -242,9 +240,13 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
   }
 
   /**
-   * Finds a same-day duplicate queued/approved/sent action.
+   * Finds the most recent non-terminal queue row for a member/stage pair.
+   *
+   * The dedup scope is intentionally broad (any open row for the uid+stage,
+   * regardless of scheduled time) so that re-running candidate generation does
+   * not create duplicate rows.
    */
-  protected function findExistingOpenRow(int $uid, string $stage, int $scheduledAt): ?array {
+  protected function findExistingOpenRow(int $uid, string $stage): ?array {
     $query = $this->database->select('ms_member_outreach_queue', 'q')
       ->fields('q', ['id', 'status'])
       ->condition('q.uid', $uid)

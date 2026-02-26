@@ -12,6 +12,17 @@ payment_risk_fields:
   - field_chargebee_payment_pause
   - field_member_payment_status
 civicrm_preferred_method_field: preferred_communication_method
+civicrm_group_outreach_active: 0
+civicrm_group_outreach_exhausted: 0
+civicrm_group_no_action_needed: 0
+civicrm_group_return_intent: 0
+civicrm_group_confirmed_cancellation: 0
+chargebee_followup_push_enabled: false
+chargebee_followup_push_field_param: cf_Cancelation_Followup
+chargebee_followup_reconcile_on_cron: false
+chargebee_followup_reconcile_limit: 200
+chargebee_followup_reconcile_dry_run: true
+chargebee_followup_reconcile_force: false
 civicrm_do_not_fields:
   - do_not_phone
   - do_not_email
