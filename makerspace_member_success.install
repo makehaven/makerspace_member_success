@@ -880,13 +880,37 @@ function makerspace_member_success_update_9012(): void {
     }
   }
 
-  // Step 8: Delete stale cached field/bundle definitions (rebuilt automatically).
-  \Drupal::keyValue('entity.definitions.installed')->delete('user.field_storage_definitions');
+  // Step 8: Rebuild installed user field storage definitions explicitly.
+  // Deleting this key can leave only a partial map if another storage update
+  // writes a single field definition before a full rebuild occurs.
+  $all_user_defs = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('user');
+  \Drupal::keyValue('entity.definitions.installed')->set('user.field_storage_definitions', $all_user_defs);
   \Drupal::keyValue('entity.definitions.bundle_field_map')->delete('user');
 
   // Step 9: Invalidate entity/field definition caches.
   \Drupal::entityTypeManager()->clearCachedDefinitions();
   \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+}
+
+/**
+ * Repairs corrupted installed user field definition map if uid base field is missing.
+ */
+function makerspace_member_success_update_9023(): void {
+  $field_manager = \Drupal::service('entity_field.manager');
+  $installed = \Drupal::keyValue('entity.definitions.installed')->get('user.field_storage_definitions');
+
+  $needs_repair = !is_array($installed) || !isset($installed['uid']);
+  if ($needs_repair) {
+    $all_user_defs = $field_manager->getFieldStorageDefinitions('user');
+    \Drupal::keyValue('entity.definitions.installed')->set('user.field_storage_definitions', $all_user_defs);
+    \Drupal::logger('makerspace_member_success')->notice(
+      'Repaired user.field_storage_definitions cache with @count fields.',
+      ['@count' => count($all_user_defs)]
+    );
+  }
+
+  \Drupal::entityTypeManager()->clearCachedDefinitions();
+  $field_manager->clearCachedFieldDefinitions();
 }
 
 /**
