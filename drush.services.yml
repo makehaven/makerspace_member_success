@@ -1,1 +1,10 @@
-services: {}
+services:
+  makerspace_member_success.commands:
+    class: Drupal\makerspace_member_success\Commands\MemberSuccessCommands
+    arguments:
+      - '@makerspace_member_success.snapshot_builder'
+      - '@entity_type.manager'
+      - '@makerspace_member_success.recovery_metrics'
+      - '@makerspace_member_success.chargebee_followup_status_sync'
+    tags:
+      - { name: drush.command }

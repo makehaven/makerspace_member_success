@@ -358,15 +358,42 @@ class ChargebeeFollowupStatusSync {
       [$baseUrl, $auth] = $this->buildChargebeeAuthContext();
     }
 
-    $response = $this->httpClient->request('GET', $baseUrl . '/api/v2/subscriptions', [
-      'headers' => ['Authorization' => $auth],
-      'query' => [
-        'customer_id[is]' => $customerId,
-        'limit' => 100,
-      ],
-    ]);
-    $payload = json_decode((string) $response->getBody(), TRUE);
-    return is_array($payload['list'] ?? NULL) ? $payload['list'] : [];
+    $attempts = 0;
+    $maxAttempts = 5;
+    while (TRUE) {
+      try {
+        $response = $this->httpClient->request('GET', $baseUrl . '/api/v2/subscriptions', [
+          'headers' => ['Authorization' => $auth],
+          'query' => [
+            'customer_id[is]' => $customerId,
+            'limit' => 100,
+          ],
+        ]);
+        $payload = json_decode((string) $response->getBody(), TRUE);
+        return is_array($payload['list'] ?? NULL) ? $payload['list'] : [];
+      }
+      catch (\Exception $e) {
+        $attempts++;
+        $isRateLimited = $this->isRateLimitException($e);
+        if (!$isRateLimited || $attempts >= $maxAttempts) {
+          throw $e;
+        }
+
+        // Conservative exponential backoff to avoid repeated 429s.
+        $waitSeconds = min(8, 1 << ($attempts - 1));
+        usleep($waitSeconds * 1000000);
+      }
+    }
+  }
+
+  /**
+   * Returns whether an exception appears to be a 429 rate-limit response.
+   */
+  protected function isRateLimitException(\Exception $e): bool {
+    if (method_exists($e, 'getCode') && (int) $e->getCode() === 429) {
+      return TRUE;
+    }
+    return str_contains($e->getMessage(), '429');
   }
 
   /**

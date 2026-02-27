@@ -471,4 +471,42 @@ class ChargebeeFollowupStatusSyncTest extends UnitTestCase {
     $this->assertCount(1, $calls);
   }
 
+  /**
+   * Ensures pull retries transient 429 responses and then succeeds.
+   */
+  public function testPullRetriesOnRateLimit(): void {
+    $calls = [];
+    $attempt = 0;
+    $service = $this->buildService([
+      'chargebee_followup_push_enabled' => TRUE,
+      'chargebee_followup_push_field_param' => 'cf_Cancelation_Followup',
+    ], [
+      'live_api_key' => 'key_live',
+      'live_portal_url' => 'https://makehaven.chargebee.com/portal',
+    ], $calls, function (string $method) use (&$attempt) {
+      if ($method === 'GET') {
+        $attempt++;
+        if ($attempt < 3) {
+          throw new \Exception('429 Too Many Requests', 429);
+        }
+        return new Response(200, [], json_encode([
+          'list' => [
+            ['subscription' => [
+              'id' => 'sub_1',
+              'status' => 'active',
+              'updated_at' => 123456,
+              'cf_Cancelation_Followup' => 'Outreach Active',
+            ]],
+          ],
+        ]));
+      }
+      return new Response(200, [], json_encode(['ok' => TRUE]));
+    });
+
+    $result = $service->pullUserStatus($this->buildPullUser(2, 'cust_123', NULL, 1), FALSE, FALSE);
+    $this->assertTrue($result['changed']);
+    $this->assertSame(1, $result['updated']);
+    $this->assertCount(3, $calls);
+  }
+
 }

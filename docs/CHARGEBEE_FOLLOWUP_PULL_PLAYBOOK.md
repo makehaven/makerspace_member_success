@@ -25,7 +25,7 @@ terminus drush makehaven-website.test -- ms:chargebee-pull-followup-bulk --dry-r
 
 Then run the full dry-run:
 ```bash
-terminus drush makehaven-website.test -- ms:chargebee-pull-followup-bulk --dry-run --limit=5000 --only-empty
+terminus drush makehaven-website.test -- ms:chargebee-pull-followup-bulk --dry-run --limit=5000 --only-empty --delay-ms=250
 ```
 
 Review summary output:
@@ -35,7 +35,7 @@ Review summary output:
 
 ## 3) Apply Pull (Test)
 ```bash
-terminus drush makehaven-website.test -- ms:chargebee-pull-followup-bulk --limit=5000 --only-empty
+terminus drush makehaven-website.test -- ms:chargebee-pull-followup-bulk --limit=5000 --only-empty --delay-ms=250
 ```
 
 Verify:
@@ -48,12 +48,12 @@ Expected: `Canonical values populated` increases from baseline.
 ## 4) Repeat on Live (Dry-Run First)
 ```bash
 terminus drush makehaven-website.live -- ms:followup-audit
-terminus drush makehaven-website.live -- ms:chargebee-pull-followup-bulk --dry-run --limit=5000 --only-empty
+terminus drush makehaven-website.live -- ms:chargebee-pull-followup-bulk --dry-run --limit=5000 --only-empty --delay-ms=250
 ```
 
 If dry-run looks correct, apply:
 ```bash
-terminus drush makehaven-website.live -- ms:chargebee-pull-followup-bulk --limit=5000 --only-empty
+terminus drush makehaven-website.live -- ms:chargebee-pull-followup-bulk --limit=5000 --only-empty --delay-ms=250
 terminus drush makehaven-website.live -- ms:followup-audit
 ```
 
@@ -66,4 +66,3 @@ terminus drush makehaven-website.<env> -- ms:chargebee-pull-followup-bulk --over
 ```
 
 Use `--overwrite` only after reviewing dry-run output.
-

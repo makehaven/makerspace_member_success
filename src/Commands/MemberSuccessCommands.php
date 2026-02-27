@@ -448,6 +448,8 @@ class MemberSuccessCommands extends DrushCommands {
    *   Starting offset for selected users (default 0).
    * @option only-empty
    *   Only process users with empty canonical followup status.
+   * @option delay-ms
+   *   Optional delay between users in milliseconds to reduce API rate limiting.
    * @option dry-run
    *   Do not save user changes; only report what would change.
    * @option overwrite
@@ -462,6 +464,7 @@ class MemberSuccessCommands extends DrushCommands {
       'limit' => 200,
       'offset' => 0,
       'only-empty' => FALSE,
+      'delay-ms' => 0,
       'dry-run' => FALSE,
       'overwrite' => FALSE,
     ]
@@ -476,6 +479,7 @@ class MemberSuccessCommands extends DrushCommands {
     $dry_run = (bool) ($options['dry-run'] ?? FALSE);
     $overwrite = (bool) ($options['overwrite'] ?? FALSE);
     $only_empty = (bool) ($options['only-empty'] ?? FALSE);
+    $delay_ms = max(0, (int) ($options['delay-ms'] ?? 0));
 
     $uids_option = trim((string) ($options['uids'] ?? ''));
     $uids = [];
@@ -552,6 +556,9 @@ class MemberSuccessCommands extends DrushCommands {
         if ($reason !== '') {
           $skip_reasons[$reason] = ($skip_reasons[$reason] ?? 0) + 1;
         }
+        if ($delay_ms > 0) {
+          usleep($delay_ms * 1000);
+        }
       }
     }
 
@@ -564,6 +571,7 @@ class MemberSuccessCommands extends DrushCommands {
       ['Dry run', $dry_run ? 'yes' : 'no'],
       ['Overwrite', $overwrite ? 'yes' : 'no'],
       ['Only empty', $only_empty ? 'yes' : 'no'],
+      ['Delay ms', (string) $delay_ms],
     ];
     $this->io()->table(['Metric', 'Value'], $rows);
 
