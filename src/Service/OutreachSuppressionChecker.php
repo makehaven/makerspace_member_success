@@ -29,7 +29,22 @@ class OutreachSuppressionChecker implements OutreachSuppressionCheckerInterface 
     }
 
     $snapshot = $this->loadSnapshot($uid);
-    $is_opt_out = (int) ($context['is_opt_out'] ?? 0);
+    if (empty($snapshot)) {
+      return new SuppressionResult(FALSE, 'suppressed_no_snapshot');
+    }
+
+    // Risk threshold check: if risk dropped since approval, abort.
+    $stage = $context['stage'] ?? $snapshot['stage'] ?? NULL;
+    if ($stage) {
+      $config = \Drupal::config('makerspace_member_success.settings');
+      $min_risk = (int) ($config->get("stage_{$stage}_min_risk_to_contact") ?? 20);
+      $current_risk = (int) ($snapshot['risk_score'] ?? 0);
+      if ($current_risk < $min_risk) {
+        return new SuppressionResult(FALSE, 'suppressed_below_threshold');
+      }
+    }
+
+    $is_opt_out = (int) ($context['is_opt_out'] ?? ($snapshot['is_opt_out_fallback'] ?? 0));
     $sms_consent = $context['sms_consent'] ?? NULL;
 
     if ($channel === 'sms') {
@@ -66,11 +81,11 @@ class OutreachSuppressionChecker implements OutreachSuppressionCheckerInterface 
   }
 
   /**
-   * Loads latest snapshot do-not fields for fallback checks.
+   * Loads latest snapshot for fallback checks.
    */
   protected function loadSnapshot(int $uid): array {
     $row = $this->database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['civicrm_do_not_email', 'civicrm_do_not_sms'])
+      ->fields('ms')
       ->condition('ms.uid', $uid)
       ->condition('ms.is_latest', 1)
       ->condition('ms.snapshot_type', 'daily')

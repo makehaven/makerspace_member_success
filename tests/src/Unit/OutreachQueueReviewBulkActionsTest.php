@@ -7,8 +7,7 @@ use Drupal\Core\Form\FormState;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
-use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
-use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
+use Drupal\makerspace_member_success\Service\FollowupStatusManager;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -114,20 +113,18 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
     return new class(
       $this->createMock(Connection::class),
       $queueService,
-      $this->createMock(CiviFollowupGroupSync::class),
-      $this->createMock(ChargebeeFollowupStatusSync::class),
+      $this->createMock(FollowupStatusManager::class),
       $account,
       $messenger
     ) extends OutreachQueueReviewForm {
       public function __construct(
         Connection $database,
         OutreachQueueServiceInterface $queueService,
-        CiviFollowupGroupSync $followupGroupSync,
-        ChargebeeFollowupStatusSync $chargebeeFollowupSync,
+        FollowupStatusManager $followupStatusManager,
         protected AccountInterface $account,
         protected MessengerInterface $testMessenger
       ) {
-        parent::__construct($database, $queueService, $followupGroupSync, $chargebeeFollowupSync);
+        parent::__construct($database, $queueService, $followupStatusManager);
       }
 
       protected function currentUser() {

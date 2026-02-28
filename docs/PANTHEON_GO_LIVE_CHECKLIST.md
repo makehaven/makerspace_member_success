@@ -85,3 +85,27 @@ If serious issue appears:
 3. `drush cr`
 4. `drush ms-build`
 5. Re-test queue visibility and log-contact flow.
+
+## 9) Historical Data Backfill (Post-Launch)
+Run this once after the module is enabled to populate the ROI dashboard with real team history from CiviCRM:
+1. Run backfill:
+   - `terminus drush <site>.<env> -- ms:backfill-civi --days=90`
+2. Options:
+   - `--days=180` (look further back)
+   - `--types=2,3,1` (Include Meeting activities in addition to Phone/Email)
+3. Verify:
+   - Check `/admin/makerspace/member-success/contractor-performance`.
+   - You should see real resolution counts and monthly trends.
+
+## 10) Automation Setup (Optional)
+If you want the system to send emails automatically for specific stages:
+1. Enable Automation in settings:
+   - `/admin/config/makerspace/member-success` → "Enable Automation"
+2. Link templates for the stage:
+   - Ensure a default CiviCRM template is selected for the target lifecycle stage.
+3. Disable manual approval for that stage:
+   - In settings, check "Skip manual approval" for the desired stage (e.g., Onboarding).
+4. Schedule the processor:
+   - Ensure `drush ms-process` is called via cron or a scheduled runner.
+   - Note: The system will only send to members with valid email/consent.
+

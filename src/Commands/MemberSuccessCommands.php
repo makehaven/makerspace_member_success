@@ -7,6 +7,8 @@ use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
 use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
 use Drupal\makerspace_member_success\Service\RecoveryMetrics;
+use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
+use Drupal\makerspace_member_success\Service\CiviCrmActivityBackfillService;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 
 /**
@@ -43,6 +45,20 @@ class MemberSuccessCommands extends DrushCommands {
   protected $chargebeeFollowupStatusSync;
 
   /**
+   * The outreach queue service.
+   *
+   * @var \Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface
+   */
+  protected $queueService;
+
+  /**
+   * CiviCRM activity backfill service.
+   *
+   * @var \Drupal\makerspace_member_success\Service\CiviCrmActivityBackfillService
+   */
+  protected $civiBackfill;
+
+  /**
    * Constructs a MemberSuccessCommands object.
    *
    * @param \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $snapshot_builder
@@ -51,19 +67,88 @@ class MemberSuccessCommands extends DrushCommands {
    *   The entity type manager.
    * @param \Drupal\makerspace_member_success\Service\RecoveryMetrics $recovery_metrics
    *   The recovery metrics service (optional for backwards compatibility).
+   * @param \Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync|null $chargebee_followup_status_sync
+   *   Chargebee followup status sync service.
+   * @param \Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface|null $queue_service
+   *   The outreach queue service.
+   * @param \Drupal\makerspace_member_success\Service\CiviCrmActivityBackfillService|null $civi_backfill
+   *   CiviCRM activity backfill service.
    */
   public function __construct(
     MemberSuccessSnapshotBuilder $snapshot_builder,
     EntityTypeManagerInterface $entity_type_manager,
     ?RecoveryMetrics $recovery_metrics = NULL,
-    ?ChargebeeFollowupStatusSync $chargebee_followup_status_sync = NULL
+    ?ChargebeeFollowupStatusSync $chargebee_followup_status_sync = NULL,
+    ?OutreachQueueServiceInterface $queue_service = NULL,
+    ?CiviCrmActivityBackfillService $civi_backfill = NULL
   ) {
     parent::__construct();
     $this->snapshotBuilder = $snapshot_builder;
     $this->entityTypeManager = $entity_type_manager;
     $this->recoveryMetrics = $recovery_metrics;
     $this->chargebeeFollowupStatusSync = $chargebee_followup_status_sync;
+    $this->queueService = $queue_service ?: \Drupal::service('makerspace_member_success.outreach_queue_service');
+    $this->civiBackfill = $civi_backfill ?: \Drupal::service('makerspace_member_success.civi_backfill');
   }
+
+  /**
+   * Backfills outreach logs from CiviCRM activities.
+   *
+   * @param array $options
+   *   Command options.
+   *
+   * @option days
+   *   How many days back to look. Default 90.
+   * @option types
+   *   Comma-separated activity type IDs. Default 2,3 (Phone, Email).
+   * @option dry-run
+   *   Report counts without writing to database.
+   *
+   * @command ms:backfill-civi
+   * @aliases ms-backfill
+   */
+  public function backfillCivi(array $options = ['days' => 90, 'types' => '2,3', 'dry-run' => FALSE]): void {
+    $days = (int) $options['days'];
+    $types = array_map('intval', explode(',', $options['types']));
+    $dry_run = (bool) $options['dry-run'];
+
+    $this->logger()->notice(dt('Starting CiviCRM activity backfill (@days days)...', ['@days' => $days]));
+    $result = $this->civiBackfill->backfill($days, $types, $dry_run);
+
+    $rows = [
+      ['Activities examined', (string) $result['examined']],
+      ['Logs imported', (string) $result['imported']],
+      ['Skipped (already exists)', (string) $result['skipped_exists']],
+      ['Skipped (no Drupal user)', (string) $result['skipped_no_user']],
+      ['Errors', (string) $result['errors']],
+    ];
+    $this->io()->table(['Metric', 'Value'], $rows);
+    
+    if ($dry_run) {
+      $this->logger()->info('Dry run complete. No data was saved.');
+    } else {
+      $this->logger()->success('Backfill complete.');
+    }
+  }
+
+
+  /**
+   * Processes approved outreach items from the queue.
+   *
+   * @command ms:outreach-process
+   * @aliases ms-process
+   */
+  public function processOutreach(): void {
+    $this->logger()->notice(dt('Processing approved outreach items...'));
+    $count = $this->queueService->processApprovedItems();
+    if ($count > 0) {
+      $this->logger()->success(dt('Successfully processed @count outreach items.', ['@count' => $count]));
+    }
+    else {
+      $this->logger()->notice(dt('No approved outreach items to process at this time.'));
+    }
+  }
+
 
   /**
    * Builds member success snapshots.

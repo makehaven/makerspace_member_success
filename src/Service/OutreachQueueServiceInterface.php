@@ -38,5 +38,13 @@ interface OutreachQueueServiceInterface {
    */
   public function markFailed(int $queueId, string $failureCode, string $message): void;
 
+  /**
+   * Processes all approved outreach items.
+   *
+   * @return int
+   *   Number of items processed.
+   */
+  public function processApprovedItems(): int;
+
 }
 

@@ -1,0 +1,162 @@
+{
+  "onboarding_stalled": {
+    "label": "Onboarding Stalled",
+    "description": "Joined 15 days ago, no door badge, no serial number registered.",
+    "snapshot": {
+      "stage": "onboarding",
+      "join_date_offset": -15,
+      "door_badge_status": "pending",
+      "serial_number_present": 0,
+      "badge_count_total": 0,
+      "badge_count_window": 0,
+      "visit_count_30d": 0,
+      "last_visit_ts_offset": null,
+      "email": "test_stalled@example.com",
+      "phone": "203-555-0101"
+    }
+  },
+  "engagement_fading": {
+    "label": "Engagement Fading",
+    "description": "Joined 90 days ago, was active, but no badges or visits in the last 30 days.",
+    "snapshot": {
+      "stage": "engagement",
+      "join_date_offset": -90,
+      "activation_ts_offset": -80,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "badge_count_total": 2,
+      "badge_count_window": 0,
+      "visit_count_30d": 1,
+      "last_visit_ts_offset": -35,
+      "email": "test_fading@example.com",
+      "phone": "203-555-0102"
+    }
+  },
+  "retention_at_risk": {
+    "label": "Retention At Risk",
+    "description": "Long-term member (1 year+) who hasn't visited in over 30 days.",
+    "snapshot": {
+      "stage": "retention",
+      "join_date_offset": -400,
+      "activation_ts_offset": -390,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "badge_count_total": 12,
+      "badge_count_window": 0,
+      "visit_count_30d": 0,
+      "last_visit_ts_offset": -35,
+      "tenure_bucket": "sustaining",
+      "email": "test_risk@example.com",
+      "phone": "203-555-0103"
+    }
+  },
+  "onboarding_critical": {
+    "label": "Critical Onboarding",
+    "description": "Joined 60 days ago, still no door badge, no serial number. High priority.",
+    "snapshot": {
+      "stage": "onboarding",
+      "join_date_offset": -60,
+      "door_badge_status": "pending",
+      "serial_number_present": 0,
+      "badge_count_total": 0,
+      "visit_count_30d": 0,
+      "email": "test_critical@example.com",
+      "phone": "203-555-0104"
+    }
+  },
+  "boomerang_rejoin": {
+    "label": "Boomerang Re-join",
+    "description": "Was a member 2 years ago (12 badges), re-joined 5 days ago. Should NOT be flagged yet.",
+    "snapshot": {
+      "stage": "onboarding",
+      "join_date_offset": -5,
+      "door_badge_status": "pending",
+      "serial_number_present": 0,
+      "badge_count_total": 12,
+      "visit_count_30d": 0,
+      "email": "test_rejoin@example.com",
+      "phone": "203-555-0105"
+    }
+  },
+  "the_ghost": {
+    "label": "The Ghost",
+    "description": "Finished onboarding 6 months ago, but hasn't visited once. High retention risk.",
+    "snapshot": {
+      "stage": "retention",
+      "join_date_offset": -200,
+      "activation_ts_offset": -190,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "badge_count_total": 0,
+      "visit_count_30d": 0,
+      "last_visit_ts_offset": null,
+      "email": "test_ghost@example.com",
+      "phone": "203-555-0106"
+    }
+  },
+  "fast_starter": {
+    "label": "Fast Starter",
+    "description": "Joined 7 days ago, already has 5 badges and 3 visits. System should leave alone.",
+    "snapshot": {
+      "stage": "onboarding",
+      "join_date_offset": -7,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "badge_count_total": 5,
+      "visit_count_30d": 3,
+      "last_visit_ts_offset": -1,
+      "email": "test_fast@example.com",
+      "phone": "203-555-0107"
+    }
+  },
+  "manual_ignore_returning": {
+    "label": "Manual Ignore Returning",
+    "description": "Was marked 'no action needed' 35 days ago, but risk persists. Should reappear.",
+    "snapshot": {
+      "stage": "engagement",
+      "join_date_offset": -120,
+      "activation_ts_offset": -110,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "badge_count_total": 2,
+      "visit_count_30d": 0,
+      "last_visit_ts_offset": -45,
+      "member_followup_status": "no_action_needed",
+      "last_contact_date_offset": -35,
+      "email": "test_returning@example.com",
+      "phone": "203-555-0108"
+    }
+  },
+  "payment_failed": {
+    "label": "Payment Failed",
+    "description": "Member whose payment failed 2 days ago. Should be in Recovery stage.",
+    "snapshot": {
+      "stage": "recovery",
+      "join_date_offset": -180,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "payment_failed": 1,
+      "badge_count_total": 5,
+      "last_visit_ts_offset": -5,
+      "email": "test_failed@example.com",
+      "phone": "203-555-0109"
+    }
+  },
+  "paused_expiring": {
+    "label": "Pause Expiring",
+    "description": "Member on a payment pause for 65 days. Approaching the 90-day limit.",
+    "snapshot": {
+      "stage": "paused",
+      "join_date_offset": -300,
+      "door_badge_status": "active",
+      "serial_number_present": 1,
+      "payment_pause": 1,
+      "pause_start_date_offset": -65,
+      "badge_count_total": 8,
+      "last_visit_ts_offset": -70,
+      "tenure_bucket": "sustaining",
+      "email": "test_paused@example.com",
+      "phone": "203-555-0110"
+    }
+  }
+}

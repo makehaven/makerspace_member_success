@@ -6,8 +6,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
-use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
-use Drupal\makerspace_member_success\Service\CiviFollowupGroupSync;
+use Drupal\makerspace_member_success\Service\FollowupStatusManager;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\Tests\UnitTestCase;
 
@@ -25,8 +24,7 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $this->createMock(Connection::class),
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(CiviFollowupGroupSync::class),
-      $this->createMock(ChargebeeFollowupStatusSync::class)
+      $this->createMock(FollowupStatusManager::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);
@@ -54,8 +52,7 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $this->createMock(Connection::class),
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(CiviFollowupGroupSync::class),
-      $this->createMock(ChargebeeFollowupStatusSync::class)
+      $this->createMock(FollowupStatusManager::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);
@@ -93,8 +90,7 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $database,
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(CiviFollowupGroupSync::class),
-      $this->createMock(ChargebeeFollowupStatusSync::class)
+      $this->createMock(FollowupStatusManager::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);

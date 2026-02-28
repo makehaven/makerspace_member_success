@@ -263,14 +263,32 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // Log Contact button (renamed for clarity)
     if ($uid) {
       try {
-            $log_contact_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
-            if ($log_contact_url->access(\Drupal::currentUser())) {
-              $log_url = $log_contact_url->toString();
-              $buttons[] = '<a href="' . $log_url . '" class="btn btn-sm btn-success text-white" title="Record an outreach interaction with this member">Log Interaction</a>';
-            }
-        } catch (\Exception $e) {
-            // Skip if route fails
+        $log_contact_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
+        if ($log_contact_url->access(\Drupal::currentUser())) {
+          $log_url = $log_contact_url->toString();
+          $buttons[] = '<a href="' . $log_url . '" class="btn btn-sm btn-success text-white" title="Record an outreach interaction with this member">Log Interaction</a>';
         }
+      }
+      catch (\Exception $e) {
+        // Skip if route fails.
+      }
+
+      try {
+        $no_action_url = Url::fromRoute('makerspace_member_success.mark_no_action_needed', [
+          'user' => $uid,
+          'stage' => $stage,
+        ], [
+          'query' => [
+            'destination' => \Drupal::request()->getRequestUri(),
+          ],
+        ]);
+        if ($no_action_url->access(\Drupal::currentUser())) {
+          $buttons[] = '<a href="' . $no_action_url->toString() . '" class="btn btn-sm btn-warning text-white" title="Mark this stage as no follow-up needed without logging an interaction">No Follow-up Needed</a>';
+        }
+      }
+      catch (\Exception $e) {
+        // Skip if route fails.
+      }
     }
 
     // CRM button removed - now appears with member name instead

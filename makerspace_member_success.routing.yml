@@ -26,6 +26,19 @@ makerspace_member_success.log_contact:
       user:
         type: entity:user
 
+makerspace_member_success.mark_no_action_needed:
+  path: '/admin/makerspace/member-success/no-action-needed/{user}/{stage}'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\MarkNoActionNeededForm'
+    _title: 'Mark No Action Needed'
+  requirements:
+    _permission: 'log makerspace member success contacts'
+    stage: 'onboarding|engagement|retention|recovery|paused'
+  options:
+    parameters:
+      user:
+        type: entity:user
+
 makerspace_member_success.queue_review:
   path: '/admin/makerspace/member-success/queue-review'
   defaults:

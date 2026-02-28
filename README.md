@@ -56,6 +56,8 @@ Go to `/admin/config/makerspace/member-success` to configure:
 *   `drush ms:chargebee-pull-followup-bulk`: Bulk-pulls followup status from Chargebee into Drupal.
 *   `drush ms:chargebee-push-followup [uid]`: Pushes one user's Drupal followup status to Chargebee.
 *   `drush ms:chargebee-push-followup-bulk`: Bulk-pushes Drupal followup statuses to Chargebee.
+*   `drush ms:backfill-civi`: Backfills outreach logs from existing CiviCRM activities (last 90 days).
+*   `drush ms:outreach-process` (alias: `ms-process`): Processes approved outreach queue items (Automated Sends).
 
 ## Template Variants (Issue-Based)
 

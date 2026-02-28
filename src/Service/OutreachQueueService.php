@@ -5,6 +5,8 @@ namespace Drupal\makerspace_member_success\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 
 /**
  * Stores and transitions outreach queue records.
@@ -18,7 +20,12 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     protected Connection $database,
     protected TimeInterface $time,
     protected OutreachPolicyDeciderInterface $policyDecider,
-    protected ConfigFactoryInterface $configFactory
+    protected ConfigFactoryInterface $configFactory,
+    protected OutreachMessageBuilderInterface $messageBuilder,
+    protected OutreachSenderInterface $sender,
+    protected EntityTypeManagerInterface $entityTypeManager,
+    protected OutreachService $outreachService,
+    protected OutreachSuppressionCheckerInterface $suppressionChecker
   ) {}
 
   /**
@@ -43,6 +50,14 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     $decision = $this->policyDecider->decide($uid, $snapshot);
     $status = $decision->channel === 'manual_only' ? 'suppressed' : 'queued';
     $suppression_reason = $decision->channel === 'manual_only' ? $decision->reasonCode : NULL;
+
+    // Automation logic: auto-approve if enabled and stage allows.
+    if ($status === 'queued' && (bool) $config->get('automation_enabled')) {
+      $require_manual = (bool) $config->get("stage_{$stage}_require_manual_approval");
+      if (!$require_manual) {
+        $status = 'approved';
+      }
+    }
 
     if ($risk_score < $min_risk) {
       return $this->insertQueueRow($uid, $stage, $snapshot, $decision, 'suppressed', 'suppressed_below_threshold', $now);
@@ -196,6 +211,70 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       ])
       ->condition('id', $queueId)
       ->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function processApprovedItems(): int {
+    $now = $this->time->getCurrentTime();
+    $rows = $this->database->select('ms_member_outreach_queue', 'q')
+      ->fields('q', ['id', 'uid', 'stage', 'recommended_channel', 'destination_email', 'destination_phone', 'consent_snapshot'])
+      ->condition('status', 'approved')
+      ->condition('scheduled_at', $now, '<=')
+      ->execute()
+      ->fetchAll();
+
+    $processed = 0;
+    foreach ($rows as $row) {
+      $id = (int) $row->id;
+      $uid = (int) $row->uid;
+      $stage = (string) $row->stage;
+      $channel = (string) $row->recommended_channel;
+
+      try {
+        // Pre-send safety check: re-verify consent and risk.
+        $context = @unserialize($row->consent_snapshot) ?: [];
+        $context['email'] = $row->destination_email;
+        $context['phone'] = $row->destination_phone;
+        $context['stage'] = $stage;
+
+        $check = $this->suppressionChecker->check($uid, $channel, $context);
+        if (!$check->allowed) {
+          $this->markFailed($id, $check->reasonCode, 'Suppressed during pre-send safety check: ' . $check->reasonCode);
+          continue;
+        }
+
+        $message = $this->messageBuilder->build($id);
+        $result = $this->sender->send($message);
+        if ($result->success) {
+          $this->markSent($id, ['provider_message_id' => $result->providerMessageId]);
+          
+          // Log interaction to update snooze/history
+          $user = $this->entityTypeManager->getStorage('user')->load($uid);
+          if ($user) {
+            $outcome = $channel === 'sms' ? MemberSuccessLifecycle::OUTCOME_SMS_SENT : MemberSuccessLifecycle::OUTCOME_EMAIL_SENT;
+            $this->outreachService->recordContact(
+              $user,
+              $stage,
+              $channel,
+              $outcome,
+              'Automated outreach: ' . ($result->providerMessageId ?? ''),
+              FALSE, // mark_exhausted
+              TRUE   // log_in_civicrm
+            );
+          }
+          $processed++;
+        }
+        else {
+          $this->markFailed($id, $result->failureCode, $result->failureMessage);
+        }
+      }
+      catch (\Exception $e) {
+        $this->markFailed($id, 'exception', $e->getMessage());
+      }
+    }
+    return $processed;
   }
 
   /**
