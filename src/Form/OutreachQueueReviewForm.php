@@ -11,6 +11,7 @@ use Drupal\makerspace_member_success\Service\FollowupStatusManager;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
+use Drupal\user\Entity\User;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
