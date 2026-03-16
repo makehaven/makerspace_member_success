@@ -6,7 +6,12 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\makerspace_member_success\Service\OutreachPolicyDeciderInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\makerspace_member_success\Service\OutreachMessageBuilderInterface;
 use Drupal\makerspace_member_success\Service\OutreachQueueService;
+use Drupal\makerspace_member_success\Service\OutreachSenderInterface;
+use Drupal\makerspace_member_success\Service\OutreachService;
+use Drupal\makerspace_member_success\Service\OutreachSuppressionCheckerInterface;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -24,7 +29,12 @@ class OutreachQueueServiceTest extends UnitTestCase {
       $this->createMock(Connection::class),
       $this->createMock(TimeInterface::class),
       $this->createMock(OutreachPolicyDeciderInterface::class),
-      $this->createMock(ConfigFactoryInterface::class)
+      $this->createMock(ConfigFactoryInterface::class),
+      $this->createMock(OutreachMessageBuilderInterface::class),
+      $this->createMock(OutreachSenderInterface::class),
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(OutreachService::class),
+      $this->createMock(OutreachSuppressionCheckerInterface::class)
     ) extends OutreachQueueService {
       public function normalizeForTest(mixed $raw): ?string {
         return $this->normalizeRiskReasons($raw);
