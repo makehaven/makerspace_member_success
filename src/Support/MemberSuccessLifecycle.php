@@ -18,6 +18,7 @@ final class MemberSuccessLifecycle {
   public const FOLLOWUP_RETURN_INTENT = 'return_intent';
   public const FOLLOWUP_OUTREACH_ACTIVE = 'outreach_active';
   public const FOLLOWUP_NO_ACTION_NEEDED = 'no_action_needed';
+  public const FOLLOWUP_NEEDS_REVIEW = 'needs_review';
 
   /**
    * Initial outreach_status assigned to recovery-stage members with no history.
@@ -63,6 +64,7 @@ final class MemberSuccessLifecycle {
       self::FOLLOWUP_CONFIRMED_CANCELLATION,
       self::FOLLOWUP_OUTREACH_EXHAUSTED,
       self::FOLLOWUP_NO_ACTION_NEEDED,
+      self::FOLLOWUP_NEEDS_REVIEW,
     ];
   }
 

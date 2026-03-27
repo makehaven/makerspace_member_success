@@ -17,6 +17,8 @@ civicrm_group_outreach_exhausted: 0
 civicrm_group_no_action_needed: 0
 civicrm_group_return_intent: 0
 civicrm_group_confirmed_cancellation: 0
+needs_review_notification_enabled: false
+needs_review_notification_emails: []
 chargebee_followup_push_enabled: false
 chargebee_followup_push_field_param: cf_Cancelation_Followup
 chargebee_followup_reconcile_on_cron: false

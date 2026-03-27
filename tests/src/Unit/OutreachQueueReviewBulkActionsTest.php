@@ -9,6 +9,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
 use Drupal\makerspace_member_success\Service\FollowupStatusManager;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Request;
@@ -100,9 +101,32 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
   }
 
   /**
+   * Tests needs-review action delegates to followup status manager.
+   */
+  public function testMarkNeedsReviewNoContactAction(): void {
+    $queue_service = $this->createMock(OutreachQueueServiceInterface::class);
+    $followup_manager = $this->createMock(FollowupStatusManager::class);
+    $followup_manager->expects($this->once())
+      ->method('applyNoContactStatusByQueueId')
+      ->with(126, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, 'manual_needs_review_no_contact')
+      ->willReturn(TRUE);
+
+    $form = $this->buildForm($queue_service, 99, $followup_manager);
+    $form_state = new FormState();
+    $form_state->setValue('queue_items', [126 => 126]);
+    $form_state->setValue('bulk', ['action' => 'mark_needs_review_no_contact', 'reason' => 'manual_suppressed']);
+    $render = [];
+    $form->submitForm($render, $form_state);
+  }
+
+  /**
    * Builds a form test double with controlled account/request/messenger.
    */
-  protected function buildForm(OutreachQueueServiceInterface $queueService, int $uid): OutreachQueueReviewForm {
+  protected function buildForm(
+    OutreachQueueServiceInterface $queueService,
+    int $uid,
+    ?FollowupStatusManager $followupStatusManager = NULL
+  ): OutreachQueueReviewForm {
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn($uid);
 
@@ -113,7 +137,7 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
     return new class(
       $this->createMock(Connection::class),
       $queueService,
-      $this->createMock(FollowupStatusManager::class),
+      $followupStatusManager ?? $this->createMock(FollowupStatusManager::class),
       $account,
       $messenger
     ) extends OutreachQueueReviewForm {

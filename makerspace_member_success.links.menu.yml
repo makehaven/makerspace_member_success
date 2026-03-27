@@ -56,6 +56,13 @@ makerspace_member_success.queue_review:
   parent: makerspace_member_success.overview
   weight: 52
 
+makerspace_member_success.needs_review_queue:
+  title: 'Needs Review Queue'
+  description: 'Members saved for later staff review.'
+  route_name: makerspace_member_success.needs_review_queue
+  parent: makerspace_member_success.overview
+  weight: 53
+
 makerspace_member_success.contractor_performance:
   title: '📊 Intervention Performance'
   description: 'View staff/volunteer outreach stats, ROI, and effectiveness metrics'

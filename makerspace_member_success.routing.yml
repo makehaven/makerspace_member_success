@@ -39,6 +39,19 @@ makerspace_member_success.mark_no_action_needed:
       user:
         type: entity:user
 
+makerspace_member_success.mark_needs_review:
+  path: '/admin/makerspace/member-success/needs-review/{user}/{stage}'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\MarkNeedsReviewForm'
+    _title: 'Mark Needs Review'
+  requirements:
+    _permission: 'log makerspace member success contacts'
+    stage: 'onboarding|engagement|retention|recovery|paused'
+  options:
+    parameters:
+      user:
+        type: entity:user
+
 makerspace_member_success.queue_review:
   path: '/admin/makerspace/member-success/queue-review'
   defaults:
@@ -46,6 +59,14 @@ makerspace_member_success.queue_review:
     _title: 'Outreach Queue Review'
   requirements:
     _permission: 'administer makerspace member success'
+
+makerspace_member_success.needs_review_queue:
+  path: '/admin/makerspace/member-success/needs-review'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\NeedsReviewQueueController::build'
+    _title: 'Needs Review Queue'
+  requirements:
+    _permission: 'access makerspace member success queues'
 
 makerspace_member_success.intervention_performance:
   path: '/admin/makerspace/member-success/intervention-performance'

@@ -34,6 +34,7 @@ class MemberSuccessQueueRulesTest extends UnitTestCase {
     $this->assertTrue(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE));
     $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION));
     $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED));
+    $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW));
   }
 
   /**
@@ -50,6 +51,8 @@ class MemberSuccessQueueRulesTest extends UnitTestCase {
     $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, NULL, $today));
     // no_action_needed suppresses via member_followup_status too.
     $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, $today));
+    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, NULL, $today));
+    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, $today));
   }
 
   /**
@@ -79,6 +82,11 @@ class MemberSuccessQueueRulesTest extends UnitTestCase {
       MemberSuccessLifecycle::STAGE_RETENTION,
       MemberSuccessLifecycle::STAGE_RECOVERY,
       MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED
+    ));
+    $this->assertTrue(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
+      MemberSuccessLifecycle::STAGE_RETENTION,
+      MemberSuccessLifecycle::STAGE_RECOVERY,
+      MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW
     ));
   }
 

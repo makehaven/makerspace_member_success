@@ -22,6 +22,34 @@ function makerspace_member_success_help(string $route_name, RouteMatchInterface 
 }
 
 /**
+ * Implements hook_mail().
+ */
+function makerspace_member_success_mail(string $key, array &$message, array $params): void {
+  if ($key !== 'needs_review_notification') {
+    return;
+  }
+
+  $message['subject'] = t('Member sent to Needs Review: @member (@stage)', [
+    '@member' => $params['member_name'] ?? 'Unknown member',
+    '@stage' => $params['stage'] ?? 'unknown stage',
+  ]);
+
+  $body = [];
+  $body[] = t('A member was sent to the Needs Review queue.');
+  $body[] = '';
+  $body[] = t('Member: @member', ['@member' => $params['member_name'] ?? 'Unknown member']);
+  $body[] = t('Email: @email', ['@email' => $params['member_email'] ?? '']);
+  $body[] = t('UID: @uid', ['@uid' => $params['member_uid'] ?? '']);
+  $body[] = t('Stage: @stage', ['@stage' => $params['stage'] ?? '']);
+  $body[] = t('Marked by user ID: @uid', ['@uid' => $params['actor_uid'] ?? 0]);
+  $body[] = '';
+  $body[] = t('Needs Review queue: @url', ['@url' => $params['review_queue_url'] ?? '']);
+  $body[] = t('Member profile: @url', ['@url' => $params['member_url'] ?? '']);
+
+  $message['body'] = $body;
+}
+
+/**
  * Implements hook_cron().
  */
 function makerspace_member_success_cron(): void {
@@ -502,6 +530,8 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
   if ($view->id() !== 'member_success_queue') {
     return;
   }
+
+  $view->element['#attached']['library'][] = 'makerspace_member_success/dashboard';
 
   makerspace_member_success_adjust_queue_runtime_layout($view);
 

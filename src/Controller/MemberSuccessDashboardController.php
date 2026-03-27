@@ -146,6 +146,28 @@ class MemberSuccessDashboardController extends ControllerBase {
       </div>
     ';
 
+    $needs_review_count = (int) $this->database->select('ms_member_success_snapshot', 's')
+      ->condition('snapshot_type', 'daily')
+      ->condition('is_latest', 1)
+      ->condition('member_followup_status', 'needs_review')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+    $needs_review_url = $this->safeRouteUrl('makerspace_member_success.needs_review_queue');
+    $summary_html .= '
+      <div class="alert alert-warning mt-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong>Needs Review Queue</strong>
+            <p class="mb-0 small">' . $needs_review_count . ' members are saved for later review and hidden from the main action queues.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="' . $needs_review_url . '" class="btn btn-warning">Open Needs Review Queue →</a>
+          </div>
+        </div>
+      </div>
+    ';
+
     // Generate HTML for Stage Cards — 4 main stages in the grid, paused below.
     $stages_html = '<div class="ms-dashboard-grid">';
     foreach (['onboarding', 'engagement', 'retention', 'recovery'] as $key) {

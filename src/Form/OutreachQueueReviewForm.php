@@ -167,6 +167,7 @@ class OutreachQueueReviewForm extends FormBase {
         'mark_sent_manual' => $this->t('Mark selected as sent (manual)'),
         'suppress' => $this->t('Suppress selected'),
         'mark_exhausted_no_contact' => $this->t('Mark Outreach Exhausted (no interaction)'),
+        'mark_needs_review_no_contact' => $this->t('Mark Needs Review / Revisit Later (no interaction)'),
         'mark_no_action_needed_no_contact' => $this->t('Mark No Action Needed / Leave Alone (no interaction)'),
       ],
       '#default_value' => 'approve',
@@ -400,6 +401,11 @@ class OutreachQueueReviewForm extends FormBase {
           $count++;
         }
       }
+      elseif ($action === 'mark_needs_review_no_contact') {
+        if ($this->applyNoContactFollowupStatus($queue_id, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, 'manual_needs_review_no_contact')) {
+          $count++;
+        }
+      }
       elseif ($action === 'mark_no_action_needed_no_contact') {
         if ($this->applyNoContactFollowupStatus($queue_id, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, 'manual_no_action_needed_no_contact')) {
           $count++;
@@ -630,6 +636,7 @@ class OutreachQueueReviewForm extends FormBase {
       'bad_contact_data' => (string) $this->t('Bad contact data'),
       'waiting_on_context' => (string) $this->t('Waiting on context'),
       'manual_exhausted_no_contact' => (string) $this->t('Manually marked outreach exhausted (no interaction)'),
+      'manual_needs_review_no_contact' => (string) $this->t('Manually flagged for review/revisit later (no interaction)'),
       'manual_no_action_needed_no_contact' => (string) $this->t('Manually marked no action needed (no interaction)'),
     ];
 

@@ -1284,3 +1284,45 @@ function makerspace_member_success_update_9021(): void {
     $config->save(TRUE);
   }
 }
+
+/**
+ * Adds needs_review to member followup status allowed values.
+ */
+function makerspace_member_success_update_9024(): void {
+  $config = \Drupal::configFactory()->getEditable('field.storage.user.field_member_followup_status');
+  $allowed_values = $config->get('settings.allowed_values') ?? [];
+
+  foreach ($allowed_values as $value) {
+    if (($value['value'] ?? NULL) === 'needs_review') {
+      return;
+    }
+  }
+
+  $allowed_values[] = [
+    'value' => 'needs_review',
+    'label' => 'Needs Review',
+  ];
+  $config->set('settings.allowed_values', $allowed_values)->save(TRUE);
+}
+
+/**
+ * Seeds needs-review notification config defaults.
+ */
+function makerspace_member_success_update_9025(): void {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'needs_review_notification_enabled' => FALSE,
+    'needs_review_notification_emails' => [],
+  ];
+
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save(TRUE);
+  }
+}

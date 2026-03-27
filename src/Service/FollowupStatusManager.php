@@ -6,6 +6,7 @@ use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -21,6 +22,7 @@ class FollowupStatusManager {
     protected EntityTypeManagerInterface $entityTypeManager,
     protected CiviFollowupGroupSync $followupGroupSync,
     protected ChargebeeFollowupStatusSync $chargebeeFollowupSync,
+    protected NeedsReviewNotificationService $needsReviewNotification,
     protected CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     protected TimeInterface $time,
     protected LoggerInterface $logger
@@ -99,10 +101,14 @@ class FollowupStatusManager {
       'Set followup status to @status without interaction for uid @uid (stage: @stage).',
       ['@status' => $followup_status, '@uid' => $uid, '@stage' => $stage]
     );
+
+    if ($followup_status === MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW) {
+      $this->needsReviewNotification->notify($user, $stage);
+    }
+
     $this->cacheTagsInvalidator->invalidateTags(['config:views.view.member_success_queue']);
 
     return TRUE;
   }
 
 }
-

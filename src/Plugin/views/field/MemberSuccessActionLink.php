@@ -136,7 +136,7 @@ class MemberSuccessActionLink extends FieldPluginBase {
     }
 
     // Logic per stage
-    $email_label = '✉️ Email';
+    $email_label = 'Email';
     $status_badge = '';
     $action_text = '';
 
@@ -211,7 +211,8 @@ class MemberSuccessActionLink extends FieldPluginBase {
     }
 
     // Build action buttons
-    $buttons = [];
+    $primary_buttons = [];
+    $secondary_buttons = [];
 
     // Determine UID - try multiple field names
     $uid = $values->ms_member_success_snapshot_uid
@@ -221,7 +222,7 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // Email button (primary action)
     try {
         $email_url = Url::fromUserInput("/civicrm/activity/email/add", ['query' => $query])->toString();
-        $buttons[] = '<a href="' . $email_url . '" class="btn btn-sm btn-primary text-white" target="_blank" title="Send email via CiviCRM">' . $email_label . '</a>';
+        $primary_buttons[] = '<a href="' . $email_url . '" class="btn btn-sm ms-action-btn ms-action-btn--primary" target="_blank" title="Send email via CiviCRM">' . $email_label . '</a>';
     } catch (\Exception $e) {
         // Skip email button if URL fails
     }
@@ -246,7 +247,7 @@ class MemberSuccessActionLink extends FieldPluginBase {
             $sms_query['msg_template_id'] = $sms_template_id;
           }
           $sms_url = Url::fromUserInput('/civicrm/activity/sms/add', ['query' => $sms_query])->toString();
-          $buttons[] = '<a href="' . $sms_url . '" class="btn btn-sm btn-primary text-white" target="_blank" title="Send SMS via CiviCRM (consented contacts only)">SMS</a>';
+          $primary_buttons[] = '<a href="' . $sms_url . '" class="btn btn-sm ms-action-btn ms-action-btn--primary" target="_blank" title="Send SMS via CiviCRM (consented contacts only)">SMS</a>';
         }
         catch (\Exception $e) {
           $sms_unavailable_reason = 'SMS unavailable: link error';
@@ -266,7 +267,24 @@ class MemberSuccessActionLink extends FieldPluginBase {
         $log_contact_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
         if ($log_contact_url->access(\Drupal::currentUser())) {
           $log_url = $log_contact_url->toString();
-          $buttons[] = '<a href="' . $log_url . '" class="btn btn-sm btn-success text-white" title="Record an outreach interaction with this member">Log Interaction</a>';
+          $primary_buttons[] = '<a href="' . $log_url . '" class="btn btn-sm ms-action-btn ms-action-btn--success" title="Record an outreach interaction with this member">Log Interaction</a>';
+        }
+      }
+      catch (\Exception $e) {
+        // Skip if route fails.
+      }
+
+      try {
+        $needs_review_url = Url::fromRoute('makerspace_member_success.mark_needs_review', [
+          'user' => $uid,
+          'stage' => $stage,
+        ], [
+          'query' => [
+            'destination' => \Drupal::request()->getRequestUri(),
+          ],
+        ]);
+        if ($needs_review_url->access(\Drupal::currentUser())) {
+          $secondary_buttons[] = '<a href="' . $needs_review_url->toString() . '" class="btn btn-sm ms-action-btn ms-action-btn--secondary" title="Flag this member to revisit later without logging an interaction">Review Later</a>';
         }
       }
       catch (\Exception $e) {
@@ -283,7 +301,7 @@ class MemberSuccessActionLink extends FieldPluginBase {
           ],
         ]);
         if ($no_action_url->access(\Drupal::currentUser())) {
-          $buttons[] = '<a href="' . $no_action_url->toString() . '" class="btn btn-sm btn-warning text-white" title="Mark this stage as no follow-up needed without logging an interaction">No Follow-up Needed</a>';
+          $secondary_buttons[] = '<a href="' . $no_action_url->toString() . '" class="btn btn-sm ms-action-btn ms-action-btn--quiet" title="Mark this stage as no follow-up needed without logging an interaction">No Follow-Up</a>';
         }
       }
       catch (\Exception $e) {
@@ -294,19 +312,29 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // CRM button removed - now appears with member name instead
 
     // Build the complete display
-    $output = $status_badge;
+    $output = '<div class="ms-suggested-action">';
+    $output .= '<div class="ms-suggested-action__status">' . $status_badge . '</div>';
 
     if ($action_text) {
-      $output .= '<br><small class="text-muted">' . $action_text . '</small>';
+      $output .= '<div class="ms-suggested-action__next">' . $action_text . '</div>';
     }
 
     if (!empty($sms_unavailable_reason)) {
-      $output .= '<br><small class="text-muted">' . $sms_unavailable_reason . '</small>';
+      $output .= '<div class="ms-suggested-action__meta">' . $sms_unavailable_reason . '</div>';
     }
 
-    if (!empty($buttons)) {
-      $output .= '<br><div class="btn-group btn-group-sm mt-1" role="group">' . implode('', $buttons) . '</div>';
+    if (!empty($primary_buttons) || !empty($secondary_buttons)) {
+      $output .= '<div class="ms-action-cluster">';
+      if (!empty($primary_buttons)) {
+        $output .= '<div class="ms-action-row ms-action-row--primary">' . implode('', $primary_buttons) . '</div>';
+      }
+      if (!empty($secondary_buttons)) {
+        $output .= '<div class="ms-action-row ms-action-row--secondary">' . implode('', $secondary_buttons) . '</div>';
+      }
+      $output .= '</div>';
     }
+
+    $output .= '</div>';
 
     return [
       '#type' => 'markup',

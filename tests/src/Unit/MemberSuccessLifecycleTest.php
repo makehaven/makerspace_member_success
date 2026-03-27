@@ -28,6 +28,7 @@ class MemberSuccessLifecycleTest extends UnitTestCase {
     $this->assertContains(MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION, $statuses);
     $this->assertContains(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, $statuses);
     $this->assertContains(MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, $statuses);
+    $this->assertContains(MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, $statuses);
   }
 
   /**

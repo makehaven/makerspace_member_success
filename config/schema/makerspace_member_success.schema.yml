@@ -48,6 +48,14 @@ makerspace_member_success.settings:
     civicrm_group_confirmed_cancellation:
       type: integer
       label: 'CiviCRM group ID for confirmed_cancellation'
+    needs_review_notification_enabled:
+      type: boolean
+      label: 'Whether needs-review notifications are enabled'
+    needs_review_notification_emails:
+      type: sequence
+      label: 'Email recipients for needs-review notifications'
+      sequence:
+        type: string
     chargebee_followup_push_enabled:
       type: boolean
       label: 'Whether followup status should be pushed to Chargebee'

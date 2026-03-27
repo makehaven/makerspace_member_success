@@ -44,9 +44,19 @@ services:
       - '@entity_type.manager'
       - '@makerspace_member_success.civi_followup_group_sync'
       - '@makerspace_member_success.chargebee_followup_status_sync'
+      - '@makerspace_member_success.review_notification'
       - '@cache_tags.invalidator'
       - '@datetime.time'
       - '@logger.channel.makerspace_member_success'
+
+  makerspace_member_success.review_notification:
+    class: Drupal\makerspace_member_success\Service\NeedsReviewNotificationService
+    arguments:
+      - '@config.factory'
+      - '@plugin.manager.mail'
+      - '@current_user'
+      - '@language_manager'
+      - '@logger.factory'
 
   makerspace_member_success.outreach_service:
     class: Drupal\makerspace_member_success\Service\OutreachService
@@ -136,4 +146,3 @@ services:
       - '@datetime.time'
       - '@makerspace_member_success.outreach_queue_service'
       - '@config.factory'
-

@@ -265,6 +265,22 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (int) ($config->get('civicrm_group_confirmed_cancellation') ?? 0),
       '#min' => 0,
     ];
+    $form['advanced']['needs_review_notification_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Email designated reviewers when a member is sent to Needs Review'),
+      '#default_value' => (bool) ($config->get('needs_review_notification_enabled') ?? FALSE),
+    ];
+    $form['advanced']['needs_review_notification_emails'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Needs Review notification recipients'),
+      '#description' => $this->t('One email address per line. These people are notified when someone is sent to the Needs Review queue.'),
+      '#default_value' => implode("\n", (array) $config->get('needs_review_notification_emails')),
+      '#states' => [
+        'visible' => [
+          ':input[name="needs_review_notification_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
 
     $form['advanced']['chargebee_followup_push_enabled'] = [
       '#type' => 'checkbox',
@@ -334,6 +350,8 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('civicrm_group_no_action_needed', (int) $form_state->getValue('civicrm_group_no_action_needed'))
       ->set('civicrm_group_return_intent', (int) $form_state->getValue('civicrm_group_return_intent'))
       ->set('civicrm_group_confirmed_cancellation', (int) $form_state->getValue('civicrm_group_confirmed_cancellation'))
+      ->set('needs_review_notification_enabled', (bool) $form_state->getValue('needs_review_notification_enabled'))
+      ->set('needs_review_notification_emails', $this->sanitizeList($form_state->getValue('needs_review_notification_emails')))
       ->set('chargebee_followup_push_enabled', (bool) $form_state->getValue('chargebee_followup_push_enabled'))
       ->set('chargebee_followup_push_field_param', trim((string) $form_state->getValue('chargebee_followup_push_field_param')))
       ->set('civicrm_do_not_fields', $this->sanitizeList($form_state->getValue('civicrm_do_not_fields')))

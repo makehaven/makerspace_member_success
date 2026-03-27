@@ -259,6 +259,142 @@
   color: #fff;
 }
 
+/* Queue action usability */
+.ms-suggested-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 17rem;
+}
+
+.ms-suggested-action__status .badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+}
+
+.ms-suggested-action__next {
+  color: var(--gin-color-text);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.ms-suggested-action__next strong {
+  font-weight: 700;
+}
+
+.ms-suggested-action__meta {
+  color: var(--gin-color-text-light);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.ms-action-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.1rem;
+}
+
+.ms-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.ms-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.ms-action-btn:hover,
+.ms-action-btn:focus {
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.ms-action-btn--primary {
+  background: #8f1d14;
+  border-color: #8f1d14;
+  color: #fff;
+}
+
+.ms-action-btn--primary:hover,
+.ms-action-btn--primary:focus {
+  background: #74170f;
+  border-color: #74170f;
+  color: #fff;
+}
+
+.ms-action-btn--success {
+  background: #b23a1b;
+  border-color: #b23a1b;
+  color: #fff;
+}
+
+.ms-action-btn--success:hover,
+.ms-action-btn--success:focus {
+  background: #922f16;
+  border-color: #922f16;
+  color: #fff;
+}
+
+.ms-action-btn--secondary {
+  background: #fff7ef;
+  border-color: #d7b089;
+  color: #6b4024;
+}
+
+.ms-action-btn--secondary:hover,
+.ms-action-btn--secondary:focus {
+  background: #f6eadc;
+  border-color: #c6986a;
+  color: #59341d;
+}
+
+.ms-action-btn--quiet {
+  background: #f7f7f7;
+  border-color: #d5d5d5;
+  color: #555;
+}
+
+.ms-action-btn--quiet:hover,
+.ms-action-btn--quiet:focus {
+  background: #ededed;
+  border-color: #c3c3c3;
+  color: #333;
+}
+
+@media (max-width: 900px) {
+  .ms-suggested-action {
+    min-width: 0;
+  }
+
+  .ms-action-row {
+    gap: 0.35rem;
+  }
+
+  .ms-action-btn {
+    white-space: normal;
+    text-align: center;
+  }
+}
+
 .ms-performance-dashboard .btn-secondary {
   background: #6c757d;
   color: #fff;
