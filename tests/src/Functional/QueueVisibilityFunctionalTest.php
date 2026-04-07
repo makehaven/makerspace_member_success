@@ -48,11 +48,12 @@ class QueueVisibilityFunctionalTest extends BrowserTestBase {
     $this->staffUser = $this->drupalCreateUser([
       'access makerspace member success queues',
       'access user profiles',
+      'log makerspace member success contacts',
     ]);
   }
 
   /**
-   * Tests snoozed and resolved members are hidden in the recovery queue.
+   * Tests hidden recovery members move to the secondary hidden-members table.
    */
   public function testRecoveryQueueVisibilityFilters(): void {
     $today = date('Y-m-d');
@@ -103,12 +104,73 @@ class QueueVisibilityFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/makerspace/member-success/recovery');
     $this->assertSession()->statusCodeEquals(200);
 
-    $this->assertSession()->pageTextContains('Queue Visible Now');
-    $this->assertSession()->pageTextContains('Queue Visible Due');
+    $main_table = $this->assertSession()->elementExists('css', 'table.views-table');
+    $main_text = $main_table->getText();
+    $this->assertStringContainsString('Queue Visible Now', $main_text);
+    $this->assertStringContainsString('Queue Visible Due', $main_text);
+    $this->assertStringNotContainsString('Queue Hidden Snoozed', $main_text);
+    $this->assertStringNotContainsString('Queue Hidden Exhausted', $main_text);
+    $this->assertStringNotContainsString('Queue Hidden Cancel', $main_text);
 
-    $this->assertSession()->pageTextNotContains('Queue Hidden Snoozed');
-    $this->assertSession()->pageTextNotContains('Queue Hidden Exhausted');
-    $this->assertSession()->pageTextNotContains('Queue Hidden Cancel');
+    $this->assertSession()->pageTextContains('Snoozed Recovery Members (1)');
+    $this->assertSession()->pageTextContains('Suppressed Recovery Members (2)');
+
+    $snoozed_table = $this->assertSession()->elementExists('css', '.ms-snoozed-recovery-table');
+    $snoozed_text = $snoozed_table->getText();
+    $this->assertStringContainsString('Queue Hidden Snoozed', $snoozed_text);
+    $this->assertStringContainsString('Snoozed until ' . $future, $snoozed_text);
+
+    $suppressed_details = $this->assertSession()->elementExists('xpath', '//details[contains(., "Suppressed Recovery Members")]');
+    $this->assertFalse($suppressed_details->hasAttribute('open'), 'Suppressed recovery members table should be collapsed by default.');
+    $suppressed_table = $this->assertSession()->elementExists('css', '.ms-suppressed-recovery-table');
+    $suppressed_text = $suppressed_table->getText();
+    $this->assertStringContainsString('Queue Hidden Exhausted', $suppressed_text);
+    $this->assertStringContainsString('Queue Hidden Cancel', $suppressed_text);
+    $this->assertStringContainsString('Suppressed after outreach exhausted', $suppressed_text);
+    $this->assertStringContainsString('Suppressed after confirmed cancellation', $suppressed_text);
+    $this->assertStringContainsString('Log Interaction', $suppressed_text);
+  }
+
+  /**
+   * Tests the recovery queue empty-state when all members are hidden.
+   */
+  public function testRecoveryQueueShowsEmptyStateWhenOnlyHiddenMembersRemain(): void {
+    $future = date('Y-m-d', strtotime('+7 days'));
+
+    $hidden_snoozed = User::create([
+      'name' => 'Recovery Snoozed Only',
+      'mail' => 'recovery.snoozed.only@example.com',
+      'status' => 1,
+    ]);
+    $hidden_snoozed->save();
+
+    $hidden_exhausted = User::create([
+      'name' => 'Recovery Exhausted Only',
+      'mail' => 'recovery.exhausted.only@example.com',
+      'status' => 1,
+    ]);
+    $hidden_exhausted->save();
+
+    $this->insertSnapshotRow($hidden_snoozed->id(), $future, NULL, NULL);
+    $this->insertSnapshotRow($hidden_exhausted->id(), NULL, 'outreach_exhausted', NULL);
+
+    $this->drupalLogin($this->staffUser);
+    $this->drupalGet('/admin/makerspace/member-success/recovery');
+    $this->assertSession()->statusCodeEquals(200);
+
+    $this->assertSession()->pageTextContains('No members need immediate recovery outreach today');
+    $this->assertSession()->pageTextContains('Current hidden counts:');
+    $this->assertSession()->pageTextContains('2 hidden total, 1 snoozed for later follow-up, 1 suppressed by status.');
+    $this->assertSession()->pageTextContains('Snoozed Recovery Members (1)');
+    $this->assertSession()->pageTextContains('Suppressed Recovery Members (1)');
+
+    $snoozed_table = $this->assertSession()->elementExists('css', '.ms-snoozed-recovery-table');
+    $this->assertStringContainsString('Recovery Snoozed Only', $snoozed_table->getText());
+
+    $suppressed_details = $this->assertSession()->elementExists('xpath', '//details[contains(., "Suppressed Recovery Members")]');
+    $this->assertFalse($suppressed_details->hasAttribute('open'), 'Suppressed recovery members table should be collapsed by default.');
+    $suppressed_table = $this->assertSession()->elementExists('css', '.ms-suppressed-recovery-table');
+    $this->assertStringContainsString('Recovery Exhausted Only', $suppressed_table->getText());
   }
 
   /**

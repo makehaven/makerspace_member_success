@@ -6,6 +6,8 @@
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Link;
+use Drupal\Core\Url;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier;
@@ -741,6 +743,10 @@ function makerspace_member_success_views_pre_render(\Drupal\views\ViewExecutable
 
     $view->attachment_before[] = $summary;
   }
+
+  if ($view->current_display === 'recovery') {
+    makerspace_member_success_attach_recovery_hidden_listing($view);
+  }
 }
 
 /**
@@ -758,6 +764,211 @@ function makerspace_member_success_adjust_queue_runtime_layout(\Drupal\views\Vie
   if ($view->current_display === 'lifecycle') {
     makerspace_member_success_hide_duplicate_lifecycle_fields($view);
   }
+}
+
+/**
+ * Adds empty-state guidance and hidden-row context to the recovery queue.
+ */
+function makerspace_member_success_attach_recovery_hidden_listing(\Drupal\views\ViewExecutable $view): void {
+  $today = MemberSuccessQueueRules::todayYmd();
+  $rows = \Drupal::database()->select('ms_member_success_snapshot', 'ms')
+    ->fields('ms', [
+      'uid',
+      'membership_type',
+      'risk_score',
+      'payment_failed',
+      'payment_pause',
+      'next_followup_date',
+      'outreach_status',
+      'member_followup_status',
+    ])
+    ->condition('ms.is_latest', 1)
+    ->condition('ms.snapshot_type', 'daily')
+    ->condition('ms.stage', MemberSuccessLifecycle::STAGE_RECOVERY)
+    ->orderBy('ms.risk_score', 'DESC')
+    ->execute()
+    ->fetchAll();
+
+  if (empty($rows)) {
+    return;
+  }
+
+  $uids = [];
+  foreach ($rows as $row) {
+    $uids[] = (int) $row->uid;
+  }
+  $users = \Drupal::entityTypeManager()->getStorage('user')->loadMultiple($uids);
+
+  $snoozed_rows = [];
+  $suppressed_rows = [];
+
+  foreach ($rows as $row) {
+    $is_visible = MemberSuccessQueueRules::isQueueVisible(
+      $row->next_followup_date,
+      $row->outreach_status,
+      $row->member_followup_status,
+      $today
+    );
+    if ($is_visible) {
+      continue;
+    }
+
+    $reason = makerspace_member_success_describe_hidden_recovery_reason($row, $today);
+    
+    // Determine if suppressed or snoozed.
+    // Suppressed takes precedence if both apply.
+    $is_suppressed = !MemberSuccessQueueRules::isStatusVisible($row->outreach_status) ||
+                     !MemberSuccessQueueRules::isStatusVisible($row->member_followup_status);
+
+    $uid = (int) $row->uid;
+    $user = $users[$uid] ?? NULL;
+    $member_label = $user ? $user->getDisplayName() : 'User ' . $uid;
+    $member_link = $user
+      ? Link::fromTextAndUrl($member_label, Url::fromRoute('entity.user.canonical', ['user' => $uid]))->toString()
+      : $member_label;
+
+    $action_parts = [];
+    try {
+      $log_url = Url::fromRoute('makerspace_member_success.log_contact', ['user' => $uid]);
+      if ($log_url->access(\Drupal::currentUser())) {
+        $action_parts[] = Link::fromTextAndUrl('Log Interaction', $log_url)->toString();
+      }
+    }
+    catch (\Exception $e) {
+      // Skip action link if the route or access check fails.
+    }
+
+    $action_parts[] = makerspace_member_success_suggest_hidden_recovery_action($row);
+
+    $render_row = [
+      'member' => [
+        'data' => ['#markup' => (string) $member_link],
+      ],
+      'membership_type' => [
+        'data' => ['#plain_text' => (string) ($row->membership_type ?? '')],
+      ],
+      'risk' => [
+        'data' => ['#plain_text' => (string) $row->risk_score],
+      ],
+      'hidden_reason' => [
+        'data' => ['#plain_text' => $reason],
+      ],
+      'status' => [
+        'data' => ['#plain_text' => (string) ($row->member_followup_status ?: $row->outreach_status ?: 'pending')],
+      ],
+      'suggested_action' => [
+        'data' => ['#markup' => implode(' <span class="text-muted">|</span> ', $action_parts)],
+      ],
+    ];
+
+    if ($is_suppressed) {
+      $suppressed_rows[] = $render_row;
+    }
+    else {
+      $snoozed_rows[] = $render_row;
+    }
+  }
+
+  if (empty($snoozed_rows) && empty($suppressed_rows)) {
+    return;
+  }
+
+  if (empty($view->result)) {
+    $view->attachment_after[] = [
+      '#type' => 'markup',
+      '#markup' => '<div class="alert alert-info mt-3">' .
+        '<h5>No members need immediate recovery outreach today</h5>' .
+        '<p class="mb-2">The actionable recovery queue is empty because all current recovery members are either snoozed until a future follow-up date or already marked with a resolved/suppressed status.</p>' .
+        '<p class="mb-0"><strong>Current hidden counts:</strong> ' . (count($snoozed_rows) + count($suppressed_rows)) . ' hidden total, ' . count($snoozed_rows) . ' snoozed for later follow-up, ' . count($suppressed_rows) . ' suppressed by status.</p>' .
+        '</div>',
+      '#weight' => 10,
+    ];
+  }
+
+  $table_header = [
+    'member' => 'Member',
+    'membership_type' => 'Membership Type',
+    'risk' => 'Risk',
+    'hidden_reason' => 'Hidden Reason',
+    'status' => 'Outreach Status',
+    'suggested_action' => 'Suggested Action',
+  ];
+
+  if (!empty($snoozed_rows)) {
+    $view->attachment_after[] = [
+      '#type' => 'details',
+      '#title' => t('Snoozed Recovery Members (@count)', ['@count' => count($snoozed_rows)]),
+      '#open' => TRUE,
+      '#weight' => 20,
+      'help' => [
+        '#type' => 'markup',
+        '#markup' => '<p class="text-muted">These members are still active work, but are deferred until their follow-up date.</p>',
+      ],
+      'table' => [
+        '#type' => 'table',
+        '#header' => $table_header,
+        '#rows' => $snoozed_rows,
+        '#empty' => t('No snoozed recovery members found.'),
+        '#attributes' => ['class' => ['ms-snoozed-recovery-table']],
+      ],
+    ];
+  }
+
+  if (!empty($suppressed_rows)) {
+    $view->attachment_after[] = [
+      '#type' => 'details',
+      '#title' => t('Suppressed Recovery Members (@count)', ['@count' => count($suppressed_rows)]),
+      '#open' => FALSE,
+      '#weight' => 30,
+      'help' => [
+        '#type' => 'markup',
+        '#markup' => '<p class="text-muted">These members are effectively closed or parked. They will not return to the queue unless their status changes or the stage resets.</p>',
+      ],
+      'table' => [
+        '#type' => 'table',
+        '#header' => $table_header,
+        '#rows' => $suppressed_rows,
+        '#empty' => t('No suppressed recovery members found.'),
+        '#attributes' => ['class' => ['ms-suppressed-recovery-table']],
+      ],
+    ];
+  }
+}
+
+/**
+ * Builds a readable reason for why a recovery member is hidden.
+ */
+function makerspace_member_success_describe_hidden_recovery_reason(object $row, string $today): string {
+  if (!empty($row->next_followup_date) && $row->next_followup_date > $today) {
+    return 'Snoozed until ' . $row->next_followup_date;
+  }
+
+  $status = $row->member_followup_status ?: $row->outreach_status;
+  return match ($status) {
+    MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION => 'Suppressed after confirmed cancellation',
+    MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED => 'Suppressed after outreach exhausted',
+    MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED => 'Suppressed as no action needed',
+    MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW => 'Suppressed pending manual review',
+    default => 'Hidden by current queue visibility rules',
+  };
+}
+
+/**
+ * Returns a short operator-facing suggestion for a hidden recovery member.
+ */
+function makerspace_member_success_suggest_hidden_recovery_action(object $row): string {
+  if (!empty($row->next_followup_date)) {
+    return 'Follow up on or after ' . $row->next_followup_date;
+  }
+
+  $status = $row->member_followup_status ?: $row->outreach_status;
+  return match ($status) {
+    MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION => 'Review only if the cancellation status looks wrong',
+    MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED => 'Resume outreach only if you want to override exhaustion',
+    MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED => 'No outreach needed unless the payment issue reopens',
+    MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW => 'Resolve the review state before resuming outreach',
+    default => 'Review history before changing outreach status',
+  };
 }
 
 /**

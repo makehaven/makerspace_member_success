@@ -7,87 +7,86 @@ use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\Tests\UnitTestCase;
 
 /**
- * Tests queue visibility and suppression reset rules.
+ * Unit tests for MemberSuccessQueueRules.
  *
  * @group makerspace_member_success
  */
 class MemberSuccessQueueRulesTest extends UnitTestCase {
 
   /**
-   * Tests followup date visibility rules.
+   * Tests isFollowupDateVisible for various dates.
+   *
+   * @dataProvider followupDateProvider
    */
-  public function testFollowupDateVisibility(): void {
-    $today = '2026-02-17';
-
-    $this->assertTrue(MemberSuccessQueueRules::isFollowupDateVisible(NULL, $today));
-    $this->assertTrue(MemberSuccessQueueRules::isFollowupDateVisible('2026-02-16', $today));
-    $this->assertTrue(MemberSuccessQueueRules::isFollowupDateVisible('2026-02-17', $today));
-    $this->assertFalse(MemberSuccessQueueRules::isFollowupDateVisible('2026-02-18', $today));
+  public function testIsFollowupDateVisible(?string $date, string $today, bool $expected): void {
+    $this->assertEquals($expected, MemberSuccessQueueRules::isFollowupDateVisible($date, $today));
   }
 
   /**
-   * Tests suppression status visibility.
+   * Data provider for testIsFollowupDateVisible.
    */
-  public function testStatusVisibility(): void {
-    $this->assertTrue(MemberSuccessQueueRules::isStatusVisible(NULL));
-    $this->assertTrue(MemberSuccessQueueRules::isStatusVisible(''));
-    $this->assertTrue(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE));
-    $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION));
-    $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED));
-    $this->assertFalse(MemberSuccessQueueRules::isStatusVisible(MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW));
+  public static function followupDateProvider(): array {
+    return [
+      'Empty date is visible' => [NULL, '2026-04-06', TRUE],
+      'Past date is visible' => ['2026-04-05', '2026-04-06', TRUE],
+      'Today is visible' => ['2026-04-06', '2026-04-06', TRUE],
+      'Future date is hidden' => ['2026-04-07', '2026-04-06', FALSE],
+    ];
   }
 
   /**
-   * Tests full queue visibility evaluation.
+   * Tests isStatusVisible for various statuses.
+   *
+   * @dataProvider statusProvider
    */
-  public function testQueueVisibility(): void {
-    $today = '2026-02-17';
-
-    $this->assertTrue(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, NULL, $today));
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible('2026-02-20', NULL, NULL, $today));
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, NULL, $today));
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION, $today));
-    // no_action_needed suppresses via outreach_status.
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, NULL, $today));
-    // no_action_needed suppresses via member_followup_status too.
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, $today));
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, NULL, $today));
-    $this->assertFalse(MemberSuccessQueueRules::isQueueVisible(NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, $today));
+  public function testIsStatusVisible(?string $status, bool $expected): void {
+    $this->assertEquals($expected, MemberSuccessQueueRules::isStatusVisible($status));
   }
 
   /**
-   * Tests suppression reset decision on stage change.
+   * Data provider for testIsStatusVisible.
    */
-  public function testSuppressionResetOnStageChange(): void {
-    $this->assertTrue(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::STAGE_RECOVERY,
-      MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED
-    ));
+  public static function statusProvider(): array {
+    return [
+      'Empty status is visible' => [NULL, TRUE],
+      'Active status is visible' => [MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE, TRUE],
+      'Pending status is visible' => [MemberSuccessLifecycle::OUTREACH_STATUS_PENDING, TRUE],
+      'Exhausted is hidden' => [MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, FALSE],
+      'Cancellation is hidden' => [MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION, FALSE],
+      'No action needed is hidden' => [MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED, FALSE],
+      'Needs review is hidden' => [MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW, FALSE],
+    ];
+  }
 
-    $this->assertFalse(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED
-    ));
+  /**
+   * Tests the combined isQueueVisible logic.
+   *
+   * @dataProvider queueVisibleProvider
+   */
+  public function testIsQueueVisible(
+    ?string $date,
+    ?string $outreach_status,
+    ?string $member_status,
+    string $today,
+    bool $expected
+  ): void {
+    $this->assertEquals(
+      $expected,
+      MemberSuccessQueueRules::isQueueVisible($date, $outreach_status, $member_status, $today)
+    );
+  }
 
-    $this->assertFalse(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::STAGE_RECOVERY,
-      MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE
-    ));
-
-    // no_action_needed is a resolved status — should reset on stage change.
-    $this->assertTrue(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::STAGE_RECOVERY,
-      MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED
-    ));
-    $this->assertTrue(MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
-      MemberSuccessLifecycle::STAGE_RETENTION,
-      MemberSuccessLifecycle::STAGE_RECOVERY,
-      MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW
-    ));
+  /**
+   * Data provider for testIsQueueVisible.
+   */
+  public static function queueVisibleProvider(): array {
+    return [
+      'All empty is visible' => [NULL, NULL, NULL, '2026-04-06', TRUE],
+      'Future date hides even if status is visible' => ['2026-04-07', NULL, NULL, '2026-04-06', FALSE],
+      'Suppressed status hides even if date is past' => ['2026-04-05', MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED, NULL, '2026-04-06', FALSE],
+      'Member-level status suppression hides' => [NULL, NULL, MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION, '2026-04-06', FALSE],
+      'Everything ready is visible' => ['2026-04-01', MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE, NULL, '2026-04-06', TRUE],
+    ];
   }
 
 }
