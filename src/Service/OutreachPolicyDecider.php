@@ -41,16 +41,23 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     ];
 
     $priority = $risk_score >= 50 ? 100 : ($risk_score >= 20 ? 70 : 30);
+
+    // Pass the config key name (e.g. "template_onboarding") as the default,
+    // not the full template text. The column is varchar(64) and the full text
+    // would be truncated. OutreachMessageBuilder resolves the content at send time.
+    $email_key = (string) ($config->get("template_$stage") ?? '') !== '' ? "template_$stage" : '';
+    $sms_key = (string) ($config->get("sms_template_$stage") ?? '') !== '' ? "sms_template_$stage" : '';
+
     $email_template = $this->resolveTemplateForChannel(
       $stage,
       $risk_reasons,
-      (string) ($config->get("template_$stage") ?? ''),
+      $email_key,
       (array) ($config->get('email_template_overrides') ?? [])
     );
     $sms_template = $this->resolveTemplateForChannel(
       $stage,
       $risk_reasons,
-      (string) ($config->get("sms_template_$stage") ?? ''),
+      $sms_key,
       (array) ($config->get('sms_template_overrides') ?? [])
     );
     $template_reason = NULL;

@@ -88,7 +88,8 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
           'email' => new SuppressionResult(TRUE),
         ],
         'sms',
-        'tpl_sms_ret',
+        // Config key name is stored, not the raw template value.
+        'sms_template_retention',
         'pref_sms',
       ],
       'sms_blocked_falls_back_to_email' => [
@@ -99,7 +100,7 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
           'email' => new SuppressionResult(TRUE),
         ],
         'email',
-        'tpl_email_ret',
+        'template_retention',
         'email_fallback_no_pref',
       ],
       'no_preference_defaults_to_email_even_with_sms_consent' => [
@@ -110,7 +111,7 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
           'email' => new SuppressionResult(TRUE),
         ],
         'email',
-        'tpl_email_ret',
+        'template_retention',
         'email_fallback_no_pref',
       ],
       'preferred_email_missing_template_falls_to_sms' => [
@@ -121,7 +122,7 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
           'email' => new SuppressionResult(TRUE),
         ],
         'sms',
-        'tpl_sms_ret',
+        'sms_template_retention',
         'sms_fallback_no_email',
       ],
       'no_templates_returns_manual_only' => [

@@ -77,6 +77,18 @@ function makerspace_member_success_schema() {
         'length' => 10,
         'not null' => FALSE,
       ],
+      'orientation_scheduled_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date of upcoming scheduled orientation in CiviCRM (YYYY-MM-DD).',
+      ],
+      'first_card_scan_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date of first successful door card scan (YYYY-MM-DD).',
+      ],
       'door_badge_status' => [
         'type' => 'varchar',
         'length' => 16,
@@ -1324,5 +1336,30 @@ function makerspace_member_success_update_9025(): void {
   }
   if ($changed) {
     $config->save(TRUE);
+  }
+}
+
+/**
+ * Adds orientation_scheduled_date and first_card_scan_date to the snapshot table.
+ */
+function makerspace_member_success_update_9026(): void {
+  $schema = \Drupal::database()->schema();
+
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'orientation_scheduled_date')) {
+    $schema->addField('ms_member_success_snapshot', 'orientation_scheduled_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date of upcoming scheduled orientation in CiviCRM (YYYY-MM-DD).',
+    ]);
+  }
+
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'first_card_scan_date')) {
+    $schema->addField('ms_member_success_snapshot', 'first_card_scan_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date of first successful door card scan (YYYY-MM-DD).',
+    ]);
   }
 }

@@ -17,8 +17,8 @@ final class PreparedMessage {
     public string $destination,
     public ?string $templateId,
     public string $body,
-    public array $tokens = []
+    public array $tokens = [],
+    public string $subject = '',
   ) {}
 
 }
-

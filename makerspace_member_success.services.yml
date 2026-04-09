@@ -107,9 +107,15 @@ services:
     class: Drupal\makerspace_member_success\Service\OutreachMessageBuilder
     arguments:
       - '@database'
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@request_stack'
 
   makerspace_member_success.outreach_sender:
     class: Drupal\makerspace_member_success\Service\OutreachSender
+    arguments:
+      - '@plugin.manager.mail'
+      - '@language_manager'
 
   logger.channel.makerspace_member_success:
     parent: logger.channel_base

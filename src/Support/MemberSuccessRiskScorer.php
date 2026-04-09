@@ -74,8 +74,15 @@ final class MemberSuccessRiskScorer {
 
       if (!$in_grace_period) {
         if (($data['door_badge_status'] ?? NULL) !== 'active') {
-          $score += 20;
-          $reasons[] = 'door_badge_pending';
+          // Suppress the door-badge risk if a future orientation is already on
+          // the calendar — they're on track, no nudge needed yet.
+          if (!empty($data['orientation_scheduled'])) {
+            $reasons[] = 'orientation_scheduled_upcoming';
+          }
+          else {
+            $score += 20;
+            $reasons[] = 'door_badge_pending';
+          }
         }
         if (empty($data['serial_present'])) {
           $score += 10;

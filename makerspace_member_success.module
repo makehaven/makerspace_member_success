@@ -27,6 +27,13 @@ function makerspace_member_success_help(string $route_name, RouteMatchInterface 
  * Implements hook_mail().
  */
 function makerspace_member_success_mail(string $key, array &$message, array $params): void {
+  if ($key === 'outreach') {
+    $message['subject'] = $params['subject'] ?? '';
+    // Body is a plain-text string; wrap it so Drupal's mailer sends it cleanly.
+    $message['body'][] = $params['body'] ?? '';
+    return;
+  }
+
   if ($key !== 'needs_review_notification') {
     return;
   }
@@ -376,6 +383,22 @@ function makerspace_member_success_views_data(): array {
   $data['ms_member_success_snapshot']['orientation_date'] = [
     'title' => t('Orientation Date'),
     'help' => t('Date of door badge issuance (approx orientation).'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['orientation_scheduled_date'] = [
+    'title' => t('Orientation Scheduled Date'),
+    'help' => t('Date of upcoming scheduled orientation appointment in CiviCRM (YYYY-MM-DD), if any.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
+  $data['ms_member_success_snapshot']['first_card_scan_date'] = [
+    'title' => t('First Card Scan Date'),
+    'help' => t('Date of first successful door access scan (YYYY-MM-DD). Confirms member has physically visited.'),
     'field' => ['id' => 'standard'],
     'filter' => ['id' => 'string'],
     'sort' => ['id' => 'standard'],

@@ -86,6 +86,7 @@ class MemberSuccessSnapshotBuilder {
     $badge_stats = $this->loadBadgeStats($uid, $door_badge_tid, $badge_four_days, $now_ts);
     $visit_stats = $this->loadVisitStats($uid, $now_ts);
     $civi_data = $this->loadCiviCrmData($uid);
+    $first_card_scan_date = $this->loadFirstCardScan($uid);
 
     // Load previous snapshot to preserve outreach tracking fields
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
@@ -176,6 +177,7 @@ class MemberSuccessSnapshotBuilder {
       'tenure_bucket' => $tenure_bucket,
       'join_date' => $profile['join_date'],
       'pause_start_date' => $pause_start_date,
+      'orientation_scheduled' => $civi_data['orientation_scheduled'],
     ], $badge_one_days, $badge_four_days, $recency_days, $now_ts);
 
     // Detect stage transition - if stage changed, reset outreach tracking
@@ -252,6 +254,8 @@ class MemberSuccessSnapshotBuilder {
       'risk_reasons' => $risk_reasons,
       'join_date' => $profile['join_date'],
       'orientation_date' => $door_badge['created'] ? date('Y-m-d', $door_badge['created']) : NULL,
+      'orientation_scheduled_date' => $civi_data['orientation_scheduled'],
+      'first_card_scan_date' => $first_card_scan_date,
       'door_badge_status' => $door_badge['status'],
       'serial_number_present' => $serial_present ? 1 : 0,
       'badge_count_total' => $badge_stats['count_total'],
@@ -300,6 +304,7 @@ class MemberSuccessSnapshotBuilder {
       'do_not_mail' => 0,
       'preferred_outreach_method' => NULL,
       'member_followup_status' => NULL,
+      'orientation_scheduled' => NULL,
     ];
 
     try {
@@ -352,6 +357,7 @@ class MemberSuccessSnapshotBuilder {
           'do_not_mail' => (int) ($data['do_not_mail'] ?? 0),
           'preferred_outreach_method' => (string) $pref,
           'member_followup_status' => $followup,
+          'orientation_scheduled' => $this->loadOrientationScheduled($contact_id),
         ];
       }
     }
@@ -630,6 +636,64 @@ class MemberSuccessSnapshotBuilder {
       'last_visit_ts' => $last_visit_ts ? (int) $last_visit_ts : NULL,
       'visit_count_30d' => $visit_days ? (int) $visit_days : 0,
     ];
+  }
+
+  /**
+   * Returns the date of the next scheduled orientation for a CiviCRM contact, or NULL.
+   *
+   * Looks for an "Attended Orientation" activity with status "Scheduled" and a
+   * future activity date. Returns the date string (YYYY-MM-DD) if found.
+   */
+  protected function loadOrientationScheduled(int $contactId): ?string {
+    try {
+      $result = civicrm_api3('Activity', 'get', [
+        'target_contact_id' => $contactId,
+        'activity_type_id' => 'Attended Orientation',
+        'status_id' => 'Scheduled',
+        'return' => ['activity_date_time'],
+        'sequential' => 1,
+        'options' => ['limit' => 1, 'sort' => 'activity_date_time ASC'],
+      ]);
+      if (!empty($result['values'][0]['activity_date_time'])) {
+        $date_str = substr($result['values'][0]['activity_date_time'], 0, 10);
+        // Only return if today or in the future.
+        if ($date_str >= date('Y-m-d')) {
+          return $date_str;
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Activity type may not exist in all environments; silently continue.
+    }
+    return NULL;
+  }
+
+  /**
+   * Returns the date of the first successful door card scan for a user, or NULL.
+   */
+  protected function loadFirstCardScan(int $uid): ?string {
+    try {
+      $query = $this->database->select('access_control_log_field_data', 'acl');
+      $query->addExpression('MIN(acl.created)', 'first_scan_ts');
+      $query->condition('acl.type', 'access_control_request');
+      $query->innerJoin(
+        'access_control_log__field_access_request_user',
+        'user_ref',
+        'user_ref.entity_id = acl.id'
+      );
+      $query->condition('user_ref.field_access_request_user_target_id', $uid);
+      $query->innerJoin(
+        'access_control_log__field_access_request_result',
+        'result_ref',
+        'result_ref.entity_id = acl.id'
+      );
+      $query->condition('result_ref.field_access_request_result_value', 1);
+      $ts = $query->execute()->fetchField();
+      return $ts ? date('Y-m-d', (int) $ts) : NULL;
+    }
+    catch (\Exception $e) {
+      return NULL;
+    }
   }
 
   /**
