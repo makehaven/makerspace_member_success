@@ -106,25 +106,51 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     try {
       $user = $this->entityTypeManager->getStorage('user')->load($uid);
       if ($user) {
-        // Try profile field first.
+        // 1. Try field_first_name directly on the user entity.
         if ($user->hasField('field_first_name') && !$user->get('field_first_name')->isEmpty()) {
           $first_name = (string) $user->get('field_first_name')->value;
         }
-        // Fall back to display name.
+        // 2. Try the main profile entity (Profile module).
         if ($first_name === '') {
-          $name_parts = explode(' ', $user->getDisplayName(), 2);
-          $first_name = $name_parts[0];
+          $profiles = $this->entityTypeManager->getStorage('profile')->loadByProperties([
+            'uid' => $uid,
+            'type' => 'main',
+            'status' => 1,
+          ]);
+          $profile = reset($profiles);
+          if ($profile && $profile->hasField('field_first_name') && !$profile->get('field_first_name')->isEmpty()) {
+            $first_name = (string) $profile->get('field_first_name')->value;
+          }
+        }
+        // 3. Fall back to the first word of the display name, but only if it
+        //    looks like a real name (no underscores, no digits, reasonable length).
+        if ($first_name === '') {
+          $display = $user->getDisplayName();
+          $candidate = explode(' ', $display, 2)[0];
+          $looks_like_name = !str_contains($candidate, '_')
+            && !preg_match('/\d/', $candidate)
+            && strlen($candidate) >= 2
+            && strlen($candidate) <= 30;
+          if ($looks_like_name) {
+            $first_name = $candidate;
+          }
         }
       }
     }
     catch (\Exception $e) {
-      // Leave first_name empty if user load fails.
+      // Leave first_name empty if user or profile load fails.
     }
-    $tokens['contact.first_name'] = $first_name;
+    // Final fallback: generic greeting so the email still reads naturally.
+    $tokens['contact.first_name'] = $first_name !== '' ? $first_name : 'there';
 
     // Resolve base URL.
+    // In Drush/CLI context the request stack returns a synthetic host
+    // ('default'). Fall back to the known production URL in that case.
     $request = $this->requestStack->getCurrentRequest();
-    $base_url = $request ? $request->getSchemeAndHttpHost() : 'https://www.makehaven.org';
+    $base_url = $request ? $request->getSchemeAndHttpHost() : '';
+    if ($base_url === '' || $base_url === 'http://default' || $base_url === 'https://default') {
+      $base_url = 'https://www.makehaven.org';
+    }
     $tokens['domain.base_url'] = $base_url;
 
     return $tokens;

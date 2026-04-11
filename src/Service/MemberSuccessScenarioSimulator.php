@@ -112,7 +112,7 @@ class MemberSuccessScenarioSimulator {
 
     // Direct mapping for other fields
     $direct_fields = [
-      'stage', 'door_badge_status', 'serial_number_present', 'badge_count_total',
+      'stage', 'risk_score', 'door_badge_status', 'serial_number_present', 'badge_count_total',
       'badge_count_window', 'visit_count_30d', 'payment_failed', 'payment_pause',
       'tenure_bucket', 'outreach_status', 'contact_count', 'member_followup_status',
       'civicrm_do_not_email', 'civicrm_do_not_phone', 'civicrm_do_not_sms', 'civicrm_do_not_mail'

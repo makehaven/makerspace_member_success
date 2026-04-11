@@ -35,25 +35,25 @@ outreach_activity_types:
   - 'Phone Call'
   - 'SMS'
 template_onboarding: |
-  Subject: Followup: Getting Started at Makehaven
+  Subject: Getting Started at MakeHaven — next step: schedule your orientation
 
   Hi {contact.first_name},
 
-  It looks like you started the signup process at MakeHaven (welcome!) but didn't quite make it through all the pieces. We want to get you into the space making as soon as possible!
+  Welcome to MakeHaven! It looks like you still have a step or two to complete before you can start making.
 
-  To jump back in, please:
-  1. Log into your account: {domain.base_url}/user/login
-  2. Complete your profile: {domain.base_url}/user/current/main
-  3. Watch the safety orientation: {domain.base_url}/video
-  4. Take the safety quiz (look for the red button!)
+  Here's where to pick up:
+  1. Complete your profile: {domain.base_url}/user/current/main
+  2. Watch the safety orientation video: {domain.base_url}/video
+  3. Take the safety quiz (look for the red button on that page)
+  4. Schedule your in-person orientation with staff: {domain.base_url}/facilitator/schedules
 
-  Once that's done, you can schedule a time to pick up your key and have a safety walkthrough with staff.
+  The in-person orientation is a short walkthrough where you pick up your key card and get comfortable in the space. It takes about 15 minutes and staff are friendly — no pressure!
 
-  Sorry for all the required clicking – but it will be worth it!
-
-  If you get stuck at any point, please reach out. You can reply to this email or call/text me at (203) 401-8815.
+  If you have any questions, reply to this email and we will get back to you quickly.
 
   Looking forward to seeing you at the space!
+
+  — The MakeHaven Team
 template_engagement: |
   Subject: Let's get started & Make Something!
 

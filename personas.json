@@ -4,6 +4,7 @@
     "description": "Joined 15 days ago, no door badge, no serial number registered.",
     "snapshot": {
       "stage": "onboarding",
+      "risk_score": 30,
       "join_date_offset": -15,
       "door_badge_status": "pending",
       "serial_number_present": 0,
@@ -20,6 +21,7 @@
     "description": "Joined 90 days ago, was active, but no badges or visits in the last 30 days.",
     "snapshot": {
       "stage": "engagement",
+      "risk_score": 20,
       "join_date_offset": -90,
       "activation_ts_offset": -80,
       "door_badge_status": "active",
@@ -37,6 +39,7 @@
     "description": "Long-term member (1 year+) who hasn't visited in over 30 days.",
     "snapshot": {
       "stage": "retention",
+      "risk_score": 10,
       "join_date_offset": -400,
       "activation_ts_offset": -390,
       "door_badge_status": "active",
@@ -55,6 +58,7 @@
     "description": "Joined 60 days ago, still no door badge, no serial number. High priority.",
     "snapshot": {
       "stage": "onboarding",
+      "risk_score": 30,
       "join_date_offset": -60,
       "door_badge_status": "pending",
       "serial_number_present": 0,
@@ -69,6 +73,7 @@
     "description": "Was a member 2 years ago (12 badges), re-joined 5 days ago. Should NOT be flagged yet.",
     "snapshot": {
       "stage": "onboarding",
+      "risk_score": 0,
       "join_date_offset": -5,
       "door_badge_status": "pending",
       "serial_number_present": 0,
@@ -83,6 +88,7 @@
     "description": "Finished onboarding 6 months ago, but hasn't visited once. High retention risk.",
     "snapshot": {
       "stage": "retention",
+      "risk_score": 30,
       "join_date_offset": -200,
       "activation_ts_offset": -190,
       "door_badge_status": "active",
@@ -99,6 +105,7 @@
     "description": "Joined 7 days ago, already has 5 badges and 3 visits. System should leave alone.",
     "snapshot": {
       "stage": "onboarding",
+      "risk_score": 0,
       "join_date_offset": -7,
       "door_badge_status": "active",
       "serial_number_present": 1,
@@ -114,6 +121,7 @@
     "description": "Was marked 'no action needed' 35 days ago, but risk persists. Should reappear.",
     "snapshot": {
       "stage": "engagement",
+      "risk_score": 20,
       "join_date_offset": -120,
       "activation_ts_offset": -110,
       "door_badge_status": "active",
@@ -132,6 +140,7 @@
     "description": "Member whose payment failed 2 days ago. Should be in Recovery stage.",
     "snapshot": {
       "stage": "recovery",
+      "risk_score": 50,
       "join_date_offset": -180,
       "door_badge_status": "active",
       "serial_number_present": 1,
@@ -147,6 +156,7 @@
     "description": "Member on a payment pause for 65 days. Approaching the 90-day limit.",
     "snapshot": {
       "stage": "paused",
+      "risk_score": 30,
       "join_date_offset": -300,
       "door_badge_status": "active",
       "serial_number_present": 1,
