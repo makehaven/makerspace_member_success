@@ -499,3 +499,268 @@
 .ms-performance-dashboard .border-success { border-color: #198754 !important; }
 .ms-performance-dashboard .border-info { border-color: #0dcaf0 !important; }
 .ms-performance-dashboard .border-warning { border-color: #f5ae07 !important; }
+
+/* Risk bucket tab strip (Actionable / Watch / Safe / All) shown above each
+ * lifecycle stage page. Self-contained so it renders identically regardless
+ * of whether Bootstrap nav-pills styles happen to reach the admin theme. */
+.ms-bucket-tabs {
+  list-style: none !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 !important;
+  margin: 0 0 0.5rem 0 !important;
+}
+.ms-bucket-tabs li,
+.ms-bucket-tabs .nav-item {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.ms-bucket-tabs li::before,
+.ms-bucket-tabs .nav-item::before {
+  content: none !important;
+}
+.ms-bucket-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #d0d5dd;
+  background: #f6f7f9;
+  color: #1f2937;
+  font-weight: 500;
+  text-decoration: none;
+  line-height: 1.2;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ms-bucket-tabs a:hover,
+.ms-bucket-tabs a:focus {
+  background: #eceff3;
+  border-color: #98a2b3;
+  color: #111827;
+  text-decoration: none;
+}
+.ms-bucket-tabs a.active {
+  background: var(--gin-color-primary, #8b0b22);
+  border-color: var(--gin-color-primary, #8b0b22);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.ms-bucket-tabs a.active:hover,
+.ms-bucket-tabs a.active:focus {
+  background: var(--gin-color-primary-hover, #6f0919);
+  border-color: var(--gin-color-primary-hover, #6f0919);
+  color: #fff;
+}
+.ms-bucket-tabs .ms-bucket-count {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #1f2937;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+.ms-bucket-tabs a.active .ms-bucket-count {
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+}
+.ms-bucket-hint {
+  margin: 0 0 1rem 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+/* "Days in Process" column urgency badges on the onboarding queue. */
+.ms-days-in-process {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.ms-days-in-process.ms-days-grace {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.ms-days-in-process.ms-days-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.ms-days-in-process.ms-days-warning {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.ms-days-in-process.ms-days-danger {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* Compact stage header (title + goal + pulse strip) on lifecycle stage pages.
+ * Designed to feel lightweight: the primary action is the bucket tabs below,
+ * and the drawers below that are clearly reference material. */
+.ms-stage-header {
+  margin: 0 0 0.75rem 0;
+  position: relative;
+}
+.ms-stage-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-decoration: none;
+}
+.ms-stage-back:hover,
+.ms-stage-back:focus {
+  color: #111827;
+  text-decoration: underline;
+}
+.ms-stage-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.ms-stage-header-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.ms-stage-heading-text {
+  min-width: 0;
+}
+.ms-stage-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.15;
+}
+.ms-stage-goal {
+  margin: 0.15rem 0 0 0;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+/* "Pulse" status strip — one-line health snapshot of the queue. */
+.ms-stage-pulse {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+}
+.ms-stage-pulse.ms-pulse-calm {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.ms-stage-pulse.ms-pulse-warm {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+.ms-stage-pulse.ms-pulse-hot {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.ms-stage-pulse .ms-pulse-sep {
+  color: #9ca3af;
+}
+.ms-stage-pulse strong {
+  font-weight: 700;
+}
+
+/* Collapsed reference drawers. Kept intentionally quiet so the table
+ * dominates the visual weight. */
+.ms-stage-drawers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0 0 1rem 0;
+  padding: 0;
+}
+.ms-stage-drawers .ms-drawer {
+  font-size: 0.85rem;
+}
+.ms-stage-drawers .ms-drawer > summary {
+  cursor: pointer;
+  color: #6b7280;
+  list-style: none;
+  padding: 0.15rem 0;
+  user-select: none;
+}
+.ms-stage-drawers .ms-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+.ms-stage-drawers .ms-drawer > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  margin-right: 0.1rem;
+  transition: transform 0.15s ease;
+}
+.ms-stage-drawers .ms-drawer[open] > summary::before {
+  content: "▾ ";
+}
+.ms-stage-drawers .ms-drawer > summary:hover,
+.ms-stage-drawers .ms-drawer[open] > summary {
+  color: #111827;
+}
+.ms-stage-drawers .ms-drawer-body {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #1f2937;
+  font-size: 0.875rem;
+  max-width: 52rem;
+}
+.ms-stage-drawers .ms-drawer-body ul {
+  margin: 0 0 0.5rem 1.1rem;
+  padding: 0;
+}
+.ms-stage-drawers .ms-drawer-body ul:last-child {
+  margin-bottom: 0;
+}
+.ms-stage-drawers .ms-drawer-body li {
+  margin: 0.15rem 0;
+}
+.ms-stage-drawers .ms-drawer-body p {
+  margin: 0.4rem 0 0 0;
+}
+.ms-stage-drawers .ms-drawer-body p:first-child {
+  margin-top: 0;
+}
+.ms-legend-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0;
+}
+.ms-legend-dl dt {
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+}
+.ms-legend-dl dd {
+  margin: 0;
+  color: #4b5563;
+}

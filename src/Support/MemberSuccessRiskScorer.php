@@ -27,7 +27,7 @@ final class MemberSuccessRiskScorer {
    * @return array{0:int,1:array}
    *   Risk score and array of reason strings.
    */
-  public static function calculate(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts): array {
+  public static function calculate(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts, ?int $badge_watch_days = NULL): array {
     $score = 0;
     $reasons = [];
 
@@ -59,7 +59,6 @@ final class MemberSuccessRiskScorer {
     }
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_ONBOARDING) {
-      // Calculate days since join to determine if in grace period
       $days_since_join = 0;
       if (!empty($data['join_date'])) {
         $join_ts = strtotime($data['join_date'] . ' 00:00:00');
@@ -68,23 +67,41 @@ final class MemberSuccessRiskScorer {
         }
       }
 
-      // 2-week grace period - only flag members who have been waiting 14+ days
-      $grace_period_days = 14;
-      $in_grace_period = $days_since_join < $grace_period_days;
+      $door_badge_pending = ($data['door_badge_status'] ?? NULL) !== 'active';
+      $has_orientation_scheduled = !empty($data['orientation_scheduled']);
 
-      if (!$in_grace_period) {
-        if (($data['door_badge_status'] ?? NULL) !== 'active') {
-          // Suppress the door-badge risk if a future orientation is already on
-          // the calendar — they're on track, no nudge needed yet.
-          if (!empty($data['orientation_scheduled'])) {
-            $reasons[] = 'orientation_scheduled_upcoming';
-          }
-          else {
-            $score += 20;
-            $reasons[] = 'door_badge_pending';
-          }
+      // Pipeline-health signal: the signup flow is supposed to prompt new
+      // members to book their orientation immediately. If a day has passed
+      // since signup and they still haven't scheduled one (and don't already
+      // have an active door badge), something in the pipeline broke and
+      // staff should investigate manually. Flag as actionable from day 1.
+      if ($door_badge_pending) {
+        if ($has_orientation_scheduled) {
+          // On track — no score, just surface the signal for transparency.
+          $reasons[] = 'orientation_scheduled_upcoming';
         }
-        if (empty($data['serial_present'])) {
+        elseif ($days_since_join >= 1) {
+          $score += 20;
+          $reasons[] = 'orientation_not_scheduled';
+        }
+        // Under 1 day old with no orientation yet: still within the normal
+        // book-right-after-signup window.
+      }
+
+      // Missing serial keeps a 14-day scheduling grace — someone might be
+      // mid-pickup. After that, escalate by age so long-stalled members
+      // don't sit in "Watch" forever.
+      $serial_grace_days = 14;
+      if ($days_since_join >= $serial_grace_days && empty($data['serial_present'])) {
+        if ($days_since_join >= 180) {
+          $score += 25;
+          $reasons[] = 'missing_serial_stale';
+        }
+        elseif ($days_since_join >= 60) {
+          $score += 15;
+          $reasons[] = 'missing_serial_aging';
+        }
+        else {
           $score += 10;
           $reasons[] = 'missing_serial';
         }
@@ -99,14 +116,26 @@ final class MemberSuccessRiskScorer {
       // when new badge requests are not being filed.
       $frequent_visit_days_threshold = 4;
 
-      if (
-        $since_activation >= ($badge_one_days * 86400)
-        && $data['badge_count_window'] < 1
-        && $recent_visit_day_count < $frequent_visit_days_threshold
-      ) {
+      $no_badge_condition = $data['badge_count_window'] < 1
+        && $recent_visit_day_count < $frequent_visit_days_threshold;
+
+      if ($no_badge_condition && $since_activation >= ($badge_one_days * 86400)) {
+        // Actionable — member has gone $badge_one_days (default 60) without
+        // earning a badge or showing up frequently.
         $score += 20;
         $reasons[] = 'no_badge_1';
       }
+      elseif (
+        $badge_watch_days !== NULL
+        && $no_badge_condition
+        && $since_activation >= ($badge_watch_days * 86400)
+      ) {
+        // Watch — drifting, not yet stalled. Lets staff see members who've
+        // started slowing down before they hit the actionable threshold.
+        $score += 10;
+        $reasons[] = 'engagement_drifting';
+      }
+
       if ($since_activation >= ($badge_four_days * 86400) && $data['badge_count_total'] < 4) {
         $score += 20;
         $reasons[] = 'no_badge_4';

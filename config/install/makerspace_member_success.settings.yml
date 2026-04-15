@@ -1,5 +1,6 @@
 door_badge_tid: 1519
-badge_one_days: 28
+badge_one_days: 60
+badge_watch_days: 30
 badge_four_days: 180
 new_member_days: 180
 retention_recency_days:

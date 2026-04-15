@@ -93,3 +93,70 @@ makerspace_member_success.resource_report_churn:
   url: 'https://makehaven.chargebee.com/d/reports/standard/churn_summary'
   parent: makerspace_member_success.resources
   weight: 30
+
+# --- Staff Tools menu entries ---
+makerspace_member_success.staff_tab:
+  title: 'Member Success'
+  description: 'Member lifecycle queues, outreach, and intervention performance.'
+  menu_name: staff-tools
+  url: 'internal:/admin/makerspace/member-success/dashboard'
+  weight: 5
+
+makerspace_member_success.staff_dashboard:
+  title: 'Dashboard'
+  description: 'Member success overview and stage queues.'
+  route_name: makerspace_member_success.dashboard
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 5
+
+makerspace_member_success.staff_onboarding:
+  title: '1. Onboarding Queue'
+  route_name: view.member_success_queue.onboarding
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 10
+
+makerspace_member_success.staff_engagement:
+  title: '2. Engagement Queue'
+  route_name: view.member_success_queue.engagement
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 20
+
+makerspace_member_success.staff_retention:
+  title: '3. Retention Queue'
+  route_name: view.member_success_queue.retention
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 30
+
+makerspace_member_success.staff_recovery:
+  title: '4. Recovery Queue'
+  route_name: view.member_success_queue.recovery
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 40
+
+makerspace_member_success.staff_queue_review:
+  title: 'Outreach Queue Review'
+  description: 'Review and bulk-process outreach queue actions.'
+  route_name: makerspace_member_success.queue_review
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 50
+
+makerspace_member_success.staff_needs_review:
+  title: 'Needs Review Queue'
+  route_name: makerspace_member_success.needs_review_queue
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 55
+
+makerspace_member_success.staff_intervention_performance:
+  title: 'Intervention Performance'
+  description: 'Outreach stats, ROI, and effectiveness.'
+  route_name: makerspace_member_success.contractor_performance
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 60

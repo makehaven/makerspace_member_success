@@ -137,8 +137,9 @@ class MemberSuccessScenarioSimulator {
 
     // Re-calculate risk score
     $config = $this->configFactory->get('makerspace_member_success.settings');
-    $badge_one_days = (int) ($config->get('badge_one_days') ?? 28);
+    $badge_one_days = (int) ($config->get('badge_one_days') ?? 60);
     $badge_four_days = (int) ($config->get('badge_four_days') ?? 180);
+    $badge_watch_days = (int) ($config->get('badge_watch_days') ?? 30);
     $recency_days = (array) ($config->get('retention_recency_days') ?? [30, 60, 90]);
 
     // Format data for calculate()
@@ -146,7 +147,7 @@ class MemberSuccessScenarioSimulator {
     $calc_data['serial_present'] = $row['serial_number_present'] ?? 0;
     $calc_data['activation_ts'] = $row['activation_ts'] ?? null;
     
-    [$score, $reasons] = MemberSuccessRiskScorer::calculate($calc_data, $badge_one_days, $badge_four_days, $recency_days, $now_ts);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($calc_data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
     $row['risk_score'] = $score;
     $row['risk_reasons'] = serialize($reasons);
 
@@ -224,12 +225,13 @@ class MemberSuccessScenarioSimulator {
     $data['serial_present'] = $data['serial_number_present'] ?? 0;
 
     $config = $this->configFactory->get('makerspace_member_success.settings');
-    $badge_one_days = (int) ($config->get('badge_one_days') ?? 28);
+    $badge_one_days = (int) ($config->get('badge_one_days') ?? 60);
     $badge_four_days = (int) ($config->get('badge_four_days') ?? 180);
+    $badge_watch_days = (int) ($config->get('badge_watch_days') ?? 30);
     $recency_days = (array) ($config->get('retention_recency_days') ?? [30, 60, 90]);
     $now_ts = $this->time->getRequestTime();
 
-    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, $badge_one_days, $badge_four_days, $recency_days, $now_ts);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
     $data['risk_score'] = $score;
     $data['risk_reasons'] = serialize($reasons);
     $data['snapshot_date'] = date('Y-m-d', $now_ts);

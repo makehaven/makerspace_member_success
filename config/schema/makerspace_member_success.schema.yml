@@ -7,7 +7,10 @@ makerspace_member_success.settings:
       label: 'Door badge term ID'
     badge_one_days:
       type: integer
-      label: 'Days to earn first additional badge'
+      label: 'Days without activity before engagement becomes actionable'
+    badge_watch_days:
+      type: integer
+      label: 'Days without activity before engagement enters watch tier'
     badge_four_days:
       type: integer
       label: 'Days to earn four badges'

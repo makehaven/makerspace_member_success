@@ -9,6 +9,7 @@ use Drupal\Core\Url;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\makerspace_member_success\Service\RecoveryMetrics;
+use Drupal\makerspace_member_success\Support\MemberSuccessBuckets;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 
@@ -187,7 +188,12 @@ class MemberSuccessDashboardController extends ControllerBase {
     foreach (['onboarding', 'engagement', 'retention', 'recovery'] as $key) {
       $info = $stage_defs[$key];
       $stats = $stages[$key] ?? ['total' => 0, 'risk' => 0];
-      $stages_html .= $this->renderStageCard($key, $info, $stats, $this->safeRouteUrl('view.member_success_queue.' . $key));
+      $stages_html .= $this->renderStageCard(
+        $key,
+        $info,
+        $stats,
+        $this->safeRouteUrl('view.member_success_queue.' . $key, ['bucket' => MemberSuccessBuckets::ACTIONABLE])
+      );
     }
     $stages_html .= '</div>';
 

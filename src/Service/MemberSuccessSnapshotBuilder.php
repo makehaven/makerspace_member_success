@@ -75,8 +75,9 @@ class MemberSuccessSnapshotBuilder {
   public function buildSnapshotForUser(int $uid, string $snapshot_date, string $snapshot_type, int $now_ts): array {
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $door_badge_tid = (int) ($config->get('door_badge_tid') ?? 1519);
-    $badge_one_days = (int) ($config->get('badge_one_days') ?? 28);
+    $badge_one_days = (int) ($config->get('badge_one_days') ?? 60);
     $badge_four_days = (int) ($config->get('badge_four_days') ?? 180);
+    $badge_watch_days = (int) ($config->get('badge_watch_days') ?? 30);
     $new_member_days = (int) ($config->get('new_member_days') ?? 180);
     $recency_days = (array) ($config->get('retention_recency_days') ?? [30, 60, 90]);
 
@@ -178,7 +179,7 @@ class MemberSuccessSnapshotBuilder {
       'join_date' => $profile['join_date'],
       'pause_start_date' => $pause_start_date,
       'orientation_scheduled' => $civi_data['orientation_scheduled'],
-    ], $badge_one_days, $badge_four_days, $recency_days, $now_ts);
+    ], $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
 
     // Detect stage transition - if stage changed, reset outreach tracking
     // This ensures members appear in their new queue immediately

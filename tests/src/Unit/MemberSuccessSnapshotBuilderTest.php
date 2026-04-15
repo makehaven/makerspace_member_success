@@ -101,18 +101,22 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
    * Tests risk score for onboarding members with pending door badges (after grace period).
    */
   public function testRiskScoreOnboardingPendingBadge() {
+    // 18 days in, no orientation booked, no active badge → pipeline-break
+    // signal. The old `door_badge_pending` reason has been replaced by the
+    // earlier-firing `orientation_not_scheduled`.
     $now = time();
     $data = [
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 1,
       'join_date' => date('Y-m-d', $now - (18 * 86400)),
+      'orientation_scheduled' => NULL,
     ];
 
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(20, $score);
-    $this->assertContains('door_badge_pending', $reasons);
+    $this->assertContains('orientation_not_scheduled', $reasons);
   }
 
   /**
@@ -154,18 +158,25 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
    * Tests onboarding members within grace period have zero risk.
    */
   public function testNoRiskDuringOnboardingGracePeriod() {
+    // Grace period now means: orientation is on the calendar (member is on
+    // track) AND we're still inside the 14-day serial pickup window.
+    // Without orientation_scheduled, members are flagged from day 1 as a
+    // pipeline-break signal — that's the new policy.
     $now = time();
     $data = [
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 0,
       'join_date' => date('Y-m-d', $now - (10 * 86400)),
+      'orientation_scheduled' => date('Y-m-d', $now + (5 * 86400)),
     ];
 
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(0, $score);
-    $this->assertEmpty($reasons);
+    $this->assertContains('orientation_scheduled_upcoming', $reasons);
+    $this->assertNotContains('orientation_not_scheduled', $reasons);
+    $this->assertNotContains('missing_serial', $reasons);
   }
 
 }

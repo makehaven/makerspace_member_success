@@ -79,6 +79,11 @@ services:
     arguments:
       - '@request_stack'
 
+  makerspace_member_success.bucket_counter:
+    class: Drupal\makerspace_member_success\Service\MemberSuccessBucketCounter
+    arguments:
+      - '@database'
+
   makerspace_member_success.outreach_suppression_checker:
     class: Drupal\makerspace_member_success\Service\OutreachSuppressionChecker
     arguments:

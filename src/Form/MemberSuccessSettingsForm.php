@@ -72,10 +72,20 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    $form['thresholds']['badge_watch_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Engagement watch threshold (days)'),
+      '#description' => $this->t('After this many days since activation with no badge activity, the member enters the Watch tier (risk +10).'),
+      '#default_value' => $config->get('badge_watch_days') ?? 30,
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+
     $form['thresholds']['badge_one_days'] = [
       '#type' => 'number',
-      '#title' => $this->t('Days to earn first additional badge'),
-      '#default_value' => $config->get('badge_one_days') ?? 28,
+      '#title' => $this->t('Engagement actionable threshold (days)'),
+      '#description' => $this->t('After this many days since activation with no badge activity, the member becomes Actionable (risk +20).'),
+      '#default_value' => $config->get('badge_one_days') ?? 60,
       '#min' => 1,
       '#required' => TRUE,
     ];
@@ -328,6 +338,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
     $config
       ->set('door_badge_tid', (int) $form_state->getValue('door_badge_tid'))
       ->set('badge_one_days', (int) $form_state->getValue('badge_one_days'))
+      ->set('badge_watch_days', (int) $form_state->getValue('badge_watch_days'))
       ->set('badge_four_days', (int) $form_state->getValue('badge_four_days'))
       ->set('new_member_days', (int) $form_state->getValue('new_member_days'))
       ->set('retention_recency_days', $retention_days)
