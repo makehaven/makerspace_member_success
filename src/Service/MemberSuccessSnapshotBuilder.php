@@ -91,7 +91,7 @@ class MemberSuccessSnapshotBuilder {
 
     // Load previous snapshot to preserve outreach tracking fields
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
-      ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts', 'payment_pause', 'pause_start_date'])
+      ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts', 'payment_pause', 'pause_start_date', 'payment_failed', 'payment_failed_since'])
       ->condition('uid', $uid)
       ->condition('is_latest', 1)
       ->condition('snapshot_type', 'daily')
@@ -165,9 +165,25 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
+    // Compute payment_failed_since: carry forward from previous snapshot if the
+    // failure was already in progress yesterday; otherwise stamp today as the
+    // first observed day of failure. Clear it when payment is no longer failed.
+    // This drives the Chargebee dunning-window urgency UI (the ~8-day retry
+    // window before Chargebee cancels the subscription).
+    $payment_failed_since = NULL;
+    if ($payment_failed) {
+      if (!empty($previous['payment_failed']) && !empty($previous['payment_failed_since'])) {
+        $payment_failed_since = $previous['payment_failed_since'];
+      }
+      else {
+        $payment_failed_since = $snapshot_date;
+      }
+    }
+
     [$risk_score, $risk_reasons] = MemberSuccessRiskScorer::calculate([
       'stage' => $stage,
       'payment_failed' => $payment_failed,
+      'payment_failed_since' => $payment_failed_since,
       'payment_pause' => $payment_pause,
       'door_badge_status' => $door_badge['status'],
       'serial_present' => $serial_present,
@@ -267,6 +283,7 @@ class MemberSuccessSnapshotBuilder {
       'last_visit_ts' => $visit_stats['last_visit_ts'],
       'visit_count_30d' => $visit_stats['visit_count_30d'],
       'payment_failed' => $payment_failed ? 1 : 0,
+      'payment_failed_since' => $payment_failed_since,
       'payment_pause' => $payment_pause ? 1 : 0,
       'pause_start_date' => $pause_start_date,
       'payment_status' => $profile['payment_status'],

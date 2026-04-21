@@ -68,6 +68,14 @@ makerspace_member_success.needs_review_queue:
   requirements:
     _permission: 'access makerspace member success queues'
 
+makerspace_member_success.suppressed_queue:
+  path: '/admin/makerspace/member-success/suppressed'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\SuppressedQueueController::build'
+    _title: 'Suppressed Members'
+  requirements:
+    _permission: 'access makerspace member success queues'
+
 makerspace_member_success.intervention_performance:
   path: '/admin/makerspace/member-success/intervention-performance'
   defaults:

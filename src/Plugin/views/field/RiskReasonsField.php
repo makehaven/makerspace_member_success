@@ -45,6 +45,10 @@ class RiskReasonsField extends FieldPluginBase {
     $code_map = [
       'payment_issue' => 'PAY',
       'payment_failed' => 'PAY',
+      'payment_failed_fresh' => 'PAY-NEW',
+      'payment_failed_prime' => 'PAY-PRIME',
+      'payment_failed_last_chance' => 'PAY-LAST',
+      'payment_failed_stale' => 'PAY-OLD',
       'door_badge_pending' => 'DOOR',
       'missing_serial' => 'KEY',
       'no_badge_1' => 'NO-BADGE',

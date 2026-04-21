@@ -113,33 +113,43 @@ class MemberSuccessDashboardController extends ControllerBase {
       'paused' => ['label' => 'Paused', 'icon' => '⏸️', 'desc' => 'Payment paused — approaching 3-month limit.'],
     ];
 
-    // Generate HTML for Summary Cards
-    // Link Critical (50+) to risk_score=1
-    // Link At Risk (>0) to risk_score=5
-    $summary_html = '<div class="ms-summary-grid">';
+    // Generate HTML for Summary Cards. The four counts form a funnel:
+    // Total Tracked  ⊇ At Risk (score > 0 AND visible)
+    //                ⊇ Actionable (score ≥ 20 AND visible)
+    //                ⊇ Critical (score ≥ 50 AND visible)
+    // "Visible" = not snoozed (next_followup_date in future) and not suppressed.
+    $summary_html = '<p class="text-muted small mb-2">'
+      . 'Each card below narrows the previous one. <strong>Total Tracked</strong> is everyone in today\'s snapshot (including snoozed and suppressed). '
+      . '<strong>Actionable</strong> is the subset that needs contact today — suppressed and snoozed members are excluded, so Actionable can be <em>0</em> even when Total is positive.'
+      . '</p>';
+    $summary_html .= '<div class="ms-summary-grid">';
     $summary_html .= $this->renderSummaryCard(
-      'Total Members',
+      'Total Tracked',
       $summary['total'],
       'ms-total',
-      $this->safeRouteUrl('view.member_success_queue.lifecycle')
+      $this->safeRouteUrl('view.member_success_queue.lifecycle'),
+      'All members in today\'s daily snapshot, regardless of risk score or suppression. Includes snoozed and suppressed members.'
     );
     $summary_html .= $this->renderSummaryCard(
       'At Risk (>0)',
       $summary['at_risk'],
       'ms-risk',
-      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 5])
+      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 5]),
+      'Members with any risk score above 0 who are not currently snoozed or suppressed.'
     );
     $summary_html .= $this->renderSummaryCard(
       'Actionable (20+)',
       $summary['actionable'],
       'ms-actionable',
-      $this->safeRouteUrl('view.member_success_queue.lifecycle')
+      $this->safeRouteUrl('view.member_success_queue.lifecycle'),
+      'Members with risk score ≥ 20 who are ready for outreach today (not snoozed, not suppressed). This is your work queue.'
     );
     $summary_html .= $this->renderSummaryCard(
       'Critical (50+)',
       $summary['critical'],
       'ms-critical',
-      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 1])
+      $this->safeRouteUrl('view.member_success_queue.lifecycle', ['risk_score' => 1]),
+      'Highest-urgency subset: risk score ≥ 50, ready for outreach today. Payment-failed members land here.'
     );
     $summary_html .= '</div>';
 
@@ -183,6 +193,29 @@ class MemberSuccessDashboardController extends ControllerBase {
       </div>
     ';
 
+    $suppressed_statuses = MemberSuccessLifecycle::resolvedFollowupStatuses();
+    $suppressed_count = (int) $this->database->select('ms_member_success_snapshot', 's')
+      ->condition('snapshot_type', 'daily')
+      ->condition('is_latest', 1)
+      ->condition('member_followup_status', $suppressed_statuses, 'IN')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+    $suppressed_url = $this->safeRouteUrl('makerspace_member_success.suppressed_queue');
+    $summary_html .= '
+      <div class="alert alert-secondary mt-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong>Suppressed Members (No More Outreach)</strong>
+            <p class="mb-0 small">' . $suppressed_count . ' members are hidden from the main action queues. Grouped by reason (confirmed cancellation, outreach exhausted, no action needed, needs review) with recent contact history.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="' . $suppressed_url . '" class="btn btn-outline-secondary">Open Suppressed List →</a>
+          </div>
+        </div>
+      </div>
+    ';
+
     // Generate HTML for Stage Cards — 4 main stages in the grid, paused below.
     $stages_html = '<div class="ms-dashboard-grid">';
     foreach (['onboarding', 'engagement', 'retention', 'recovery'] as $key) {
@@ -213,13 +246,13 @@ class MemberSuccessDashboardController extends ControllerBase {
             <p class="ms-stage-desc" style="margin-bottom:0;">' . $paused_info['desc'] . ' Risk only scores when pause reaches 61+ days.</p>
           </div>
           <div style="display:flex; gap:2rem; align-items:baseline; white-space:nowrap;">
-            <div style="text-align:center;">
+            <div style="text-align:center;" title="All paused members (includes snoozed and suppressed).">
               <div class="ms-stat-value">' . $paused_stats['total'] . '</div>
-              <div class="ms-stat-label">Total</div>
+              <div class="ms-stat-label">In Stage</div>
             </div>
-            <div style="text-align:center;">
+            <div style="text-align:center;" title="Paused members ready to contact today (risk ≥ 20, not snoozed, not suppressed).">
               <div class="ms-risk-count">' . $paused_stats['risk'] . '</div>
-              <div class="ms-stat-label">Actionable</div>
+              <div class="ms-stat-label">Actionable today</div>
             </div>
           </div>
           <a href="' . $paused_url . '" class="ms-action-btn" style="white-space:nowrap; position:relative;">Review Paused Queue &rarr;</a>
@@ -242,10 +275,16 @@ class MemberSuccessDashboardController extends ControllerBase {
   /**
    * Renders HTML for a summary card.
    */
-  private function renderSummaryCard($title, $number, $modifier_class, $url = '#') {
+  private function renderSummaryCard($title, $number, $modifier_class, $url = '#', $tooltip = '') {
+    $tooltip_attr = $tooltip !== ''
+      ? ' title="' . htmlspecialchars($tooltip, ENT_QUOTES, 'UTF-8') . '"'
+      : '';
+    $help_icon = $tooltip !== ''
+      ? ' <span class="ms-summary-help" aria-hidden="true" style="cursor:help;opacity:.6;font-size:.85em;">ⓘ</span>'
+      : '';
     return '
-      <div class="ms-card ms-summary-card ' . $modifier_class . '">
-        <h6 class="ms-summary-label">' . $title . '</h6>
+      <div class="ms-card ms-summary-card ' . $modifier_class . '"' . $tooltip_attr . '>
+        <h6 class="ms-summary-label">' . $title . $help_icon . '</h6>
         <p class="ms-summary-number">' . $number . '</p>
         <a href="' . $url . '" class="stretched-link"></a>
       </div>';
@@ -256,26 +295,28 @@ class MemberSuccessDashboardController extends ControllerBase {
    */
   private function renderStageCard($stage_id, $info, $stats, $queue_url) {
     $percent_risk = $stats['total'] > 0 ? round(($stats['risk'] / $stats['total']) * 100) : 0;
-    
+    $total_tip = 'Members currently in this stage (includes snoozed and suppressed).';
+    $actionable_tip = 'Subset with risk score ≥ 20 who are ready to contact today (not snoozed, not suppressed).';
+
     return '
       <div class="ms-card ms-stage-card">
         <div class="ms-card-header">
            <span class="ms-stage-icon">' . $info['icon'] . '</span>
            <h5 class="ms-stage-title">' . $info['label'] . '</h5>
         </div>
-        
+
         <div class="ms-card-body">
           <p class="ms-stage-desc">' . $info['desc'] . '</p>
-          
-          <div class="ms-stat-row">
+
+          <div class="ms-stat-row" title="' . htmlspecialchars($total_tip, ENT_QUOTES, 'UTF-8') . '">
             <span class="ms-stat-value">' . $stats['total'] . '</span>
-            <span class="ms-stat-label">Total</span>
+            <span class="ms-stat-label">In Stage</span>
           </div>
-          
-          <div class="ms-risk-container">
+
+          <div class="ms-risk-container" title="' . htmlspecialchars($actionable_tip, ENT_QUOTES, 'UTF-8') . '">
              <div class="ms-risk-header">
                 <span class="ms-risk-count">' . $stats['risk'] . '</span>
-                <span class="ms-risk-badge">Actionable</span>
+                <span class="ms-risk-badge">Actionable today</span>
              </div>
              <div class="ms-progress-track">
                 <div class="ms-progress-fill" style="width: ' . $percent_risk . '%"></div>

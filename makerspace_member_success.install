@@ -139,6 +139,12 @@ function makerspace_member_success_schema() {
         'not null' => TRUE,
         'default' => 0,
       ],
+      'payment_failed_since' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date the current payment failure began (YYYY-MM-DD). Tracks dunning window age.',
+      ],
       'payment_pause' => [
         'type' => 'int',
         'size' => 'tiny',
@@ -1362,6 +1368,157 @@ function makerspace_member_success_update_9026(): void {
       'description' => 'Date of first successful door card scan (YYYY-MM-DD).',
     ]);
   }
+}
+
+/**
+ * Adds payment_failed_since column to track Chargebee dunning window age.
+ */
+function makerspace_member_success_update_9028(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_member_success_snapshot', 'payment_failed_since')) {
+    $schema->addField('ms_member_success_snapshot', 'payment_failed_since', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Date the current payment failure began (YYYY-MM-DD). Tracks dunning window age.',
+    ]);
+  }
+}
+
+/**
+ * Adds dunning_days field and updated playbook header to the recovery view.
+ */
+function makerspace_member_success_update_9029(): void {
+  $editable = \Drupal::configFactory()->getEditable('views.view.member_success_queue');
+  if ($editable->isNew()) {
+    return;
+  }
+
+  // Add dunning_days field to recovery display, inserted before payment_risk_combined.
+  $fields_path = 'display.recovery.display_options.fields';
+  $fields = $editable->get($fields_path);
+  if (is_array($fields) && !isset($fields['dunning_days'])) {
+    $new_field = [
+      'id' => 'dunning_days',
+      'table' => 'ms_member_success_snapshot',
+      'field' => 'dunning_days',
+      'relationship' => 'none',
+      'group_type' => 'group',
+      'admin_label' => '',
+      'label' => 'Dunning window',
+      'exclude' => FALSE,
+      'alter' => [
+        'alter_text' => FALSE,
+        'text' => '',
+        'make_link' => FALSE,
+        'path' => '',
+        'absolute' => FALSE,
+        'external' => FALSE,
+        'replace_spaces' => FALSE,
+        'path_case' => 'none',
+        'trim_whitespace' => FALSE,
+        'alt' => '',
+        'rel' => '',
+        'link_class' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'nl2br' => FALSE,
+        'max_length' => 0,
+        'word_boundary' => TRUE,
+        'ellipsis' => TRUE,
+        'more_link' => FALSE,
+        'more_link_text' => '',
+        'more_link_path' => '',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'preserve_tags' => '',
+        'html' => FALSE,
+        'help' => '',
+      ],
+      'element_type' => '',
+      'element_class' => '',
+      'element_label_type' => '',
+      'element_label_class' => '',
+      'element_label_colon' => TRUE,
+      'element_wrapper_type' => '',
+      'element_wrapper_class' => '',
+      'element_default_classes' => TRUE,
+      'empty' => '',
+      'hide_empty' => FALSE,
+      'empty_zero' => FALSE,
+      'hide_alter_empty' => TRUE,
+      'plugin_id' => 'dunning_days_field',
+    ];
+
+    // Insert dunning_days right before payment_risk_combined so staff see the
+    // age next to the Failed/Paused badge.
+    $new_fields = [];
+    foreach ($fields as $key => $value) {
+      if ($key === 'payment_risk_combined') {
+        $new_fields['dunning_days'] = $new_field;
+      }
+      $new_fields[$key] = $value;
+    }
+    if (!isset($new_fields['dunning_days'])) {
+      $new_fields['dunning_days'] = $new_field;
+    }
+    $editable->set($fields_path, $new_fields);
+  }
+
+  // Add dunning_days to the recovery table style columns and info.
+  $columns_path = 'display.recovery.display_options.style.options.columns';
+  $columns = $editable->get($columns_path);
+  if (is_array($columns) && !isset($columns['dunning_days'])) {
+    $new_columns = [];
+    foreach ($columns as $key => $value) {
+      if ($key === 'payment_risk_combined') {
+        $new_columns['dunning_days'] = 'dunning_days';
+      }
+      $new_columns[$key] = $value;
+    }
+    if (!isset($new_columns['dunning_days'])) {
+      $new_columns['dunning_days'] = 'dunning_days';
+    }
+    $editable->set($columns_path, $new_columns);
+  }
+
+  $info_path = 'display.recovery.display_options.style.options.info';
+  $info = $editable->get($info_path);
+  if (is_array($info) && !isset($info['dunning_days'])) {
+    $info['dunning_days'] = [
+      'sortable' => FALSE,
+      'default_sort_order' => 'asc',
+      'align' => '',
+      'separator' => '',
+      'empty_column' => FALSE,
+      'responsive' => '',
+    ];
+    $editable->set($info_path, $info);
+  }
+
+  // Update the recovery playbook header to explain the Chargebee dunning
+  // window and how to read the new column.
+  $header_path = 'display.recovery.display_options.header.area_text_custom.content';
+  $new_header = <<<'HTML'
+
+<div class="alert alert-danger">
+  <h4>💸 Goal: Resolve Payment Before Chargebee Cancels</h4>
+  <p>Chargebee retries a failed payment for roughly <strong>8 days</strong> before it cancels the subscription. Those 8 days are the highest-leverage outreach window — once the subscription cancels, prevention is off the table. The <strong>Dunning window</strong> column shows where each member sits in that countdown.</p>
+  <hr>
+  <strong>Playbook:</strong>
+  <ul>
+    <li><strong>Day 1–2 (Fresh)</strong>: New failure — still in Chargebee's auto-retry. Email update-payment-method link; follow up by phone if they have SMS consent.</li>
+    <li><strong>Day 3–5 (Prime)</strong>: Highest-urgency window. Phone call is worth it; the member is usually reachable and the problem is usually a stale card.</li>
+    <li><strong>Day 6–8 (Last chance)</strong>: Chargebee is about to cancel. Contact today or the member converts to a cancellation.</li>
+    <li><strong>Day 9+ (Stale)</strong>: Dunning window exhausted. If still showing failed, verify the Chargebee subscription state — they may have already cancelled and need to move into the Suppressed / Confirmed Cancellation bucket.</li>
+    <li><strong>Paused</strong>: Reach out before pause ends to confirm return (separate Paused queue below).</li>
+  </ul>
+</div>
+HTML;
+  $editable->set($header_path, $new_header);
+
+  $editable->save(TRUE);
 }
 
 /**

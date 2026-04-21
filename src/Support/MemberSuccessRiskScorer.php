@@ -31,10 +31,37 @@ final class MemberSuccessRiskScorer {
     $score = 0;
     $reasons = [];
 
-    // Payment failed = CRITICAL (need immediate action)
+    // Payment failed = CRITICAL. Chargebee retries for ~8 days before
+    // cancelling; the escalating boost matches that window so staff see the
+    // hottest cases (days 3–8 of dunning) at the top of the recovery queue.
+    // Day 9+ drops back down because Chargebee has almost certainly cancelled
+    // by then and the member will transition to a cancellation state via
+    // webhook sync — at which point prevention is moot.
     if (!empty($data['payment_failed'])) {
-      $score += 50;
-      $reasons[] = 'payment_failed';
+      $dunning_days = 0;
+      if (!empty($data['payment_failed_since'])) {
+        $failed_since_ts = strtotime($data['payment_failed_since'] . ' 00:00:00');
+        if ($failed_since_ts) {
+          $dunning_days = (int) floor(($now_ts - $failed_since_ts) / 86400);
+        }
+      }
+
+      if ($dunning_days <= 2) {
+        $score += 55;
+        $reasons[] = 'payment_failed_fresh';
+      }
+      elseif ($dunning_days <= 5) {
+        $score += 70;
+        $reasons[] = 'payment_failed_prime';
+      }
+      elseif ($dunning_days <= 8) {
+        $score += 85;
+        $reasons[] = 'payment_failed_last_chance';
+      }
+      else {
+        $score += 40;
+        $reasons[] = 'payment_failed_stale';
+      }
     }
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_PAUSED) {

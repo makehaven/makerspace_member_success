@@ -63,6 +63,13 @@ makerspace_member_success.needs_review_queue:
   parent: makerspace_member_success.overview
   weight: 53
 
+makerspace_member_success.suppressed_queue:
+  title: 'Suppressed Members'
+  description: 'Members hidden from the main queues because outreach is resolved, exhausted, or not needed.'
+  route_name: makerspace_member_success.suppressed_queue
+  parent: makerspace_member_success.overview
+  weight: 54
+
 makerspace_member_success.contractor_performance:
   title: '📊 Intervention Performance'
   description: 'View staff/volunteer outreach stats, ROI, and effectiveness metrics'
@@ -152,6 +159,13 @@ makerspace_member_success.staff_needs_review:
   menu_name: staff-tools
   parent: makerspace_member_success.staff_tab
   weight: 55
+
+makerspace_member_success.staff_suppressed:
+  title: 'Suppressed Members'
+  route_name: makerspace_member_success.suppressed_queue
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 56
 
 makerspace_member_success.staff_intervention_performance:
   title: 'Intervention Performance'

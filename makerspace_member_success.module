@@ -348,6 +348,14 @@ function makerspace_member_success_views_data(): array {
     'sort' => ['id' => 'standard'],
   ];
 
+  $data['ms_member_success_snapshot']['payment_failed_since'] = [
+    'title' => t('Payment failed since'),
+    'help' => t('Date the current payment failure began (YYYY-MM-DD). Drives Chargebee dunning-window age.'),
+    'field' => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort' => ['id' => 'standard'],
+  ];
+
   $data['ms_member_success_snapshot']['payment_status'] = [
     'title' => t('Payment status'),
     'help' => t('Payment status label.'),
@@ -473,6 +481,15 @@ function makerspace_member_success_views_data(): array {
     'help' => t('Shows member name with CiviCRM and Chargebee IDs below.'),
     'field' => [
       'id' => 'member_name_with_ids_field',
+    ],
+  ];
+
+  // Pseudo-field for Dunning Window (Chargebee retry age)
+  $data['ms_member_success_snapshot']['dunning_days'] = [
+    'title' => t('Dunning window'),
+    'help' => t('Shows "Day X of ~8" with urgency coloring for members with a failed payment. Tracks the Chargebee retry window before cancellation.'),
+    'field' => [
+      'id' => 'dunning_days_field',
     ],
   ];
 
