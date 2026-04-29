@@ -225,9 +225,15 @@ class MemberSuccessSnapshotBuilder {
       $previous['next_followup_date'] = NULL;
       $previous['contact_count'] = 0;
 
-      // Reset suppressing followup flags when a member enters a new stage.
-      // This enables fresh outreach workflows (e.g. retention exhausted ->
-      // recovery due to payment failure).
+      // Suppression flags (outreach_exhausted, confirmed_cancellation,
+      // no_action_needed, needs_review) are explicit operator decisions and
+      // are NOT auto-reset on stage change — staff feedback (Christina
+      // 2026-04-28) confirmed that members marked exhausted or cancelled
+      // popping back into the queue after a payment-failure-driven stage
+      // shift was unwanted. If renewed outreach is needed, staff re-open via
+      // the Log Contact form. The helper currently always returns FALSE; the
+      // call is kept so future policy can re-introduce conditional resets
+      // without touching this branch.
       if (MemberSuccessQueueRules::shouldResetSuppressionOnStageChange($previous_stage, $stage, $member_followup_status)) {
         $member_followup_status = NULL;
 

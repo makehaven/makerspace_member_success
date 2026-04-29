@@ -87,6 +87,12 @@ final class MemberSuccessQueueRules {
   /**
    * Returns TRUE if suppression status should be reset after stage change.
    *
+   * Always FALSE: explicit operator suppression (outreach_exhausted,
+   * confirmed_cancellation, no_action_needed, needs_review) is a deliberate
+   * "stop outreach" decision that should not silently flip back when the
+   * member's lifecycle stage changes. Staff can re-open outreach manually via
+   * the Log Contact form when a new event warrants it.
+   *
    * @param string|null $previous_stage
    *   Previous stage.
    * @param string $new_stage
@@ -95,18 +101,14 @@ final class MemberSuccessQueueRules {
    *   Existing followup suppression status.
    *
    * @return bool
-   *   TRUE when a suppression flag should be cleared.
+   *   Always FALSE.
    */
   public static function shouldResetSuppressionOnStageChange(
     ?string $previous_stage,
     string $new_stage,
     ?string $followup_status
   ): bool {
-    if (empty($previous_stage) || $previous_stage === $new_stage) {
-      return FALSE;
-    }
-
-    return !self::isStatusVisible($followup_status);
+    return FALSE;
   }
 
 }

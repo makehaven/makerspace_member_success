@@ -89,4 +89,70 @@ class MemberSuccessQueueRulesTest extends UnitTestCase {
     ];
   }
 
+  /**
+   * Tests that suppression is never auto-reset on stage transitions.
+   *
+   * Explicit operator decisions (exhausted, cancellation, etc.) must persist
+   * across lifecycle stage changes — staff feedback confirmed that auto-reset
+   * caused suppressed members to pop back into queues unwanted.
+   *
+   * @dataProvider stageTransitionResetProvider
+   */
+  public function testShouldResetSuppressionOnStageChange(
+    ?string $previous_stage,
+    string $new_stage,
+    ?string $followup_status
+  ): void {
+    $this->assertFalse(
+      MemberSuccessQueueRules::shouldResetSuppressionOnStageChange(
+        $previous_stage,
+        $new_stage,
+        $followup_status
+      )
+    );
+  }
+
+  /**
+   * Data provider for testShouldResetSuppressionOnStageChange.
+   */
+  public static function stageTransitionResetProvider(): array {
+    return [
+      'Confirmed cancellation persists retention -> recovery' => [
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION,
+      ],
+      'Outreach exhausted persists retention -> recovery' => [
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        MemberSuccessLifecycle::FOLLOWUP_OUTREACH_EXHAUSTED,
+      ],
+      'No action needed persists onboarding -> engagement' => [
+        MemberSuccessLifecycle::STAGE_ONBOARDING,
+        MemberSuccessLifecycle::STAGE_ENGAGEMENT,
+        MemberSuccessLifecycle::FOLLOWUP_NO_ACTION_NEEDED,
+      ],
+      'Needs review persists across any change' => [
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::FOLLOWUP_NEEDS_REVIEW,
+      ],
+      'Active outreach status returns FALSE (not suppressing)' => [
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        MemberSuccessLifecycle::FOLLOWUP_OUTREACH_ACTIVE,
+      ],
+      'Empty status returns FALSE' => [
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::STAGE_RECOVERY,
+        NULL,
+      ],
+      'Same stage returns FALSE' => [
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::STAGE_RETENTION,
+        MemberSuccessLifecycle::FOLLOWUP_CONFIRMED_CANCELLATION,
+      ],
+    ];
+  }
+
 }
