@@ -61,12 +61,40 @@ class MemberSuccessSnapshotBuilder {
       $count++;
     }
 
-    $this->logger->info('Generated @count member success snapshots for @date.', [
+    // After a successful pass, clear is_latest on any rows belonging to users
+    // who are no longer active members. Done at the end (not before the loop)
+    // so a mid-run crash leaves prior is_latest rows intact.
+    $cleared = $this->clearStaleLatestFlags($uids, $snapshot_type);
+
+    $this->logger->info('Generated @count member success snapshots for @date (cleared @stale stale is_latest rows).', [
       '@count' => $count,
       '@date' => $snapshot_date,
+      '@stale' => $cleared,
     ]);
 
     return $count;
+  }
+
+  /**
+   * Clears is_latest on snapshots whose uid is no longer an active member.
+   *
+   * @param int[] $active_uids
+   *   User ids that were just snapshotted.
+   * @param string $snapshot_type
+   *   Snapshot type to scope the cleanup to (e.g. 'daily').
+   *
+   * @return int
+   *   Number of rows updated.
+   */
+  protected function clearStaleLatestFlags(array $active_uids, string $snapshot_type): int {
+    $update = $this->database->update('ms_member_success_snapshot')
+      ->fields(['is_latest' => 0])
+      ->condition('snapshot_type', $snapshot_type)
+      ->condition('is_latest', 1);
+    if (!empty($active_uids)) {
+      $update->condition('uid', $active_uids, 'NOT IN');
+    }
+    return (int) $update->execute();
   }
 
   /**
