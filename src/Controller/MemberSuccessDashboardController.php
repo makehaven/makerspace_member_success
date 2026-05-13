@@ -391,10 +391,10 @@ class MemberSuccessDashboardController extends ControllerBase {
       'content' => [
         '#markup' => $this->t('<strong>How metrics are calculated:</strong><ul class="mb-0 mt-2">
           <li><strong>Members Contacted:</strong> Distinct members with at least one outreach contact logged in this date range</li>
-          <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach (payment updated)</li>
-          <li><strong>Resolution Rate:</strong> Percentage of contacted members retained after outreach (payment updated)</li>
-          <li><strong>Avg Days to Resolution:</strong> Average time from first contact to retention outcome across retained members</li>
-          <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, in-person)</li>
+          <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach</li>
+          <li><strong>Resolution Rate:</strong> % of contacted members with a positive case-closing outcome — <em>payment updated</em>, <em>will return</em>, or <em>no action needed</em>. <em>Confirmed cancellation</em> is case-closing but counted separately as a loss.</li>
+          <li><strong>Avg Days to Resolution:</strong> Average time from first contact to the resolved outcome across resolved members</li>
+          <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, sms, in-person, other, system). <em>System</em> rows are auto-written when a recovery member quietly pays via Chargebee — these are now back-attributed to the staff member whose recent outreach drove the recovery, so they no longer all collapse into a 100%/system row.</li>
           </ul>'),
       ],
     ];
@@ -462,7 +462,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['staff_table']['description'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('Shows individual effectiveness for anyone who has logged an intervention. "Resolution Rate" = resolved members ÷ total members contacted. Sorted by number of resolutions (highest first).'),
+      '#value' => $this->t('Shows individual effectiveness for anyone who has logged an intervention. "Resolved" counts members reached with a positive case-closing outcome (payment updated, will return, no action needed). "Confirmed Cancel" is shown separately — case-closing but lost. Sorted by number of resolutions (highest first).'),
       '#attributes' => ['class' => ['text-muted', 'small', 'mb-2']],
     ];
 
@@ -473,6 +473,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         $staff['members_contacted'],
         $staff['total_attempts'],
         $staff['resolved'],
+        $staff['confirmed_cancel'] ?? 0,
         $staff['resolution_rate'] . '%',
         round($staff['avg_days_to_resolution'], 1) . ' days',
       ];
@@ -485,6 +486,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         $this->t('Members Contacted'),
         $this->t('Total Attempts'),
         $this->t('Resolved'),
+        $this->t('Confirmed Cancel'),
         $this->t('Resolution Rate'),
         $this->t('Avg Days to Resolve'),
       ],
@@ -509,7 +511,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['channel_table']['description'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('Compares resolution rates by contact method. Use this to optimize outreach strategy (e.g., if phone calls have 60% success but emails have 30%, prioritize phone outreach).'),
+      '#value' => $this->t('Compares resolution rates by contact method. "Resolved" = payment updated, will return, or no action needed. "Confirmed Cancel" is case-closing but lost. Use this to optimize outreach strategy. The <em>system</em> channel reflects automated Chargebee payment-recovery events; rows are back-attributed to the staff member whose recent outreach drove the recovery (within 30 days).'),
       '#attributes' => ['class' => ['text-muted', 'small', 'mb-2']],
     ];
 
@@ -519,6 +521,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         ucfirst($method),
         $stats['total'],
         $stats['resolved'],
+        $stats['confirmed_cancel'] ?? 0,
         $stats['rate'] . '%',
       ];
     }
@@ -529,6 +532,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         $this->t('Contact Method'),
         $this->t('Members Contacted'),
         $this->t('Resolved'),
+        $this->t('Confirmed Cancel'),
         $this->t('Success Rate'),
       ],
       '#rows' => $channel_rows,
@@ -604,10 +608,10 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dd>Count of unique members who have been contacted for recovery/retention (distinct UIDs in outreach log).</dd>
 
           <dt>Annual Value Saved</dt>
-          <dd>For each member with outcome = "payment_updated", we retrieve their monthly payment amount and multiply by 12. These annual values are summed across retained members.</dd>
+          <dd>For each member with a resolved outcome (payment_updated, will_return, or no_action_needed), we retrieve their monthly payment amount and multiply by 12. These annual values are summed across resolved members.</dd>
 
           <dt>Resolution Rate</dt>
-          <dd>(Members with successful outcomes ÷ Total members contacted) × 100. Successful outcomes = "payment_updated". Confirmed cancellations are tracked but not counted as retained.</dd>
+          <dd>(Members with positive case-closing outcomes ÷ Total members contacted) × 100. Successful outcomes = <code>payment_updated</code>, <code>will_return</code>, <code>no_action_needed</code>. <code>confirmed_cancel</code> is case-closing but lost — tracked in its own column and excluded from the resolved count.</dd>
 
           <dt>Avg Days to Resolution</dt>
           <dd>For each retained member, calculate days from their first contact to their successful retention contact. Average these values across retained members.</dd>
@@ -630,13 +634,15 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dd>All metrics recalculated for each calendar month based on contact_date field. Shows performance changes over time.</dd>
         </dl>
 
-        <h5>What Counts as "Retained"?</h5>
-        <p>A member is considered retained when their outcome is recorded as:</p>
+        <h5>What Counts as "Resolved"?</h5>
+        <p>A member is considered resolved when at least one of their outreach log rows has one of these outcomes:</p>
         <ul>
-          <li><strong>payment_updated:</strong> Member fixed their payment issue</li>
-          <li><strong>confirmed_cancel:</strong> Tracked as contacted/lost, and excluded from retention success</li>
+          <li><strong>payment_updated:</strong> Member fixed their payment (also auto-recorded by the daily snapshot when a recovery member quietly pays via Chargebee; the auto row is back-attributed to the staff member with the most recent human outreach within 30 days, or recorded as <em>system</em>/unattributed if none exists)</li>
+          <li><strong>will_return:</strong> Member committed to returning</li>
+          <li><strong>no_action_needed:</strong> Outreach revealed nothing to fix</li>
         </ul>
-        <p>Other outcomes (no_response, left_message, etc.) do NOT count as retained.</p>
+        <p><strong>confirmed_cancel</strong> is case-closing but lost — it is surfaced in its own column and not counted toward the resolved/success rate.</p>
+        <p>Holding outcomes (no_answer, left_message, email_sent, sms_sent, email_bounced, invalid_contact, needs_time) do NOT count as resolved — the case is still open or pending.</p>
 
         <h5>Paused Members</h5>
         <p>Members with a payment pause are tracked in the <strong>Paused</strong> stage. They receive a risk score only when their pause reaches 61+ days (approaching Chargebee\'s 90-day limit). Paused members are <em>not</em> included in resolution-rate calculations — their outreach goal is re-engagement/pause-extension, not payment recovery.</p>
@@ -740,7 +746,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $staff_performance = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
 
     $rows = [];
-    $rows[] = ['Staff Member', 'Members Contacted', 'Total Attempts', 'Resolved', 'Resolution Rate (%)', 'Avg Days to Resolution'];
+    $rows[] = ['Staff Member', 'Members Contacted', 'Total Attempts', 'Resolved', 'Confirmed Cancel', 'Resolution Rate (%)', 'Avg Days to Resolution'];
 
     foreach ($staff_performance as $staff) {
       $rows[] = [
@@ -748,6 +754,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         $staff['members_contacted'],
         $staff['total_attempts'],
         $staff['resolved'],
+        $staff['confirmed_cancel'] ?? 0,
         $staff['resolution_rate'],
         $staff['avg_days_to_resolution'],
       ];
@@ -767,13 +774,14 @@ class MemberSuccessDashboardController extends ControllerBase {
     $channel_data = $metrics['channel_effectiveness'];
 
     $rows = [];
-    $rows[] = ['Contact Method', 'Members Contacted', 'Resolved', 'Success Rate (%)'];
+    $rows[] = ['Contact Method', 'Members Contacted', 'Resolved', 'Confirmed Cancel', 'Success Rate (%)'];
 
     foreach ($channel_data as $method => $stats) {
       $rows[] = [
         ucfirst($method),
         $stats['total'],
         $stats['resolved'],
+        $stats['confirmed_cancel'] ?? 0,
         $stats['rate'],
       ];
     }
@@ -829,7 +837,7 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     // Staff Performance
     $rows[] = ['STAFF PERFORMANCE'];
-    $rows[] = ['Staff Member', 'Members Contacted', 'Total Attempts', 'Resolved', 'Resolution Rate (%)', 'Avg Days'];
+    $rows[] = ['Staff Member', 'Members Contacted', 'Total Attempts', 'Resolved', 'Confirmed Cancel', 'Resolution Rate (%)', 'Avg Days'];
 
     foreach ($staff_performance as $staff) {
       $rows[] = [
@@ -837,6 +845,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         $staff['members_contacted'],
         $staff['total_attempts'],
         $staff['resolved'],
+        $staff['confirmed_cancel'] ?? 0,
         $staff['resolution_rate'],
         $staff['avg_days_to_resolution'],
       ];
@@ -846,13 +855,14 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     // Channel Effectiveness
     $rows[] = ['CHANNEL EFFECTIVENESS'];
-    $rows[] = ['Contact Method', 'Members Contacted', 'Resolved', 'Success Rate (%)'];
+    $rows[] = ['Contact Method', 'Members Contacted', 'Resolved', 'Confirmed Cancel', 'Success Rate (%)'];
 
     foreach ($metrics['channel_effectiveness'] as $method => $stats) {
       $rows[] = [
         ucfirst($method),
         $stats['total'],
         $stats['resolved'],
+        $stats['confirmed_cancel'] ?? 0,
         $stats['rate'],
       ];
     }

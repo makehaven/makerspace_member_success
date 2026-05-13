@@ -69,6 +69,31 @@ final class MemberSuccessLifecycle {
   }
 
   /**
+   * Outcomes that count as a positive intervention resolution.
+   *
+   * Used by performance analytics ("Resolution Rate") to credit outreach when
+   * the member was retained or there was nothing more to do. Confirmed
+   * cancellations are intentionally excluded — they are case-closing but the
+   * member was lost, so they are tracked in a separate column.
+   *
+   * @return string[]
+   */
+  public static function resolvedOutcomes(): array {
+    return [
+      self::OUTCOME_PAYMENT_UPDATED,
+      self::OUTCOME_WILL_RETURN,
+      self::OUTCOME_NO_ACTION_NEEDED,
+    ];
+  }
+
+  /**
+   * TRUE when the outcome counts toward the Resolution Rate metric.
+   */
+  public static function isResolvedOutcome(string $outcome): bool {
+    return in_array($outcome, self::resolvedOutcomes(), TRUE);
+  }
+
+  /**
    * Maps outreach outcome to queue sleep days.
    *
    * @param string $outcome

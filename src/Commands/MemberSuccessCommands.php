@@ -862,4 +862,90 @@ class MemberSuccessCommands extends DrushCommands {
     }
   }
 
+  /**
+   * Back-attributes existing auto-system payment_updated rows to recent
+   * human outreach.
+   *
+   * The daily snapshot writes a "system / payment_updated / NULL staff" row
+   * each time a member quietly exits the recovery stage. Historically these
+   * stole credit from the staff member whose phone call / email actually drove
+   * the payment update. Going forward, recordAutomaticRecoverySuccess() now
+   * inherits the most recent human outreach within 30 days. This command
+   * applies the same look-back to existing system rows so the Intervention
+   * Performance dashboard reflects real attribution.
+   *
+   * @option lookback-days
+   *   How many days back from each system row to search for the human row.
+   *   Default 30 — matches the runtime behavior.
+   * @option dry-run
+   *   Report what would change without writing.
+   *
+   * @command ms:backfill-system-attribution
+   * @aliases ms-backfill-attr
+   */
+  public function backfillSystemAttribution(array $options = ['lookback-days' => 30, 'dry-run' => FALSE]): void {
+    $database = \Drupal::database();
+    $lookback = max(1, (int) $options['lookback-days']);
+    $dry_run = (bool) $options['dry-run'];
+
+    $system_rows = $database->select('ms_member_outreach_log', 'log')
+      ->fields('log', ['id', 'uid', 'contact_date'])
+      ->condition('contact_method', 'system')
+      ->condition('outcome', MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED)
+      ->isNull('staff_uid')
+      ->orderBy('contact_date', 'ASC')
+      ->execute()
+      ->fetchAll();
+
+    $total = count($system_rows);
+    $attributed = 0;
+    $left_alone = 0;
+
+    foreach ($system_rows as $row) {
+      $lookback_date = date('Y-m-d', strtotime($row->contact_date . ' -' . $lookback . ' days'));
+
+      $human = $database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['contact_method', 'staff_uid'])
+        ->condition('uid', $row->uid)
+        ->isNotNull('staff_uid')
+        ->condition('contact_date', $lookback_date, '>=')
+        ->condition('contact_date', $row->contact_date, '<=')
+        ->orderBy('contact_date', 'DESC')
+        ->orderBy('id', 'DESC')
+        ->range(0, 1)
+        ->execute()
+        ->fetchAssoc();
+
+      if (!$human || empty($human['staff_uid'])) {
+        $left_alone++;
+        continue;
+      }
+
+      if (!$dry_run) {
+        $database->update('ms_member_outreach_log')
+          ->fields([
+            'contact_method' => (string) $human['contact_method'],
+            'staff_uid' => (int) $human['staff_uid'],
+            'notes' => 'Auto-confirmed (backfilled): member exited recovery after payment resolved. Credit to most recent human outreach within ' . $lookback . ' days.',
+          ])
+          ->condition('id', $row->id)
+          ->execute();
+      }
+      $attributed++;
+    }
+
+    $this->io()->table(['Metric', 'Count'], [
+      ['System rows scanned', (string) $total],
+      ['Re-attributed to staff', (string) $attributed],
+      ['No human outreach in window — left as system', (string) $left_alone],
+    ]);
+
+    if ($dry_run) {
+      $this->logger()->info('Dry run complete. No data written.');
+    }
+    else {
+      $this->logger()->success('Backfill complete.');
+    }
+  }
+
 }

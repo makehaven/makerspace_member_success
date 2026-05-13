@@ -3,9 +3,16 @@
 namespace Drupal\makerspace_member_success\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 
 /**
  * Service for calculating member recovery outreach metrics.
+ *
+ * "Resolved" here means the outreach reached a positive case-closing outcome
+ * (payment updated, member will return, or no action needed). Confirmed
+ * cancellations are case-closing but lost, so they are surfaced in a separate
+ * column rather than counted as resolved. See
+ * MemberSuccessLifecycle::resolvedOutcomes() for the canonical list.
  */
 class RecoveryMetrics {
 
@@ -24,6 +31,24 @@ class RecoveryMetrics {
   }
 
   /**
+   * Builds an "IN (:p0,:p1,...)" clause from resolvedOutcomes() with params.
+   *
+   * @return array{0: string, 1: array<string, string>}
+   *   The placeholder list ("p0,p1,...") and the matching parameters.
+   */
+  private function resolvedPlaceholders(string $prefix = 'resolved'): array {
+    $outcomes = MemberSuccessLifecycle::resolvedOutcomes();
+    $placeholders = [];
+    $params = [];
+    foreach (array_values($outcomes) as $i => $outcome) {
+      $key = ':' . $prefix . '_' . $i;
+      $placeholders[] = $key;
+      $params[$key] = $outcome;
+    }
+    return [implode(',', $placeholders), $params];
+  }
+
+  /**
    * Get resolution rate (% of contacted members who resolved their issue).
    *
    * @return array
@@ -32,26 +57,35 @@ class RecoveryMetrics {
   public function getResolutionRate($start_date = NULL, $end_date = NULL) {
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params += $resolved_params;
+    $params[':cancel_outcome'] = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
 
     $query = "
       SELECT
         COUNT(DISTINCT uid) as total,
         COUNT(DISTINCT CASE
-          WHEN outcome = 'payment_updated'
+          WHEN outcome IN ({$resolved_in})
           THEN uid
-        END) as resolved
+        END) as resolved,
+        COUNT(DISTINCT CASE
+          WHEN outcome = :cancel_outcome
+          THEN uid
+        END) as confirmed_cancel
       FROM {ms_member_outreach_log}
       WHERE 1=1" . $date_where . "
     ";
 
     $result = $this->database->query($query, $params)->fetchAssoc();
-    $total = (int) $result['total'];
-    $resolved = (int) $result['resolved'];
+    $total = (int) ($result['total'] ?? 0);
+    $resolved = (int) ($result['resolved'] ?? 0);
+    $confirmed_cancel = (int) ($result['confirmed_cancel'] ?? 0);
     $rate = $total > 0 ? round(($resolved / $total) * 100, 1) : 0;
 
     return [
       'total' => $total,
       'resolved' => $resolved,
+      'confirmed_cancel' => $confirmed_cancel,
       'rate' => $rate,
     ];
   }
@@ -63,6 +97,7 @@ class RecoveryMetrics {
    *   Average number of attempts before resolution
    */
   public function getAverageAttemptsToSuccess() {
+    [$resolved_in, $params] = $this->resolvedPlaceholders();
     $query = "
       SELECT AVG(attempt_count) as avg_attempts
       FROM (
@@ -71,13 +106,13 @@ class RecoveryMetrics {
         WHERE uid IN (
           SELECT DISTINCT uid
           FROM {ms_member_outreach_log}
-          WHERE outcome = 'payment_updated'
+          WHERE outcome IN ({$resolved_in})
         )
         GROUP BY uid
       ) resolved_members
     ";
 
-    $result = $this->database->query($query)->fetchField();
+    $result = $this->database->query($query, $params)->fetchField();
     return round((float) $result, 1);
   }
 
@@ -97,6 +132,7 @@ class RecoveryMetrics {
     ";
 
     // Of those, how many are unresolved?
+    [$resolved_in, $params] = $this->resolvedPlaceholders();
     $query = "
       SELECT
         COUNT(*) as total_high_attempts,
@@ -104,14 +140,14 @@ class RecoveryMetrics {
       FROM (
         SELECT
           l.uid,
-          MAX(CASE WHEN l.outcome = 'payment_updated' THEN 1 ELSE 0 END) as resolved
+          MAX(CASE WHEN l.outcome IN ({$resolved_in}) THEN 1 ELSE 0 END) as resolved
         FROM ({$high_attempt_query}) high
         JOIN {ms_member_outreach_log} l ON high.uid = l.uid
         GROUP BY l.uid
       ) subq
     ";
 
-    $result = $this->database->query($query)->fetchAssoc();
+    $result = $this->database->query($query, $params)->fetchAssoc();
     $total = (int) $result['total_high_attempts'];
     $exhausted = (int) $result['exhausted'];
     $rate = $total > 0 ? round(($exhausted / $total) * 100, 1) : 0;
@@ -132,6 +168,9 @@ class RecoveryMetrics {
   public function getAverageDaysToResolution($start_date = NULL, $end_date = NULL) {
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    [$resolved_in_outer, $resolved_params_outer] = $this->resolvedPlaceholders('resolved_outer');
+    [$resolved_in_inner, $resolved_params_inner] = $this->resolvedPlaceholders('resolved_inner');
+    $params += $resolved_params_outer + $resolved_params_inner;
 
     $query = "
       SELECT AVG(days_to_resolution) as avg_days
@@ -139,14 +178,14 @@ class RecoveryMetrics {
         SELECT
           uid,
           DATEDIFF(
-            MAX(CASE WHEN outcome = 'payment_updated' THEN contact_date END),
+            MAX(CASE WHEN outcome IN ({$resolved_in_outer}) THEN contact_date END),
             MIN(contact_date)
           ) as days_to_resolution
         FROM {ms_member_outreach_log}
         WHERE uid IN (
           SELECT DISTINCT uid
           FROM {ms_member_outreach_log}
-          WHERE outcome = 'payment_updated'
+          WHERE outcome IN ({$resolved_in_inner})
         )" . $date_where . "
         GROUP BY uid
       ) resolved
@@ -165,15 +204,22 @@ class RecoveryMetrics {
   public function getChannelEffectiveness($start_date = NULL, $end_date = NULL) {
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params += $resolved_params;
+    $params[':cancel_outcome'] = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
 
     $query = "
       SELECT
         contact_method,
         COUNT(DISTINCT uid) as total_contacted,
         COUNT(DISTINCT CASE
-          WHEN outcome = 'payment_updated'
+          WHEN outcome IN ({$resolved_in})
           THEN uid
-        END) as resolved
+        END) as resolved,
+        COUNT(DISTINCT CASE
+          WHEN outcome = :cancel_outcome
+          THEN uid
+        END) as confirmed_cancel
       FROM {ms_member_outreach_log}
       WHERE 1=1" . $date_where . "
       GROUP BY contact_method
@@ -184,13 +230,15 @@ class RecoveryMetrics {
     $effectiveness = [];
 
     foreach ($results as $row) {
-      $total = (int) $row['total_contacted'];
-      $resolved = (int) $row['resolved'];
+      $total = (int) ($row['total_contacted'] ?? 0);
+      $resolved = (int) ($row['resolved'] ?? 0);
+      $confirmed_cancel = (int) ($row['confirmed_cancel'] ?? 0);
       $rate = $total > 0 ? round(($resolved / $total) * 100, 1) : 0;
 
       $effectiveness[$row['contact_method']] = [
         'total' => $total,
         'resolved' => $resolved,
+        'confirmed_cancel' => $confirmed_cancel,
         'rate' => $rate,
       ];
     }
@@ -273,16 +321,29 @@ class RecoveryMetrics {
       $date_where = " AND log.contact_date BETWEEN :start_date AND :end_date";
     }
 
-    // First get basic stats per staff member
+    // First get basic stats per staff member.
+    $params = [];
+    if ($start_date && $end_date) {
+      $params[':start_date'] = $start_date;
+      $params[':end_date'] = $end_date;
+    }
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params += $resolved_params;
+    $params[':cancel_outcome'] = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
+
     $query = "
       SELECT
         log.staff_uid,
         u.name as staff_name,
         COUNT(DISTINCT log.uid) as members_contacted,
         COUNT(DISTINCT CASE
-          WHEN log.outcome = 'payment_updated'
+          WHEN log.outcome IN ({$resolved_in})
           THEN log.uid
         END) as resolved,
+        COUNT(DISTINCT CASE
+          WHEN log.outcome = :cancel_outcome
+          THEN log.uid
+        END) as confirmed_cancel,
         COUNT(*) as total_attempts
       FROM {ms_member_outreach_log} log
       LEFT JOIN {users_field_data} u ON u.uid = log.staff_uid
@@ -291,16 +352,19 @@ class RecoveryMetrics {
       ORDER BY resolved DESC, members_contacted DESC
     ";
 
-    $params = [];
-    if ($start_date && $end_date) {
-      $params[':start_date'] = $start_date;
-      $params[':end_date'] = $end_date;
-    }
-
     $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
 
     // Get average days to resolution per staff member using subquery.
     // Note: inner subquery uses 'log' alias so $date_where (log.contact_date) works.
+    $days_params = [];
+    if ($start_date && $end_date) {
+      $days_params[':start_date'] = $start_date;
+      $days_params[':end_date'] = $end_date;
+    }
+    [$days_resolved_outer, $days_resolved_outer_params] = $this->resolvedPlaceholders('days_outer');
+    [$days_resolved_inner, $days_resolved_inner_params] = $this->resolvedPlaceholders('days_inner');
+    $days_params += $days_resolved_outer_params + $days_resolved_inner_params;
+
     $days_query = "
       SELECT
         staff_uid,
@@ -310,24 +374,25 @@ class RecoveryMetrics {
           log.staff_uid,
           log.uid,
           DATEDIFF(
-            MAX(CASE WHEN log.outcome = 'payment_updated' THEN log.contact_date END),
+            MAX(CASE WHEN log.outcome IN ({$days_resolved_outer}) THEN log.contact_date END),
             MIN(log.contact_date)
           ) as days_to_resolution
         FROM {ms_member_outreach_log} log
         WHERE log.staff_uid IS NOT NULL
-          AND log.outcome = 'payment_updated'" . $date_where . "
+          AND log.outcome IN ({$days_resolved_inner})" . $date_where . "
         GROUP BY log.staff_uid, log.uid
       ) as member_resolution_times
       WHERE days_to_resolution IS NOT NULL
       GROUP BY staff_uid
     ";
 
-    $days_results = $this->database->query($days_query, $params)->fetchAllKeyed();
+    $days_results = $this->database->query($days_query, $days_params)->fetchAllKeyed();
     $performance = [];
 
     foreach ($results as $row) {
-      $contacted = (int) $row['members_contacted'];
-      $resolved = (int) $row['resolved'];
+      $contacted = (int) ($row['members_contacted'] ?? 0);
+      $resolved = (int) ($row['resolved'] ?? 0);
+      $confirmed_cancel = (int) ($row['confirmed_cancel'] ?? 0);
       $rate = $contacted > 0 ? round(($resolved / $contacted) * 100, 1) : 0;
       $staff_uid = (int) $row['staff_uid'];
 
@@ -336,6 +401,7 @@ class RecoveryMetrics {
         'staff_name' => $row['staff_name'] ?? 'Unknown',
         'members_contacted' => $contacted,
         'resolved' => $resolved,
+        'confirmed_cancel' => $confirmed_cancel,
         'resolution_rate' => $rate,
         'total_attempts' => (int) $row['total_attempts'],
         'avg_days_to_resolution' => round((float) ($days_results[$staff_uid] ?? 0), 1),
@@ -359,12 +425,13 @@ class RecoveryMetrics {
    *   Productivity metrics for the period
    */
   public function getStaffProductivity(int $staff_uid, string $start_date, string $end_date) {
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
     $query = "
       SELECT
         COUNT(DISTINCT uid) as members_contacted,
         COUNT(*) as total_attempts,
         COUNT(DISTINCT CASE
-          WHEN outcome = 'payment_updated'
+          WHEN outcome IN ({$resolved_in})
           THEN uid
         END) as resolved,
         COUNT(DISTINCT DATE(contact_date)) as active_days,
@@ -379,7 +446,7 @@ class RecoveryMetrics {
       ':staff_uid' => $staff_uid,
       ':start_date' => $start_date,
       ':end_date' => $end_date,
-    ])->fetchAssoc();
+    ] + $resolved_params)->fetchAssoc();
 
     $contacted = (int) $result['members_contacted'];
     $resolved = (int) $result['resolved'];
@@ -406,12 +473,14 @@ class RecoveryMetrics {
   public function getRetentionValue($start_date = NULL, $end_date = NULL) {
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params += $resolved_params;
 
     // Single query: join monthly payment directly to avoid N+1 per member.
     $query = "
       SELECT
         log.uid,
-        MAX(CASE WHEN log.outcome = 'payment_updated' THEN 1 ELSE 0 END) as was_resolved,
+        MAX(CASE WHEN log.outcome IN ({$resolved_in}) THEN 1 ELSE 0 END) as was_resolved,
         COALESCE(payment.field_member_payment_monthly_value, 0) as monthly_payment
       FROM {ms_member_outreach_log} log
       LEFT JOIN {profile} p
@@ -459,12 +528,14 @@ class RecoveryMetrics {
    *   Monthly metrics for trending
    */
   public function getMonthlyTrends(int $months = 12) {
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params = [':months' => $months] + $resolved_params;
     $query = "
       SELECT
         DATE_FORMAT(contact_date, '%Y-%m') as month,
         COUNT(DISTINCT uid) as members_contacted,
         COUNT(DISTINCT CASE
-          WHEN outcome = 'payment_updated'
+          WHEN outcome IN ({$resolved_in})
           THEN uid
         END) as resolved,
         COUNT(*) as total_attempts
@@ -474,7 +545,7 @@ class RecoveryMetrics {
       ORDER BY month ASC
     ";
 
-    $results = $this->database->query($query, [':months' => $months])->fetchAll(\PDO::FETCH_ASSOC);
+    $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
     $trends = [];
 
     foreach ($results as $row) {

@@ -422,13 +422,20 @@ class MemberSuccessSnapshotBuilder {
 
   /**
    * Records a one-time automatic "payment updated" outreach outcome.
+   *
+   * Back-attribution: when a recovery member quietly pays (Chargebee webhook
+   * → role flip → stage transition out of recovery), we don't want all those
+   * resolutions to land on a faceless "system" row with NULL staff. So we look
+   * back 30 days for the most recent human outreach to this uid and copy its
+   * contact_method and staff_uid onto the auto row. That credits the staff
+   * member whose phone call / email actually drove the payment update. If no
+   * recent human outreach exists, we fall back to the original system/NULL row.
    */
   protected function recordAutomaticRecoverySuccess(int $uid, string $contact_date, int $created_at): void {
     try {
       $existing = $this->database->select('ms_member_outreach_log', 'log')
         ->fields('log', ['id'])
         ->condition('uid', $uid)
-        ->condition('contact_method', 'system')
         ->condition('outcome', MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED)
         ->condition('contact_date', $contact_date)
         ->range(0, 1)
@@ -439,13 +446,40 @@ class MemberSuccessSnapshotBuilder {
         return;
       }
 
+      // Back-attribute to the most recent human outreach within 30 days.
+      // staff_uid IS NOT NULL excludes prior auto rows.
+      $lookback_date = date('Y-m-d', strtotime($contact_date . ' -30 days'));
+      $recent_human = $this->database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['contact_method', 'staff_uid'])
+        ->condition('uid', $uid)
+        ->condition('staff_uid', NULL, 'IS NOT NULL')
+        ->condition('contact_date', $lookback_date, '>=')
+        ->condition('contact_date', $contact_date, '<=')
+        ->orderBy('contact_date', 'DESC')
+        ->orderBy('id', 'DESC')
+        ->range(0, 1)
+        ->execute()
+        ->fetchAssoc();
+
+      if ($recent_human && !empty($recent_human['staff_uid'])) {
+        $contact_method = (string) $recent_human['contact_method'];
+        $staff_uid = (int) $recent_human['staff_uid'];
+        $notes = 'Auto-confirmed: member exited recovery after payment resolved. Credit to most recent human outreach within 30 days.';
+      }
+      else {
+        $contact_method = 'system';
+        $staff_uid = NULL;
+        $notes = 'Automatic success: member exited recovery after payment issue resolved. No human outreach in past 30 days.';
+      }
+
       $this->database->insert('ms_member_outreach_log')
         ->fields([
           'uid' => $uid,
           'contact_date' => $contact_date,
-          'contact_method' => 'system',
+          'contact_method' => $contact_method,
           'outcome' => MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED,
-          'notes' => 'Automatic success: member exited recovery after payment issue resolved.',
+          'notes' => $notes,
+          'staff_uid' => $staff_uid,
           'sleep_days' => MemberSuccessLifecycle::sleepDaysForOutcome(MemberSuccessLifecycle::OUTCOME_PAYMENT_UPDATED),
           'created_at' => $created_at,
         ])
