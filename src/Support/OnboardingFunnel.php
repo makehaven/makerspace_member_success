@@ -1,0 +1,251 @@
+<?php
+
+namespace Drupal\makerspace_member_success\Support;
+
+/**
+ * Canonical new-member onboarding funnel.
+ *
+ * Pure logic, no Drupal dependencies. Given completion signals for a single
+ * member, this returns:
+ *   - the ordered step list with done/current/todo state,
+ *   - the furthest completed step,
+ *   - the next incomplete ("resume") step and its URL,
+ *   - how long the member has been stalled at the current step.
+ *
+ * It is the single source of truth for "where is this member in onboarding"
+ * and is consumed by BOTH:
+ *   - the staff success queue (server-side, fed from snapshot columns), and
+ *   - the member-facing progress timeline block (real-time, current user).
+ *
+ * Funnel (matches the member-onboarding email and the on-page progress bar):
+ *   Pay → Profile → Watch video → Pass quiz → Book orientation → Get involved
+ *
+ * Signal notes:
+ *   - "paid" is implied by account existence: the account is created at the
+ *     /user/register step, which only happens AFTER Chargebee payment.
+ *   - The safety video has no standalone completion signal — its quiz button
+ *     lives at the bottom of the video page — so the video step is treated as
+ *     complete once the quiz is passed. A member sitting on the video page
+ *     therefore shows "quiz" as their next step, which is the actionable one.
+ */
+final class OnboardingFunnel {
+
+  // Step machine names, in funnel order.
+  public const STEP_ACCOUNT = 'account';
+  public const STEP_PROFILE = 'profile';
+  public const STEP_VIDEO = 'video';
+  public const STEP_QUIZ = 'quiz';
+  public const STEP_SCHEDULE = 'schedule';
+  public const STEP_INVOLVE = 'involve';
+
+  // Sentinel returned by nextStep() / currentStep() when nothing is left.
+  public const STEP_DONE = 'done';
+
+  /**
+   * Returns the ordered onboarding steps with completion state.
+   *
+   * @param array $signals
+   *   Completion signals. Recognised keys (all optional, sensible defaults):
+   *     - has_account (bool)
+   *     - account_ts (int|null) account/role creation unix ts
+   *     - profile_present (bool) member 'main' profile row saved
+   *     - profile_ts (int|null)
+   *     - quiz_passed (bool) safety quiz (qid 1) passed
+   *     - quiz_ts (int|null)
+   *     - orientation_scheduled (bool) CiviCRM orientation participant exists
+   *     - schedule_ts (int|null)
+   *     - engaged (bool) goals/interests set OR door badge active
+   *     - door_badge_active (bool) onboarding fully complete.
+   * @param int $uid
+   *   The member's user id, used to build the profile-edit URL. 0 if unknown.
+   *
+   * @return array[]
+   *   Ordered list of step arrays, each with keys:
+   *     - id, label, done (bool), ts (int|null), url (string),
+   *     - state ('done'|'current'|'todo').
+   */
+  public static function steps(array $signals, int $uid = 0): array {
+    $door_active = !empty($signals['door_badge_active']);
+
+    // When onboarding is fully complete (door badge active), every step is
+    // done regardless of which intermediate signals we happened to capture.
+    $profile_done = $door_active || !empty($signals['profile_present']);
+    $quiz_done = $door_active || !empty($signals['quiz_passed']);
+    $schedule_done = $door_active || !empty($signals['orientation_scheduled']);
+    $involve_done = $door_active || !empty($signals['engaged']);
+
+    $profile_url = $uid > 0 ? '/user/' . $uid . '/main' : '/user';
+
+    $steps = [
+      [
+        'id' => self::STEP_ACCOUNT,
+        'label' => 'Create your account',
+        'done' => $door_active || !empty($signals['has_account']),
+        'ts' => $signals['account_ts'] ?? NULL,
+        'url' => '/user/register',
+      ],
+      [
+        'id' => self::STEP_PROFILE,
+        'label' => 'Complete your member profile',
+        'done' => $profile_done,
+        'ts' => $signals['profile_ts'] ?? NULL,
+        'url' => $profile_url,
+      ],
+      [
+        'id' => self::STEP_VIDEO,
+        'label' => 'Watch the safety video',
+        // No standalone signal; complete once the quiz (which follows it on the
+        // same page) is passed.
+        'done' => $quiz_done,
+        'ts' => NULL,
+        'url' => '/video',
+      ],
+      [
+        'id' => self::STEP_QUIZ,
+        'label' => 'Pass the safety quiz',
+        'done' => $quiz_done,
+        'ts' => $signals['quiz_ts'] ?? NULL,
+        'url' => '/quiz/1/take',
+      ],
+      [
+        'id' => self::STEP_SCHEDULE,
+        'label' => 'Book your in-person orientation',
+        'done' => $schedule_done,
+        'ts' => $signals['schedule_ts'] ?? NULL,
+        'url' => '/facilitator/schedules',
+      ],
+      [
+        'id' => self::STEP_INVOLVE,
+        'label' => 'Set your goals & get involved',
+        'done' => $involve_done,
+        'ts' => NULL,
+        'url' => '/involve',
+      ],
+    ];
+
+    // Derive per-step display state. The "current" step is the first not-done
+    // step; everything before it is done, everything after is todo.
+    $found_current = FALSE;
+    foreach ($steps as &$step) {
+      if ($step['done']) {
+        $step['state'] = 'done';
+      }
+      elseif (!$found_current) {
+        $step['state'] = 'current';
+        $found_current = TRUE;
+      }
+      else {
+        $step['state'] = 'todo';
+      }
+    }
+    unset($step);
+
+    return $steps;
+  }
+
+  /**
+   * Returns the next incomplete step (the one the member should resume).
+   *
+   * @param array $signals
+   *   Completion signals (see steps()).
+   * @param int $uid
+   *   Member user id.
+   *
+   * @return array|null
+   *   The step array (with an added 'is_complete' => FALSE), or NULL when
+   *   onboarding is fully complete.
+   */
+  public static function nextStep(array $signals, int $uid = 0): ?array {
+    foreach (self::steps($signals, $uid) as $step) {
+      if (!$step['done']) {
+        return $step;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Machine name of the next incomplete step, or STEP_DONE.
+   */
+  public static function nextStepId(array $signals): string {
+    $next = self::nextStep($signals);
+    return $next['id'] ?? self::STEP_DONE;
+  }
+
+  /**
+   * Unix timestamp the member reached their current position in the funnel.
+   *
+   * This is the most recent timestamp among completed steps that carry one
+   * (account → profile → quiz → schedule). It anchors stall measurement: time
+   * since this ts with the next step still incomplete = time stuck.
+   *
+   * @return int|null
+   *   Unix timestamp, or NULL if none is known.
+   */
+  public static function currentStepSince(array $signals): ?int {
+    $latest = NULL;
+    foreach (self::steps($signals) as $step) {
+      if (!$step['done']) {
+        break;
+      }
+      if (!empty($step['ts'])) {
+        $latest = max((int) $latest, (int) $step['ts']);
+      }
+    }
+    return $latest;
+  }
+
+  /**
+   * Hours the member has been stalled at their current step.
+   *
+   * @param array $signals
+   *   Completion signals (see steps()).
+   * @param int $now_ts
+   *   Current unix timestamp.
+   *
+   * @return int
+   *   Whole hours since the last completed step; 0 if unknown or complete.
+   */
+  public static function hoursStalled(array $signals, int $now_ts): int {
+    if (self::nextStep($signals) === NULL) {
+      return 0;
+    }
+    $since = self::currentStepSince($signals);
+    if ($since === NULL || $now_ts <= $since) {
+      return 0;
+    }
+    return (int) floor(($now_ts - $since) / 3600);
+  }
+
+  /**
+   * TRUE when onboarding is fully complete (no incomplete steps remain).
+   */
+  public static function isComplete(array $signals): bool {
+    return self::nextStep($signals) === NULL;
+  }
+
+  /**
+   * Short human label for a step machine name.
+   *
+   * Used by staff-facing views where only the stored step id is available.
+   *
+   * @param string|null $step_id
+   *   A STEP_* constant, STEP_DONE, or NULL.
+   *
+   * @return string
+   *   Human-readable short label.
+   */
+  public static function stepLabel(?string $step_id): string {
+    return match ($step_id) {
+      self::STEP_ACCOUNT => 'Account',
+      self::STEP_PROFILE => 'Profile',
+      self::STEP_VIDEO => 'Safety video',
+      self::STEP_QUIZ => 'Safety quiz',
+      self::STEP_SCHEDULE => 'Book orientation',
+      self::STEP_INVOLVE => 'Get involved',
+      self::STEP_DONE => 'Complete',
+      default => 'Unknown',
+    };
+  }
+
+}

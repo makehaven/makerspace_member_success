@@ -7,7 +7,6 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\civicrm\Civicrm;
 use Drupal\user\Entity\User;
-use Psr\Log\LoggerInterface;
 
 /**
  * Service for creating CiviCRM activities related to member retention.
@@ -49,7 +48,7 @@ class CiviCrmActivityLogger {
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
     AccountInterface $current_user,
-    Civicrm $civicrm
+    Civicrm $civicrm,
   ) {
     $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('makerspace_member_success');
@@ -74,7 +73,7 @@ class CiviCrmActivityLogger {
    */
   public function logRetentionContact(User $target_user, string $method, string $outcome, string $notes = ''): ?int {
     try {
-      // Initialize CiviCRM
+      // Initialize CiviCRM.
       if (!$this->civicrm) {
         $this->logger->error('CiviCRM service not available.');
         return NULL;
@@ -82,7 +81,7 @@ class CiviCrmActivityLogger {
 
       $this->civicrm->initialize();
 
-      // Get target contact ID
+      // Get target contact ID.
       $target_contact_id = $this->getContactId($target_user->id());
       if (!$target_contact_id) {
         $this->logger->error('Could not find CiviCRM contact for user @uid', ['@uid' => $target_user->id()]);
@@ -92,26 +91,26 @@ class CiviCrmActivityLogger {
       // Get source contact ID (staff member logging contact)
       $source_contact_id = $this->getContactId($this->currentUser->id());
       if (!$source_contact_id) {
-        // Fallback: use target as source if staff not found
+        // Fallback: use target as source if staff not found.
         $source_contact_id = $target_contact_id;
       }
 
-      // Get activity type ID based on method
+      // Get activity type ID based on method.
       $activity_type_id = $this->getActivityTypeId($method);
 
-      // Build activity subject
+      // Build activity subject.
       $outcome_labels = $this->getOutcomeLabels();
       $outcome_label = $outcome_labels[$outcome] ?? $outcome;
       $subject = "Retention follow-up: {$outcome_label}";
 
-      // Build activity details
+      // Build activity details.
       $details = "Contact Method: " . ucfirst($method) . "\n";
       $details .= "Outcome: {$outcome_label}\n";
       if ($notes) {
         $details .= "\nNotes:\n{$notes}";
       }
 
-      // Create activity via APIv3
+      // Create activity via APIv3.
       $params = [
         'activity_type_id' => $activity_type_id,
         'source_contact_id' => $source_contact_id,
@@ -119,8 +118,10 @@ class CiviCrmActivityLogger {
         'subject' => $subject,
         'details' => $details,
         'activity_date_time' => date('Y-m-d H:i:s'),
-        'status_id' => 2, // Completed
-        'priority_id' => 2, // Normal
+      // Completed.
+        'status_id' => 2,
+      // Normal.
+        'priority_id' => 2,
       ];
 
       $result = civicrm_api3('Activity', 'create', $params);
@@ -189,7 +190,7 @@ class CiviCrmActivityLogger {
   protected function getActivityTypeId(string $method): int {
     $config = $this->configFactory->get('makerspace_member_success.settings');
 
-    // Try to get configured activity type
+    // Try to get configured activity type.
     $config_key = "civicrm_activity_type_{$method}";
     $activity_type_id = $config->get($config_key);
 
@@ -198,12 +199,16 @@ class CiviCrmActivityLogger {
     }
 
     // Fallback to default activity types
-    // These are common CiviCRM defaults, but may vary by installation
+    // These are common CiviCRM defaults, but may vary by installation.
     $defaults = [
-      'phone' => 3,  // Phone Call
-      'email' => 3,  // Email (usually 3, but can be different)
-      'in_person' => 1, // Meeting
-      'other' => 1,  // Meeting
+    // Phone Call.
+      'phone' => 3,
+    // Email (usually 3, but can be different)
+      'email' => 3,
+    // Meeting.
+      'in_person' => 1,
+    // Meeting.
+      'other' => 1,
     ];
 
     return $defaults[$method] ?? 1;

@@ -25,7 +25,7 @@ class OutreachQueueReviewForm extends FormBase {
   public function __construct(
     protected Connection $database,
     protected OutreachQueueServiceInterface $queueService,
-    protected FollowupStatusManager $followupStatusManager
+    protected FollowupStatusManager $followupStatusManager,
   ) {}
 
   /**
@@ -135,28 +135,28 @@ class OutreachQueueReviewForm extends FormBase {
     $form['help'] = [
       '#type' => 'markup',
       '#markup' => '<div class="messages messages--status">'
-        . '<p><strong>' . $this->t('Manual mode') . ':</strong> '
-        . $this->t('Queued items are NOT sent automatically at this time. Staff must select rows and apply actions manually.')
-        . '</p>'
-        . '<strong>' . $this->t('How to use this queue') . ':</strong> '
-        . $this->t('1) Click "Generate/Refresh Queue Candidates" to refresh recommendations from latest snapshots. ')
-        . $this->t('2) Review rows and reasons. ')
-        . $this->t('3) Select rows, choose a bulk action, and apply. ')
-        . $this->t('Tip: not every generated candidate lands in "queued". Many will be intentionally placed in "suppressed" based on risk threshold, cooldown, max attempts, consent, or missing templates.')
-        . $this->t('SMS is only recommended when explicit CiviCRM SMS consent is present. ')
-        . $this->t('Rows are suppressed when templates are missing.')
-        . '</div>',
+      . '<p><strong>' . $this->t('Manual mode') . ':</strong> '
+      . $this->t('Queued items are NOT sent automatically at this time. Staff must select rows and apply actions manually.')
+      . '</p>'
+      . '<strong>' . $this->t('How to use this queue') . ':</strong> '
+      . $this->t('1) Click "Generate/Refresh Queue Candidates" to refresh recommendations from latest snapshots. ')
+      . $this->t('2) Review rows and reasons. ')
+      . $this->t('3) Select rows, choose a bulk action, and apply. ')
+      . $this->t('Tip: not every generated candidate lands in "queued". Many will be intentionally placed in "suppressed" based on risk threshold, cooldown, max attempts, consent, or missing templates.')
+      . $this->t('SMS is only recommended when explicit CiviCRM SMS consent is present. ')
+      . $this->t('Rows are suppressed when templates are missing.')
+      . '</div>',
     ];
 
     $form['bulk'] = ['#type' => 'details', '#title' => $this->t('Bulk actions'), '#open' => TRUE];
     $form['bulk']['howto'] = [
       '#type' => 'markup',
       '#markup' => '<div class="messages messages--warning">'
-        . '<strong>' . $this->t('Bulk action behavior') . ':</strong> '
-        . $this->t('Approve selected: marks rows ready to send. ')
-        . $this->t('Mark selected as sent (manual): records rows as already handled outside the queue. ')
-        . $this->t('Suppress selected: hides rows from active queue work using the selected reason code.')
-        . '</div>',
+      . '<strong>' . $this->t('Bulk action behavior') . ':</strong> '
+      . $this->t('Approve selected: marks rows ready to send. ')
+      . $this->t('Mark selected as sent (manual): records rows as already handled outside the queue. ')
+      . $this->t('Suppress selected: hides rows from active queue work using the selected reason code.')
+      . '</div>',
     ];
 
     $form['bulk']['action'] = [

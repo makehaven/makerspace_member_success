@@ -15,4 +15,3 @@ interface OutreachPolicyDeciderInterface {
   public function decide(int $uid, array $snapshot): OutreachDecision;
 
 }
-

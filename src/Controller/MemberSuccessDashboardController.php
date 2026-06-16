@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Controller;
 
+use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Render\Markup;
@@ -153,7 +154,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     );
     $summary_html .= '</div>';
 
-    // Add prominent link to Intervention Performance dashboard
+    // Add prominent link to Intervention Performance dashboard.
     $performance_url = $this->safeRouteUrl('makerspace_member_success.intervention_performance');
     $queue_review_url = $this->safeRouteUrl('makerspace_member_success.queue_review');
     $summary_html .= '
@@ -366,7 +367,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#suffix' => '</div>',
     ];
 
-    // Page title
+    // Page title.
     $build['title'] = [
       '#type' => 'html_tag',
       '#tag' => 'h2',
@@ -384,7 +385,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       ],
     ];
 
-    // Overview description
+    // Overview description.
     $build['overview'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['alert', 'alert-info', 'mb-4']],
@@ -399,7 +400,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       ],
     ];
 
-    // ROI Summary Section
+    // ROI Summary Section.
     $build['roi_section'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['row', 'mb-4']],
@@ -449,7 +450,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       ),
     ];
 
-    // Staff Performance Table
+    // Staff Performance Table.
     $build['staff_table'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['mb-4']],
@@ -495,7 +496,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['table', 'table-striped']],
     ];
 
-    // Channel Effectiveness Table
+    // Channel Effectiveness Table.
     $build['channel_table'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['mb-4']],
@@ -540,7 +541,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['table', 'table-striped']],
     ];
 
-    // Monthly Trends Table
+    // Monthly Trends Table.
     $build['trends_table'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['mb-4']],
@@ -585,7 +586,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['table', 'table-striped']],
     ];
 
-    // Data Sources & Methodology
+    // Data Sources & Methodology.
     $build['methodology'] = [
       '#type' => 'details',
       '#title' => $this->t('📘 Data Sources & Methodology'),
@@ -667,7 +668,7 @@ class MemberSuccessDashboardController extends ControllerBase {
   private function renderMetricCard(string $title, $value, string $color, $subtitle = NULL): string {
     $subtitle_html = $subtitle ? '<div class="text-muted small mt-2">' . $subtitle . '</div>' : '';
 
-    // Map color names to Bootstrap variants
+    // Map color names to Bootstrap variants.
     $color_classes = [
       'primary' => 'primary',
       'success' => 'success',
@@ -697,10 +698,10 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     // Quick-select preset links.
     $presets = [
-      'Last 30 days'  => [date('Y-m-d', strtotime('-30 days')),  date('Y-m-d')],
-      'Last 90 days'  => [date('Y-m-d', strtotime('-90 days')),  date('Y-m-d')],
+      'Last 30 days'  => [date('Y-m-d', strtotime('-30 days')), date('Y-m-d')],
+      'Last 90 days'  => [date('Y-m-d', strtotime('-90 days')), date('Y-m-d')],
       'Last 6 months' => [date('Y-m-d', strtotime('-6 months')), date('Y-m-d')],
-      'This year'     => [date('Y-01-01'),                        date('Y-m-d')],
+      'This year'     => [date('Y-01-01'), date('Y-m-d')],
     ];
     $preset_html = '<div class="mb-2">';
     foreach ($presets as $label => [$ps, $pe]) {
@@ -826,7 +827,7 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     $rows = [];
 
-    // ROI Summary
+    // ROI Summary.
     $rows[] = ['ROI SUMMARY'];
     $rows[] = ['Metric', 'Value'];
     $rows[] = ['Members at Risk', $retention_value['total_members_at_risk']];
@@ -835,7 +836,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $rows[] = ['Avg Days to Resolution', round($metrics['avg_days_to_resolution'], 1)];
     $rows[] = [];
 
-    // Staff Performance
+    // Staff Performance.
     $rows[] = ['STAFF PERFORMANCE'];
     $rows[] = ['Staff Member', 'Members Contacted', 'Total Attempts', 'Resolved', 'Confirmed Cancel', 'Resolution Rate (%)', 'Avg Days'];
 
@@ -853,7 +854,7 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     $rows[] = [];
 
-    // Channel Effectiveness
+    // Channel Effectiveness.
     $rows[] = ['CHANNEL EFFECTIVENESS'];
     $rows[] = ['Contact Method', 'Members Contacted', 'Resolved', 'Confirmed Cancel', 'Success Rate (%)'];
 
@@ -885,7 +886,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $csv = stream_get_contents($handle);
     fclose($handle);
 
-    $response = new \Symfony\Component\HttpFoundation\Response($csv);
+    $response = new Response($csv);
     $response->headers->set('Content-Type', 'text/csv');
     $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
 

@@ -101,130 +101,137 @@ class MemberSuccessActionLink extends FieldPluginBase {
     // Note: We deliberately do NOT call $this->getEntity($values) here because
     // this pseudo-field is attached to a custom table, not a standard entity type,
     // and calling it triggers 'Undefined array key "entity_type"' warnings.
-
     $stage = $values->ms_member_success_snapshot_stage ?? 'onboarding';
 
-    // Determine Contact ID - try all possible field names from view
+    // Determine Contact ID - try all possible field names from view.
     $contact_id = $values->civicrm_contact_civicrm_uf_match_id
         ?? $values->civicrm_contact_users_field_data_id
         ?? $values->id_1
         ?? $values->contact_id_raw
         ?? NULL;
 
-    // Get Configured Template
+    // Get Configured Template.
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $template_id = $config->get("template_{$stage}");
     $sms_template_id = $config->get("sms_template_{$stage}");
 
-    // Build Options
+    // Build Options.
     $query = [
-        'action' => 'add',
-        'reset' => 1,
-        'cid' => $contact_id,
-        'selectedChild' => 'activity',
-        'atype' => 3, // 3 = Email activity type usually
+      'action' => 'add',
+      'reset' => 1,
+      'cid' => $contact_id,
+      'selectedChild' => 'activity',
+    // 3 = Email activity type usually
+      'atype' => 3,
         // Flag to enable member-success auto-sync on CiviCRM form submit.
-        'ms_member_success_auto' => 1,
+      'ms_member_success_auto' => 1,
     ];
-    
+
     if ($template_id) {
-        // CiviCRM's email compose form reads "template" on initial load.
-        $query['template'] = $template_id;
-        // Keep legacy keys for compatibility with older integrations.
-        $query['template_id'] = $template_id;
-        $query['msg_template_id'] = $template_id;
+      // CiviCRM's email compose form reads "template" on initial load.
+      $query['template'] = $template_id;
+      // Keep legacy keys for compatibility with older integrations.
+      $query['template_id'] = $template_id;
+      $query['msg_template_id'] = $template_id;
     }
 
-    // Logic per stage
+    // Logic per stage.
     $email_label = 'Email';
     $status_badge = '';
     $action_text = '';
 
     switch ($stage) {
-        case 'onboarding':
-            $status = $values->ms_member_success_snapshot_door_badge_status ?? '';
-            $serial = $values->ms_member_success_snapshot_serial_number_present ?? 0;
-            if ($status !== 'active') {
-                $status_badge = '<span class="badge bg-warning text-dark">Pending Door Badge</span>';
-                $action_text = '→ Email or call about quiz';
-                $email_label = 'Email';
-            } elseif (empty($serial)) {
-                $status_badge = '<span class="badge bg-info text-dark">Needs Key</span>';
-                $action_text = '→ Remind to pick up key';
-                $email_label = 'Email';
-            } else {
-                $status_badge = '<span class="badge bg-success">On Track</span>';
-                $action_text = '→ Check in on experience';
-                $email_label = 'Email';
-            }
-            break;
+      case 'onboarding':
+        $status = $values->ms_member_success_snapshot_door_badge_status ?? '';
+        $serial = $values->ms_member_success_snapshot_serial_number_present ?? 0;
+        if ($status !== 'active') {
+          $status_badge = '<span class="badge bg-warning text-dark">Pending Door Badge</span>';
+          $action_text = '→ Email or call about quiz';
+          $email_label = 'Email';
+        }
+        elseif (empty($serial)) {
+          $status_badge = '<span class="badge bg-info text-dark">Needs Key</span>';
+          $action_text = '→ Remind to pick up key';
+          $email_label = 'Email';
+        }
+        else {
+          $status_badge = '<span class="badge bg-success">On Track</span>';
+          $action_text = '→ Check in on experience';
+          $email_label = 'Email';
+        }
+        break;
 
-        case 'engagement':
-            $badges = $values->ms_member_success_snapshot_badge_count_window ?? 0;
-            if ($badges == 0) {
-                $status_badge = '<span class="badge bg-secondary">Stalled (0 Recent)</span>';
-                $action_text = '→ Invite to workshops';
-                $email_label = 'Email';
-            } else {
-                $status_badge = '<span class="badge bg-success">Active</span>';
-                $action_text = '→ Encourage continued learning';
-                $email_label = 'Email';
-            }
-            break;
+      case 'engagement':
+        $badges = $values->ms_member_success_snapshot_badge_count_window ?? 0;
+        if ($badges == 0) {
+          $status_badge = '<span class="badge bg-secondary">Stalled (0 Recent)</span>';
+          $action_text = '→ Invite to workshops';
+          $email_label = 'Email';
+        }
+        else {
+          $status_badge = '<span class="badge bg-success">Active</span>';
+          $action_text = '→ Encourage continued learning';
+          $email_label = 'Email';
+        }
+        break;
 
-        case 'retention':
-            $visits = $values->ms_member_success_snapshot_visit_count_30d ?? 0;
-            if ($visits == 0) {
-                $status_badge = '<span class="badge bg-warning text-dark">Absent (30d+)</span>';
-                $action_text = '→ Reach out: "We miss you!"';
-                $email_label = 'Email';
-            } else {
-                $status_badge = '<span class="badge bg-success">Visiting</span>';
-                $action_text = '→ Keep them engaged';
-                $email_label = 'Email';
-            }
-            break;
+      case 'retention':
+        $visits = $values->ms_member_success_snapshot_visit_count_30d ?? 0;
+        if ($visits == 0) {
+          $status_badge = '<span class="badge bg-warning text-dark">Absent (30d+)</span>';
+          $action_text = '→ Reach out: "We miss you!"';
+          $email_label = 'Email';
+        }
+        else {
+          $status_badge = '<span class="badge bg-success">Visiting</span>';
+          $action_text = '→ Keep them engaged';
+          $email_label = 'Email';
+        }
+        break;
 
-        case 'recovery':
-            $failed = $values->ms_member_success_snapshot_payment_failed ?? 0;
-            $paused = $values->ms_member_success_snapshot_payment_pause ?? 0;
-            if ($failed) {
-                $status_badge = '<span class="badge bg-danger">Payment Failed</span>';
-                $action_text = '<strong>→ Call to update payment method</strong>';
-                $email_label = 'Email';
-            } elseif ($paused) {
-                $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
-                $action_text = '→ Check if ready to resume';
-                $email_label = 'Email';
-            } else {
-                $status_badge = '<span class="badge bg-success">Resolved</span>';
-                $action_text = '→ Welcome back message';
-                $email_label = 'Email';
-            }
-            break;
+      case 'recovery':
+        $failed = $values->ms_member_success_snapshot_payment_failed ?? 0;
+        $paused = $values->ms_member_success_snapshot_payment_pause ?? 0;
+        if ($failed) {
+          $status_badge = '<span class="badge bg-danger">Payment Failed</span>';
+          $action_text = '<strong>→ Call to update payment method</strong>';
+          $email_label = 'Email';
+        }
+        elseif ($paused) {
+          $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
+          $action_text = '→ Check if ready to resume';
+          $email_label = 'Email';
+        }
+        else {
+          $status_badge = '<span class="badge bg-success">Resolved</span>';
+          $action_text = '→ Welcome back message';
+          $email_label = 'Email';
+        }
+        break;
 
-        case 'paused':
-            $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
-            $action_text = '→ Confirm return timeline before pause limit';
-            $email_label = 'Email';
-            break;
+      case 'paused':
+        $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
+        $action_text = '→ Confirm return timeline before pause limit';
+        $email_label = 'Email';
+        break;
     }
 
-    // Build action buttons
+    // Build action buttons.
     $primary_buttons = [];
     $secondary_buttons = [];
 
-    // Determine UID - try multiple field names
+    // Determine UID - try multiple field names.
     $uid = $values->ms_member_success_snapshot_uid
         ?? $values->users_field_data_ms_member_success_snapshot_uid
         ?? NULL;
 
     // Email button (primary action)
     try {
-        $email_url = Url::fromUserInput("/civicrm/activity/email/add", ['query' => $query])->toString();
-        $primary_buttons[] = '<a href="' . $email_url . '" class="btn btn-sm ms-action-btn ms-action-btn--primary" target="_blank" title="Send email via CiviCRM">' . $email_label . '</a>';
-    } catch (\Exception $e) {
-        // Skip email button if URL fails
+      $email_url = Url::fromUserInput("/civicrm/activity/email/add", ['query' => $query])->toString();
+      $primary_buttons[] = '<a href="' . $email_url . '" class="btn btn-sm ms-action-btn ms-action-btn--primary" target="_blank" title="Send email via CiviCRM">' . $email_label . '</a>';
+    }
+    catch (\Exception $e) {
+      // Skip email button if URL fails.
     }
 
     $sms_unavailable_reason = '';
@@ -309,9 +316,8 @@ class MemberSuccessActionLink extends FieldPluginBase {
       }
     }
 
-    // CRM button removed - now appears with member name instead
-
-    // Build the complete display
+    // CRM button removed - now appears with member name instead.
+    // Build the complete display.
     $output = '<div class="ms-suggested-action">';
     $output .= '<div class="ms-suggested-action__status">' . $status_badge . '</div>';
 

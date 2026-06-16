@@ -43,7 +43,7 @@ class DaysWaitingField extends FieldPluginBase {
     $now = time();
     $days_waiting = floor(($now - $join_ts) / 86400);
 
-    // Color code based on urgency
+    // Color code based on urgency.
     if ($days_waiting >= 21) {
       $color = 'danger';
       $weight = 'bold';

@@ -20,7 +20,7 @@ interface OutreachQueueServiceInterface {
     int $staffUid,
     ?string $channel = NULL,
     ?string $templateId = NULL,
-    ?string $overrideReason = NULL
+    ?string $overrideReason = NULL,
   ): void;
 
   /**
@@ -47,4 +47,3 @@ interface OutreachQueueServiceInterface {
   public function processApprovedItems(): int;
 
 }
-

@@ -15,4 +15,3 @@ interface OutreachMessageBuilderInterface {
   public function build(int $queueId): PreparedMessage;
 
 }
-

@@ -52,7 +52,7 @@ class PhoneNumberField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function render(ResultRow $values) {
-    // Get UID
+    // Get UID.
     $uid = $values->ms_member_success_snapshot_uid
         ?? $values->users_field_data_ms_member_success_snapshot_uid
         ?? NULL;
@@ -61,7 +61,7 @@ class PhoneNumberField extends FieldPluginBase {
       return '';
     }
 
-    // Get CiviCRM contact ID
+    // Get CiviCRM contact ID.
     $contact_id = NULL;
     try {
       $contact_id = $this->database->select('civicrm_uf_match', 'uf')
@@ -78,7 +78,7 @@ class PhoneNumberField extends FieldPluginBase {
       return '';
     }
 
-    // Get primary phone number
+    // Get primary phone number.
     try {
       $phone = $this->database->select('civicrm_phone', 'p')
         ->fields('p', ['phone'])
@@ -95,7 +95,7 @@ class PhoneNumberField extends FieldPluginBase {
       }
     }
     catch (\Exception $e) {
-      // CiviCRM not available or no phone
+      // CiviCRM not available or no phone.
     }
 
     return [

@@ -27,7 +27,7 @@ function makerspace_member_success_help(string $route_name, RouteMatchInterface 
  * Implements hook_mail().
  */
 function makerspace_member_success_mail(string $key, array &$message, array $params): void {
-  if ($key === 'outreach') {
+  if ($key === 'outreach' || $key === 'lead_followup') {
     $message['subject'] = $params['subject'] ?? '';
     // Body is a plain-text string; wrap it so Drupal's mailer sends it cleanly.
     $message['body'][] = $params['body'] ?? '';
@@ -65,6 +65,15 @@ function makerspace_member_success_cron(): void {
   /** @var \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $builder */
   $builder = \Drupal::service('makerspace_member_success.snapshot_builder');
   $builder->buildDailySnapshots();
+
+  // Track unpaid join-form leads and (if enabled) send due follow-ups. Runs
+  // every cron regardless of the Chargebee-reconcile toggle below.
+  try {
+    \Drupal::service('makerspace_member_success.onboarding_lead_tracker')->scan();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Onboarding lead scan failed: @msg', ['@msg' => $e->getMessage()]);
+  }
 
   $config = \Drupal::config('makerspace_member_success.settings');
   if (!(bool) $config->get('chargebee_followup_reconcile_on_cron')) {

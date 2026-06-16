@@ -13,3 +13,11 @@ log_contact:
       css/log-contact.css: {}
   dependencies:
     - core/drupal
+
+onboarding_progress:
+  version: 1.x
+  css:
+    theme:
+      css/onboarding-progress.css: {}
+  dependencies:
+    - core/drupal

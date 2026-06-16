@@ -16,4 +16,3 @@ interface OutreachSenderInterface {
   public function send(PreparedMessage $message): SendResult;
 
 }
-

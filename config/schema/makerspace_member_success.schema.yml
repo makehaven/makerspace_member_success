@@ -17,6 +17,30 @@ makerspace_member_success.settings:
     new_member_days:
       type: integer
       label: 'Days considered a new member'
+    onboarding_stall_hours:
+      type: integer
+      label: 'Hours on one onboarding step before flagging'
+    orientation_quiz_nid:
+      type: integer
+      label: 'Safety quiz node ID'
+    lead_followup_enabled:
+      type: boolean
+      label: 'Auto-email unpaid leads'
+    lead_followup_hours:
+      type: integer
+      label: 'Hours to wait before unpaid-lead follow-up'
+    lead_followup_max_per_run:
+      type: integer
+      label: 'Max unpaid-lead follow-up emails per cron run'
+    lead_join_webform_id:
+      type: string
+      label: 'Join webform machine name'
+    lead_resume_url:
+      type: string
+      label: 'Unpaid-lead resume link'
+    lead_site_base_url:
+      type: string
+      label: 'Site base URL for unpaid-lead email links'
     retention_recency_days:
       type: sequence
       label: 'Retention recency windows (days)'

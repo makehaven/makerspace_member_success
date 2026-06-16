@@ -18,7 +18,7 @@ class NeedsReviewQueueController extends ControllerBase {
    * Constructs the controller.
    */
   public function __construct(
-    protected Connection $database
+    protected Connection $database,
   ) {}
 
   /**
@@ -45,8 +45,8 @@ class NeedsReviewQueueController extends ControllerBase {
     $build['intro'] = [
       '#type' => 'markup',
       '#markup' => '<div class="alert alert-warning mb-3">'
-        . '<strong>Needs Review queue:</strong> members here were intentionally removed from the main action queues so someone can revisit them later with more context.'
-        . '</div>',
+      . '<strong>Needs Review queue:</strong> members here were intentionally removed from the main action queues so someone can revisit them later with more context.'
+      . '</div>',
     ];
 
     $header = [

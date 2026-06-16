@@ -14,8 +14,7 @@ final class OutreachDecision {
     public string $channel,
     public ?string $templateId,
     public string $reasonCode,
-    public int $priority
+    public int $priority,
   ) {}
 
 }
-

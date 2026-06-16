@@ -23,7 +23,7 @@ class CiviCrmActivityBackfillService {
     Connection $database,
     Civicrm $civicrm,
     EntityTypeManagerInterface $entity_type_manager,
-    LoggerChannelFactoryInterface $logger_factory
+    LoggerChannelFactoryInterface $logger_factory,
   ) {
     $this->database = $database;
     $this->civicrm = $civicrm;
@@ -127,18 +127,20 @@ class CiviCrmActivityBackfillService {
           $method_map = [
             2 => 'phone',
             3 => 'email',
-            1 => 'meeting', // Meeting/In-person
+          // Meeting/In-person.
+            1 => 'meeting',
           ];
           $method = $method_map[$act['activity_type_id']] ?? 'other';
           $date = substr($act['activity_date_time'], 0, 10);
-          
-          // Heuristic for outcome: 
-          // Since CiviCRM doesn't have our specific outcomes, we assume 'no_answer' 
+
+          // Heuristic for outcome:
+          // Since CiviCRM doesn't have our specific outcomes, we assume 'no_answer'
           // unless keywords suggest otherwise.
           $outcome = MemberSuccessLifecycle::OUTCOME_NO_ANSWER;
           $subject = strtolower($act['subject'] ?? '');
           if (str_contains($subject, 'spoke') || str_contains($subject, 'connected') || str_contains($subject, 'resolved')) {
-            $outcome = MemberSuccessLifecycle::OUTCOME_WILL_RETURN; // Conservative success
+            // Conservative success.
+            $outcome = MemberSuccessLifecycle::OUTCOME_WILL_RETURN;
           }
           if (str_contains($subject, 'cancel')) {
             $outcome = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
@@ -155,17 +157,19 @@ class CiviCrmActivityBackfillService {
 
 " . strip_tags($act['details'] ?? ''),
                 'followup_status' => MemberSuccessLifecycle::followupStatusForOutcome($outcome),
-                'staff_uid' => 1, // Default to admin for backfills
+            // Default to admin for backfills.
+                'staff_uid' => 1,
                 'civicrm_activity_id' => $activity_id,
                 'created_at' => strtotime($act['activity_date_time']),
                 'sleep_days' => MemberSuccessLifecycle::sleepDaysForOutcome($outcome),
               ])
               ->execute();
             $summary['imported']++;
-          } else {
+          }
+          else {
             $summary['imported']++;
           }
-          
+
           // Process one contact per activity for the log (standard case)
           break;
         }

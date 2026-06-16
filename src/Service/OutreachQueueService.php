@@ -2,6 +2,8 @@
 
 namespace Drupal\makerspace_member_success\Service;
 
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\makerspace_member_success\Support\OutreachDecision;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -25,7 +27,7 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     protected OutreachSenderInterface $sender,
     protected EntityTypeManagerInterface $entityTypeManager,
     protected OutreachService $outreachService,
-    protected OutreachSuppressionCheckerInterface $suppressionChecker
+    protected OutreachSuppressionCheckerInterface $suppressionChecker,
   ) {}
 
   /**
@@ -140,7 +142,7 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     int $staffUid,
     ?string $channel = NULL,
     ?string $templateId = NULL,
-    ?string $overrideReason = NULL
+    ?string $overrideReason = NULL,
   ): void {
     $now = $this->time->getCurrentTime();
     $fields = [
@@ -249,8 +251,8 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
         $result = $this->sender->send($message);
         if ($result->success) {
           $this->markSent($id, ['provider_message_id' => $result->providerMessageId]);
-          
-          // Log interaction to update snooze/history
+
+          // Log interaction to update snooze/history.
           $user = $this->entityTypeManager->getStorage('user')->load($uid);
           if ($user) {
             $outcome = $channel === 'sms' ? MemberSuccessLifecycle::OUTCOME_SMS_SENT : MemberSuccessLifecycle::OUTCOME_EMAIL_SENT;
@@ -260,8 +262,10 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
               $channel,
               $outcome,
               'Automated outreach: ' . ($result->providerMessageId ?? ''),
-              FALSE, // mark_exhausted
-              TRUE   // log_in_civicrm
+            // mark_exhausted.
+              FALSE,
+            // log_in_civicrm.
+              TRUE
             );
           }
           $processed++;
@@ -284,10 +288,10 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     int $uid,
     string $stage,
     array $snapshot,
-    \Drupal\makerspace_member_success\Support\OutreachDecision $decision,
+    OutreachDecision $decision,
     string $status,
     ?string $suppressionReason,
-    int $now
+    int $now,
   ): int {
     return (int) $this->database->insert('ms_member_outreach_queue')
       ->fields([
@@ -372,7 +376,7 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
   /**
    * Returns the next default queue execution timestamp in local site time.
    */
-  protected function computeDefaultScheduledAt(int $now, \Drupal\Core\Config\ImmutableConfig $config): int {
+  protected function computeDefaultScheduledAt(int $now, ImmutableConfig $config): int {
     $hour = (int) ($config->get('outreach_send_hour_local') ?? 10);
     if ($hour < 0 || $hour > 23) {
       $hour = 10;
