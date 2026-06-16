@@ -80,7 +80,7 @@ class MemberSuccessCommands extends DrushCommands {
     ?RecoveryMetrics $recovery_metrics = NULL,
     ?ChargebeeFollowupStatusSync $chargebee_followup_status_sync = NULL,
     ?OutreachQueueServiceInterface $queue_service = NULL,
-    ?CiviCrmActivityBackfillService $civi_backfill = NULL
+    ?CiviCrmActivityBackfillService $civi_backfill = NULL,
   ) {
     parent::__construct();
     $this->snapshotBuilder = $snapshot_builder;
@@ -123,14 +123,14 @@ class MemberSuccessCommands extends DrushCommands {
       ['Errors', (string) $result['errors']],
     ];
     $this->io()->table(['Metric', 'Value'], $rows);
-    
+
     if ($dry_run) {
       $this->logger()->info('Dry run complete. No data was saved.');
-    } else {
+    }
+    else {
       $this->logger()->success('Backfill complete.');
     }
   }
-
 
   /**
    * Processes approved outreach items from the queue.
@@ -148,7 +148,6 @@ class MemberSuccessCommands extends DrushCommands {
       $this->logger()->notice(dt('No approved outreach items to process at this time.'));
     }
   }
-
 
   /**
    * Builds member success snapshots.
@@ -170,16 +169,16 @@ class MemberSuccessCommands extends DrushCommands {
         $this->logger()->error(dt('User @uid not found.', ['@uid' => $uid]));
         return;
       }
-      
+
       $this->logger()->notice(dt('Building snapshot for user @uid...', ['@uid' => $uid]));
       $date = new \DateTimeImmutable('now');
       $snapshot_date = $date->format('Y-m-d');
       $now_ts = time();
-      
+
       $row = $this->snapshotBuilder->buildSnapshotForUser((int) $uid, $snapshot_date, 'daily', $now_ts);
       $row['is_latest'] = 1;
       $this->snapshotBuilder->upsertSnapshot($row);
-      
+
       $this->logger()->success(dt('Built snapshot for user @uid.', ['@uid' => $uid]));
     }
     else {
@@ -216,12 +215,12 @@ class MemberSuccessCommands extends DrushCommands {
     $end_date = $options['end-date'];
     $format = $options['format'] ?? 'table';
 
-    // Get recovery metrics service
+    // Get recovery metrics service.
     if (!$this->recoveryMetrics) {
       $this->recoveryMetrics = \Drupal::service('makerspace_member_success.recovery_metrics');
     }
 
-    // Get metrics
+    // Get metrics.
     $roi = $this->recoveryMetrics->getRetentionValue($start_date, $end_date);
     $all_metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
     $staff = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
@@ -251,7 +250,7 @@ class MemberSuccessCommands extends DrushCommands {
     $this->output()->writeln('<info>=== Intervention Performance Summary' . $date_range . ' ===</info>');
     $this->output()->writeln('');
 
-    // ROI Summary
+    // ROI Summary.
     $this->output()->writeln('<comment>ROI SUMMARY:</comment>');
     $this->output()->writeln('  Members at Risk: ' . $roi['total_members_at_risk']);
     $this->output()->writeln('  Annual Value Saved: $' . number_format($roi['annual_value_saved'], 0));
@@ -260,7 +259,7 @@ class MemberSuccessCommands extends DrushCommands {
     $this->output()->writeln('  Avg Days to Resolution: ' . round($all_metrics['avg_days_to_resolution'], 1));
     $this->output()->writeln('');
 
-    // Staff Performance
+    // Staff Performance.
     if (!empty($staff)) {
       $this->output()->writeln('<comment>TOP STAFF PERFORMANCE:</comment>');
       $rows = [];
@@ -275,7 +274,7 @@ class MemberSuccessCommands extends DrushCommands {
       $this->io()->table(['Staff', 'Contacted', 'Resolved', 'Rate'], $rows);
     }
 
-    // Channel Effectiveness
+    // Channel Effectiveness.
     if (!empty($all_metrics['channel_effectiveness'])) {
       $this->output()->writeln('<comment>CHANNEL EFFECTIVENESS:</comment>');
       $rows = [];
@@ -421,7 +420,7 @@ class MemberSuccessCommands extends DrushCommands {
    */
   public function chargebeePushFollowup(
     int $uid,
-    array $options = ['status' => NULL, 'force' => FALSE, 'dry-run' => FALSE]
+    array $options = ['status' => NULL, 'force' => FALSE, 'dry-run' => FALSE],
   ): void {
     $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
     $user = $this->entityTypeManager->getStorage('user')->load($uid);
@@ -485,7 +484,7 @@ class MemberSuccessCommands extends DrushCommands {
    */
   public function chargebeePullFollowup(
     int $uid,
-    array $options = ['dry-run' => FALSE, 'overwrite' => FALSE]
+    array $options = ['dry-run' => FALSE, 'overwrite' => FALSE],
   ): void {
     $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
     $user = $this->entityTypeManager->getStorage('user')->load($uid);
@@ -552,7 +551,7 @@ class MemberSuccessCommands extends DrushCommands {
       'delay-ms' => 0,
       'dry-run' => FALSE,
       'overwrite' => FALSE,
-    ]
+    ],
   ): void {
     $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
     $database = \Drupal::database();
@@ -703,7 +702,7 @@ class MemberSuccessCommands extends DrushCommands {
       'offset' => 0,
       'force' => FALSE,
       'dry-run' => FALSE,
-    ]
+    ],
   ): void {
     $sync = $this->chargebeeFollowupStatusSync ?: \Drupal::service('makerspace_member_success.chargebee_followup_status_sync');
     $database = \Drupal::database();

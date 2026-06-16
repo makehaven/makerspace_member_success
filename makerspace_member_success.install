@@ -89,6 +89,17 @@ function makerspace_member_success_schema() {
         'not null' => FALSE,
         'description' => 'Date of first successful door card scan (YYYY-MM-DD).',
       ],
+      'onboarding_step' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+        'description' => 'For onboarding-stage members, the next incomplete funnel step (account|profile|video|quiz|schedule|involve|done). See OnboardingFunnel.',
+      ],
+      'onboarding_step_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Unix ts the member reached their current onboarding step (last completed step). Anchors stall measurement.',
+      ],
       'door_badge_status' => [
         'type' => 'varchar',
         'length' => 16,
@@ -511,7 +522,98 @@ function makerspace_member_success_schema() {
     ];
   }
 
+  $schema['ms_onboarding_lead'] = _makerspace_member_success_lead_table_schema();
+
   return $schema;
+}
+
+/**
+ * Schema definition for the onboarding lead table.
+ *
+ * Tracks join-form submitters who have not (yet) created a paid account, so
+ * staff can follow up and an optional auto-email can nudge them to finish.
+ * One row per email (deduped across repeat submissions).
+ *
+ * @return array
+ *   Drupal schema array for ms_onboarding_lead.
+ */
+function _makerspace_member_success_lead_table_schema(): array {
+  return [
+    'description' => 'Join-form submitters with no paid account yet (unpaid onboarding leads).',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'email' => [
+        'type' => 'varchar',
+        'length' => 254,
+        'not null' => TRUE,
+        'description' => 'Submitted email, lower-cased for dedupe.',
+      ],
+      'name' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'first_sid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'Latest join webform submission id for this email.',
+      ],
+      'submitted_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Unix ts of the latest join submission.',
+      ],
+      'submission_count' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 1,
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'unpaid',
+        'description' => 'unpaid | converted | dismissed.',
+      ],
+      'followup_sent_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Unix ts the auto follow-up email was sent (NULL = not sent).',
+      ],
+      'converted_uid' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'User id once the lead created an account.',
+      ],
+      'converted_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+      'created_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'updated_at' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'uniq_email' => ['email'],
+    ],
+    'indexes' => [
+      'idx_status' => ['status'],
+      'idx_followup' => ['status', 'followup_sent_ts'],
+    ],
+  ];
 }
 
 /**
@@ -1548,4 +1650,39 @@ Looking forward to seeing you at the space!
 — The MakeHaven Team
 TMPL;
   $config->set('template_onboarding', $new_template)->save(TRUE);
+}
+
+/**
+ * Adds onboarding_step and onboarding_step_ts columns for sub-step detection.
+ */
+function makerspace_member_success_update_9030(): void {
+  $schema = \Drupal::database()->schema();
+  $table = 'ms_member_success_snapshot';
+
+  if (!$schema->fieldExists($table, 'onboarding_step')) {
+    $schema->addField($table, 'onboarding_step', [
+      'type' => 'varchar',
+      'length' => 32,
+      'not null' => FALSE,
+      'description' => 'For onboarding-stage members, the next incomplete funnel step (account|profile|video|quiz|schedule|involve|done).',
+    ]);
+  }
+
+  if (!$schema->fieldExists($table, 'onboarding_step_ts')) {
+    $schema->addField($table, 'onboarding_step_ts', [
+      'type' => 'int',
+      'not null' => FALSE,
+      'description' => 'Unix ts the member reached their current onboarding step (last completed step). Anchors stall measurement.',
+    ]);
+  }
+}
+
+/**
+ * Creates the ms_onboarding_lead table for unpaid-lead tracking.
+ */
+function makerspace_member_success_update_9031(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ms_onboarding_lead')) {
+    $schema->createTable('ms_onboarding_lead', _makerspace_member_success_lead_table_schema());
+  }
 }

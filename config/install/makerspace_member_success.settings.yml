@@ -3,6 +3,14 @@ badge_one_days: 60
 badge_watch_days: 30
 badge_four_days: 180
 new_member_days: 180
+onboarding_stall_hours: 48
+orientation_quiz_nid: 1
+lead_followup_enabled: false
+lead_followup_hours: 2
+lead_followup_max_per_run: 25
+lead_join_webform_id: webform_24707
+lead_resume_url: /join-makehaven
+lead_site_base_url: 'https://www.makehaven.org'
 retention_recency_days:
   - 30
   - 60

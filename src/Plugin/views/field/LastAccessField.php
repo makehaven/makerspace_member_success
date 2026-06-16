@@ -52,7 +52,7 @@ class LastAccessField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function render(ResultRow $values) {
-    // Get UID from the row
+    // Get UID from the row.
     $uid = $values->users_field_data_ms_member_success_snapshot_uid
         ?? $values->ms_member_success_snapshot_uid
         ?? NULL;
@@ -63,7 +63,7 @@ class LastAccessField extends FieldPluginBase {
 
     // Query access control logs for last access
     // Assuming there's an access_log table or similar
-    // Adjust table/column names based on actual access control module schema
+    // Adjust table/column names based on actual access control module schema.
     try {
       $last_access = $this->database->select('access_display_log', 'a')
         ->fields('a', ['timestamp'])
@@ -112,7 +112,7 @@ class LastAccessField extends FieldPluginBase {
     }
     catch (\Exception $e) {
       // Access log table might not exist or have different schema
-      // Fail silently
+      // Fail silently.
     }
 
     return [

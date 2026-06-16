@@ -9,6 +9,15 @@ services:
       - '@logger.factory'
       - '@civicrm'
 
+  makerspace_member_success.onboarding_lead_tracker:
+    class: Drupal\makerspace_member_success\Service\OnboardingLeadTracker
+    arguments:
+      - '@database'
+      - '@config.factory'
+      - '@plugin.manager.mail'
+      - '@datetime.time'
+      - '@logger.factory'
+
   makerspace_member_success.civicrm_helper:
     class: Drupal\makerspace_member_success\Service\CiviCrmHelper
     arguments:

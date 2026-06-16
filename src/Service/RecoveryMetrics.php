@@ -123,7 +123,7 @@ class RecoveryMetrics {
    *   ['total' => int, 'exhausted' => int, 'rate' => float]
    */
   public function getExhaustionRate() {
-    // Members with 3+ attempts
+    // Members with 3+ attempts.
     $high_attempt_query = "
       SELECT uid, COUNT(*) as attempts
       FROM {ms_member_outreach_log}
@@ -315,7 +315,7 @@ class RecoveryMetrics {
    *   Array of staff performance data, keyed by staff_uid
    */
   public function getStaffPerformance($start_date = NULL, $end_date = NULL) {
-    // Build date filter clause
+    // Build date filter clause.
     $date_where = '';
     if ($start_date && $end_date) {
       $date_where = " AND log.contact_date BETWEEN :start_date AND :end_date";

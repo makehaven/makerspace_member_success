@@ -19,7 +19,7 @@ class MarkNeedsReviewForm extends ConfirmFormBase {
    * Constructs the form.
    */
   public function __construct(
-    protected FollowupStatusManager $followupStatusManager
+    protected FollowupStatusManager $followupStatusManager,
   ) {}
 
   /**

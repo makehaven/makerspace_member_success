@@ -3,6 +3,7 @@
 namespace Drupal\Tests\makerspace_member_success\Unit;
 
 use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
+use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -24,7 +25,10 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], time());
 
     $this->assertGreaterThanOrEqual(50, $score);
-    $this->assertContains('payment_failed', $reasons);
+    $this->assertNotEmpty(
+      array_filter($reasons, static fn($r) => str_starts_with($r, 'payment_failed')),
+      'A payment_failed_* reason should be present.'
+    );
   }
 
   /**
@@ -98,25 +102,26 @@ class MemberSuccessSnapshotBuilderTest extends UnitTestCase {
   }
 
   /**
-   * Tests risk score for onboarding members with pending door badges (after grace period).
+   * Tests risk score for onboarding members stalled at booking orientation.
    */
-  public function testRiskScoreOnboardingPendingBadge() {
-    // 18 days in, no orientation booked, no active badge → pipeline-break
-    // signal. The old `door_badge_pending` reason has been replaced by the
-    // earlier-firing `orientation_not_scheduled`.
+  public function testRiskScoreOnboardingStuckAtSchedule() {
+    // Passed the quiz but stalled 3 days without booking orientation → the
+    // sub-step stall replaces the old single `orientation_not_scheduled` flag.
     $now = time();
     $data = [
       'stage' => 'onboarding',
       'door_badge_status' => 'requested',
       'serial_present' => 1,
-      'join_date' => date('Y-m-d', $now - (18 * 86400)),
+      'join_date' => date('Y-m-d', $now - (3 * 86400)),
       'orientation_scheduled' => NULL,
+      'onboarding_step' => OnboardingFunnel::STEP_SCHEDULE,
+      'onboarding_step_ts' => $now - (72 * 3600),
     ];
 
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30], $now);
 
     $this->assertEquals(20, $score);
-    $this->assertContains('orientation_not_scheduled', $reasons);
+    $this->assertContains('stuck_at_schedule', $reasons);
   }
 
   /**

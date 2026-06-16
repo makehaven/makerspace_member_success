@@ -25,7 +25,7 @@ class FollowupStatusManager {
     protected NeedsReviewNotificationService $needsReviewNotification,
     protected CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     protected TimeInterface $time,
-    protected LoggerInterface $logger
+    protected LoggerInterface $logger,
   ) {}
 
   /**

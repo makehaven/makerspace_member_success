@@ -17,7 +17,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class SuppressedQueueController extends ControllerBase {
 
   public function __construct(
-    protected Connection $database
+    protected Connection $database,
   ) {}
 
   /**
@@ -82,11 +82,11 @@ class SuppressedQueueController extends ControllerBase {
     $build['intro'] = [
       '#type' => 'markup',
       '#markup' => '<div class="alert alert-secondary mb-3">'
-        . '<strong>Suppressed queue:</strong> ' . $total . ' '
-        . ($total === 1 ? 'member is' : 'members are')
-        . ' currently hidden from the main action queues because they have a resolved follow-up status. '
-        . 'Expand a section to see who and why; expand a row to see recent outreach history.'
-        . '</div>',
+      . '<strong>Suppressed queue:</strong> ' . $total . ' '
+      . ($total === 1 ? 'member is' : 'members are')
+      . ' currently hidden from the main action queues because they have a resolved follow-up status. '
+      . 'Expand a section to see who and why; expand a row to see recent outreach history.'
+      . '</div>',
     ];
 
     foreach ($status_info as $status => $info) {

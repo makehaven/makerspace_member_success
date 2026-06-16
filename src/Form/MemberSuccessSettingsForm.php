@@ -55,7 +55,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('makerspace_member_success.settings');
     $templates = $this->civiCrmHelper->getMessageTemplates();
-    // Add empty option
+    // Add empty option.
     $template_options = ['' => $this->t('- Select a template -')] + $templates;
 
     $form['thresholds'] = [
@@ -111,6 +111,74 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Retention recency windows (days)'),
       '#description' => $this->t('Comma-separated list of day thresholds (e.g., 30, 60, 90).'),
       '#default_value' => implode(', ', (array) $config->get('retention_recency_days')),
+    ];
+
+    $form['thresholds']['onboarding_stall_hours'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Onboarding step stall threshold (hours)'),
+      '#description' => $this->t('A new member who sits on the same onboarding step (profile, safety video/quiz, or booking orientation) for this many hours is flagged as Actionable in the onboarding queue. Default 48.'),
+      '#default_value' => (int) ($config->get('onboarding_stall_hours') ?? 48),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+
+    $form['thresholds']['orientation_quiz_nid'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Safety quiz node ID'),
+      '#description' => $this->t('Quiz id used to detect whether a new member has passed the safety quiz. Default 1.'),
+      '#default_value' => (int) ($config->get('orientation_quiz_nid') ?? 1),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+
+    $form['lead_followup'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Unpaid lead follow-up'),
+      '#description' => $this->t('People who fill the join form but never pay create no account, so they never reach the queue above. These settings track them and can auto-email a single nudge. Auto-send is OFF until you enable it.'),
+      '#open' => FALSE,
+    ];
+
+    $form['lead_followup']['lead_followup_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Automatically email unpaid leads a follow-up'),
+      '#description' => $this->t('When off, leads are still tracked and listed for staff, but no email is sent. Emails go only to the exact address submitted, at most once per address.'),
+      '#default_value' => (bool) $config->get('lead_followup_enabled'),
+    ];
+
+    $form['lead_followup']['lead_followup_hours'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Wait before follow-up (hours)'),
+      '#description' => $this->t('How long after a join submission with no account before the follow-up email is sent. Keep this comfortably longer than a normal pay-then-register takes, so active sign-ups are not interrupted. Default 2.'),
+      '#default_value' => (int) ($config->get('lead_followup_hours') ?? 2),
+      '#min' => 1,
+    ];
+
+    $form['lead_followup']['lead_followup_max_per_run'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Max follow-up emails per cron run'),
+      '#description' => $this->t('Hard cap so a backlog or retry loop cannot fan out. Default 25.'),
+      '#default_value' => (int) ($config->get('lead_followup_max_per_run') ?? 25),
+      '#min' => 0,
+    ];
+
+    $form['lead_followup']['lead_join_webform_id'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Join webform machine name'),
+      '#default_value' => $config->get('lead_join_webform_id') ?: 'webform_24707',
+    ];
+
+    $form['lead_followup']['lead_resume_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Resume link (path or absolute URL)'),
+      '#description' => $this->t('Where the follow-up email sends the lead to finish joining. Default /join-makehaven.'),
+      '#default_value' => $config->get('lead_resume_url') ?: '/join-makehaven',
+    ];
+
+    $form['lead_followup']['lead_site_base_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Site base URL for email links'),
+      '#description' => $this->t('Used to make the resume link absolute in cron-sent email. Default https://www.makehaven.org.'),
+      '#default_value' => $config->get('lead_site_base_url') ?: 'https://www.makehaven.org',
     ];
 
     $form['thresholds']['outreach_send_hour_local'] = [
@@ -341,6 +409,14 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('badge_watch_days', (int) $form_state->getValue('badge_watch_days'))
       ->set('badge_four_days', (int) $form_state->getValue('badge_four_days'))
       ->set('new_member_days', (int) $form_state->getValue('new_member_days'))
+      ->set('onboarding_stall_hours', (int) $form_state->getValue('onboarding_stall_hours'))
+      ->set('orientation_quiz_nid', (int) $form_state->getValue('orientation_quiz_nid'))
+      ->set('lead_followup_enabled', (bool) $form_state->getValue('lead_followup_enabled'))
+      ->set('lead_followup_hours', (int) $form_state->getValue('lead_followup_hours'))
+      ->set('lead_followup_max_per_run', (int) $form_state->getValue('lead_followup_max_per_run'))
+      ->set('lead_join_webform_id', trim((string) $form_state->getValue('lead_join_webform_id')))
+      ->set('lead_resume_url', trim((string) $form_state->getValue('lead_resume_url')))
+      ->set('lead_site_base_url', trim((string) $form_state->getValue('lead_site_base_url')))
       ->set('retention_recency_days', $retention_days)
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))

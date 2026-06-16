@@ -67,7 +67,7 @@ class MemberNameWithIdsField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function render(ResultRow $values) {
-    // Get UID
+    // Get UID.
     $uid = $values->ms_member_success_snapshot_uid
         ?? $values->users_field_data_ms_member_success_snapshot_uid
         ?? NULL;
@@ -76,14 +76,14 @@ class MemberNameWithIdsField extends FieldPluginBase {
       return '';
     }
 
-    // Load user entity for name
+    // Load user entity for name.
     $user = \Drupal::entityTypeManager()->getStorage('user')->load($uid);
 
     if (!$user) {
       return '';
     }
 
-    // Get user name
+    // Get user name.
     $name = $user->getDisplayName();
     $username = $user->getAccountName();
     $email = $user->getEmail();
@@ -115,20 +115,20 @@ class MemberNameWithIdsField extends FieldPluginBase {
     if ($profile && $profile->hasField('field_member_photo') && !$profile->get('field_member_photo')->isEmpty()) {
       $picture = $profile->get('field_member_photo')->entity;
       if ($picture) {
-        // Use thumbnail image style for better performance
+        // Use thumbnail image style for better performance.
         $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load('thumbnail');
         if ($image_style) {
           $photo_url = $image_style->buildUrl($picture->getFileUri());
         }
         else {
-          // Fallback to original if thumbnail style doesn't exist
+          // Fallback to original if thumbnail style doesn't exist.
           $photo_url = \Drupal::service('file_url_generator')->generateAbsoluteString($picture->getFileUri());
         }
         $photo_html = '<img src="' . $photo_url . '" alt="' . htmlspecialchars($name) . '" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover; vertical-align: middle;">';
       }
     }
 
-    // If no photo, use placeholder
+    // If no photo, use placeholder.
     if (empty($photo_html)) {
       $photo_html = '<span class="bg-secondary rounded me-2 d-inline-block text-white text-center" style="width: 40px; height: 40px; line-height: 40px; vertical-align: middle; font-size: 18px;">👤</span>';
     }
@@ -148,12 +148,12 @@ class MemberNameWithIdsField extends FieldPluginBase {
         self::$contactIdCache[$uid] = $civi_id;
       }
       catch (\Exception $e) {
-        // Skip if CiviCRM not available
+        // Skip if CiviCRM not available.
         self::$contactIdCache[$uid] = NULL;
       }
     }
 
-    // Get Chargebee ID
+    // Get Chargebee ID.
     $chargebee_id = NULL;
     try {
       $chargebee_id = $this->database->select('user__field_user_chargebee_id', 'cb')
@@ -163,10 +163,10 @@ class MemberNameWithIdsField extends FieldPluginBase {
         ->fetchField();
     }
     catch (\Exception $e) {
-      // Skip if field doesn't exist
+      // Skip if field doesn't exist.
     }
 
-    // Get Stripe ID
+    // Get Stripe ID.
     $stripe_id = NULL;
     try {
       $stripe_id = $this->database->select('user__field_stripe_customer_id', 'st')
@@ -176,10 +176,10 @@ class MemberNameWithIdsField extends FieldPluginBase {
         ->fetchField();
     }
     catch (\Exception $e) {
-      // Skip if field doesn't exist
+      // Skip if field doesn't exist.
     }
 
-    // Build profile link
+    // Build profile link.
     try {
       $profile_url = Url::fromRoute('entity.user.canonical', ['user' => $uid])->toString();
       $name_link = '<a href="' . $profile_url . '" class="username" title="View user profile">' . htmlspecialchars($name) . '</a>';
@@ -188,7 +188,7 @@ class MemberNameWithIdsField extends FieldPluginBase {
       $name_link = htmlspecialchars($name);
     }
 
-    // Build ID display with links
+    // Build ID display with links.
     $id_parts = [];
 
     if ($civi_id) {
@@ -197,7 +197,7 @@ class MemberNameWithIdsField extends FieldPluginBase {
     }
 
     if ($chargebee_id) {
-      // Get Chargebee site name from config
+      // Get Chargebee site name from config.
       $config = \Drupal::config('chargebee_portal.settings');
       $site = $config->get('site') ?? 'makehaven';
       $cb_url = 'https://' . $site . '.chargebee.com/d/customers/' . urlencode($chargebee_id);
@@ -211,7 +211,7 @@ class MemberNameWithIdsField extends FieldPluginBase {
 
     $id_string = !empty($id_parts) ? implode(' | ', $id_parts) : '';
 
-    // Combine photo, name, and links
+    // Combine photo, name, and links.
     $output = '<div class="d-flex align-items-start">';
     $output .= $photo_html;
     $output .= '<div>';
@@ -240,7 +240,8 @@ class MemberNameWithIdsField extends FieldPluginBase {
           'profile:main:' . $uid,
         ],
         'contexts' => ['user'],
-        'max-age' => 3600, // Cache for 1 hour
+        // Cache for 1 hour.
+        'max-age' => 3600,
       ],
     ];
   }

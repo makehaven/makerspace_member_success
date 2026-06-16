@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Plugin\views\field;
 
+use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\views\Plugin\views\field\FieldPluginBase;
 use Drupal\views\ResultRow;
 
@@ -17,7 +18,7 @@ class StageContextField extends FieldPluginBase {
    */
   public function query() {
     $this->ensureMyTable();
-    $this->addAdditionalFields(['pause_start_date']);
+    $this->addAdditionalFields(['pause_start_date', 'onboarding_step', 'onboarding_step_ts']);
   }
 
   /**
@@ -38,56 +39,90 @@ class StageContextField extends FieldPluginBase {
 
     switch ($stage) {
       case 'onboarding':
-        // Show days waiting and orientation status
-        if ($join_date) {
+        // Show which funnel step the member is stuck at, and for how long, so
+        // staff can see at a glance whether someone stalled at profile, the
+        // safety training, or booking orientation — not just "waiting N days".
+        $step = $values->ms_member_success_snapshot_onboarding_step ?? '';
+        $step_ts = (int) ($values->ms_member_success_snapshot_onboarding_step_ts ?? 0);
+
+        if ($step && $step !== OnboardingFunnel::STEP_DONE) {
+          // Hours stalled at the current step, escalated to a colour.
+          $stall_hours = $step_ts ? (int) floor(($now - $step_ts) / 3600) : 0;
+          $stall_days = (int) floor($stall_hours / 24);
+          if ($stall_hours >= 168) {
+            $color = 'danger';
+          }
+          elseif ($stall_hours >= 48) {
+            $color = 'warning';
+          }
+          else {
+            $color = 'muted';
+          }
+          $when = $stall_hours >= 48
+            ? $stall_days . 'd'
+            : $stall_hours . 'h';
+          $output .= '<span class="text-' . $color . '">Stuck at: <strong>'
+            . OnboardingFunnel::stepLabel($step) . '</strong></span>';
+          if ($step_ts) {
+            $output .= '<br><span class="small text-' . $color . '">' . $when . ' on this step</span>';
+          }
+        }
+        elseif ($join_date) {
+          // Fallback for rows predating sub-step tracking.
           $join_ts = strtotime($join_date);
           $days_waiting = floor(($now - $join_ts) / 86400);
           $output .= '<span class="text-muted">Waiting: <strong>' . $days_waiting . ' days</strong></span>';
         }
+
         if ($orientation_date) {
           $output .= '<br><span class="text-success small">✓ Oriented: ' . date('M j', strtotime($orientation_date)) . '</span>';
-        } else {
-          $output .= '<br><span class="text-warning small">Orientation pending</span>';
+        }
+        elseif ($step === OnboardingFunnel::STEP_SCHEDULE) {
+          $output .= '<br><span class="text-warning small">Needs to book orientation</span>';
         }
         break;
 
       case 'engagement':
-        // Show badge progress
+        // Show badge progress.
         $output .= '<span class="text-muted">Badges: <strong>' . $badge_total . ' total</strong></span>';
         $output .= '<br><span class="small">' . $badge_window . ' in last 6mo</span>';
         if ($last_badge_ts) {
           $days_ago = floor(($now - $last_badge_ts) / 86400);
           $output .= '<br><span class="text-muted small">Last: ' . $days_ago . 'd ago</span>';
-        } else {
+        }
+        else {
           $output .= '<br><span class="text-danger small">No badges yet</span>';
         }
         break;
 
       case 'retention':
-        // Show last visit and absence
+        // Show last visit and absence.
         if ($last_visit_ts) {
           $days_absent = floor(($now - $last_visit_ts) / 86400);
           $last_visit_date = date('M j', $last_visit_ts);
 
           if ($days_absent > 60) {
             $color = 'danger';
-          } elseif ($days_absent > 30) {
+          }
+          elseif ($days_absent > 30) {
             $color = 'warning';
-          } else {
+          }
+          else {
             $color = 'success';
           }
 
           $output .= '<span class="text-' . $color . '">Absent: <strong>' . $days_absent . ' days</strong></span>';
           $output .= '<br><span class="small text-muted">Last visit: ' . $last_visit_date . '</span>';
           $output .= '<br><span class="small">Visits (30d): ' . $visit_count_30d . '</span>';
-        } else {
+        }
+        else {
           $output .= '<span class="text-muted">No recent visits</span>';
         }
         break;
 
       case 'recovery':
-        // Show payment issue urgency
-        // TODO: Add payment_failed_date when available
+        // Show payment issue urgency.
+        // @todo Add payment_failed_date when available.
         $output .= '<span class="text-danger"><strong>⚠️ URGENT</strong></span>';
         $output .= '<br><span class="small">Contact within 24-48h</span>';
         $output .= '<br><span class="small text-muted">Payment failed</span>';

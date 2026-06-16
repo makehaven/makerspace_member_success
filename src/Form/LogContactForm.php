@@ -63,7 +63,7 @@ class LogContactForm extends FormBase {
     EntityTypeManagerInterface $entity_type_manager,
     CiviCrmActivityLogger $activity_logger,
     OutreachService $outreach_service,
-    Connection $database
+    Connection $database,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->activityLogger = $activity_logger;
@@ -112,8 +112,8 @@ class LogContactForm extends FormBase {
       ->execute()
       ->fetchAssoc();
 
-    $stage        = $snapshot['stage'] ?? MemberSuccessLifecycle::STAGE_RECOVERY;
-    $risk_score   = (int) ($snapshot['risk_score'] ?? 0);
+    $stage         = $snapshot['stage'] ?? MemberSuccessLifecycle::STAGE_RECOVERY;
+    $risk_score    = (int) ($snapshot['risk_score'] ?? 0);
     $contact_count = (int) ($snapshot['contact_count'] ?? 0);
 
     $form_state->set('stage', $stage);
@@ -161,7 +161,7 @@ class LogContactForm extends FormBase {
       '#markup' => $this->buildHistoryMarkup($user->id()),
     ];
 
-    // Contact method
+    // Contact method.
     $form['contact_method'] = [
       '#type' => 'radios',
       '#title' => $this->t('Contact Method'),
@@ -194,7 +194,7 @@ class LogContactForm extends FormBase {
       '#suffix' => '</div>',
     ];
 
-    // Notes
+    // Notes.
     $form['notes'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Notes'),
@@ -233,7 +233,7 @@ class LogContactForm extends FormBase {
       ],
     ];
 
-    // Outreach exhausted override
+    // Outreach exhausted override.
     $form['mark_exhausted'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Mark as Outreach Exhausted'),
@@ -241,7 +241,7 @@ class LogContactForm extends FormBase {
       '#default_value' => FALSE,
     ];
 
-    // Log in CiviCRM checkbox
+    // Log in CiviCRM checkbox.
     $form['log_in_civicrm'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Create CiviCRM Activity'),
@@ -249,7 +249,7 @@ class LogContactForm extends FormBase {
       '#default_value' => TRUE,
     ];
 
-    // Actions
+    // Actions.
     $form['actions'] = ['#type' => 'actions'];
     $form['actions']['submit'] = [
       '#type' => 'submit',
@@ -516,11 +516,11 @@ class LogContactForm extends FormBase {
 
     $html .= '<table class="ms-history__table">';
     $html .= '<thead><tr>';
-    $html .= '<th class="col-date">'   . $this->t('Date')    . '</th>';
-    $html .= '<th class="col-method">' . $this->t('Method')  . '</th>';
-    $html .= '<th class="col-outcome">'. $this->t('Outcome') . '</th>';
-    $html .= '<th class="col-notes">'  . $this->t('Notes')   . '</th>';
-    $html .= '<th class="col-staff">'  . $this->t('Staff')   . '</th>';
+    $html .= '<th class="col-date">' . $this->t('Date') . '</th>';
+    $html .= '<th class="col-method">' . $this->t('Method') . '</th>';
+    $html .= '<th class="col-outcome">' . $this->t('Outcome') . '</th>';
+    $html .= '<th class="col-notes">' . $this->t('Notes') . '</th>';
+    $html .= '<th class="col-staff">' . $this->t('Staff') . '</th>';
     $html .= '</tr></thead><tbody>';
 
     // Pre-load staff display names for all unique staff UIDs.
@@ -540,11 +540,11 @@ class LogContactForm extends FormBase {
       $notes         = $row->notes ? htmlspecialchars(mb_strimwidth($row->notes, 0, 80, '…')) : '<span style="color:#bbb">—</span>';
 
       $html .= '<tr>';
-      $html .= '<td class="col-date">'   . htmlspecialchars($row->contact_date) . '</td>';
-      $html .= '<td class="col-method">' . htmlspecialchars($method_label)      . '</td>';
-      $html .= '<td class="col-outcome">'. htmlspecialchars($outcome_label)     . '</td>';
-      $html .= '<td class="col-notes">'  . $notes                               . '</td>';
-      $html .= '<td class="col-staff">'  . htmlspecialchars((string) $staff_name) . '</td>';
+      $html .= '<td class="col-date">' . htmlspecialchars($row->contact_date) . '</td>';
+      $html .= '<td class="col-method">' . htmlspecialchars($method_label) . '</td>';
+      $html .= '<td class="col-outcome">' . htmlspecialchars($outcome_label) . '</td>';
+      $html .= '<td class="col-notes">' . $notes . '</td>';
+      $html .= '<td class="col-staff">' . htmlspecialchars((string) $staff_name) . '</td>';
       $html .= '</tr>';
     }
 

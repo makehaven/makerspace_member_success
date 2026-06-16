@@ -1,0 +1,86 @@
+/**
+ * Member-facing onboarding progress timeline.
+ *
+ * Rendered by OnboardingProgressBlock. Uses MakeHaven brand tokens with a
+ * hardcoded fallback so it still reads correctly if the token file is absent.
+ */
+
+.mh-onboarding-progress {
+  border: 1px solid var(--mh-color-brand-primary, #8b1919);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1.5rem;
+  background: #fff;
+}
+
+.mh-onboarding-progress__heading {
+  margin: 0 0 0.25rem;
+  color: var(--mh-color-brand-primary, #8b1919);
+}
+
+.mh-onboarding-progress__reminder {
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.mh-onboarding-progress__steps {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.mh-onboarding-step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.mh-onboarding-step:last-child {
+  border-bottom: 0;
+}
+
+.mh-onboarding-step__icon {
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  line-height: 1.5rem;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: #e9e9e9;
+  color: #888;
+}
+
+/* Completed steps: brand-filled check. */
+.mh-onboarding-step--done .mh-onboarding-step__icon {
+  background: var(--mh-color-brand-primary, #8b1919);
+  color: #fff;
+}
+
+.mh-onboarding-step--done .mh-onboarding-step__label {
+  color: #666;
+  text-decoration: line-through;
+}
+
+/* Current step: emphasized, brand outline. */
+.mh-onboarding-step--current .mh-onboarding-step__icon {
+  background: #fff;
+  color: var(--mh-color-brand-primary, #8b1919);
+  border: 2px solid var(--mh-color-brand-primary, #8b1919);
+}
+
+.mh-onboarding-step--current .mh-onboarding-step__label {
+  font-weight: 700;
+}
+
+/* Upcoming steps: muted. */
+.mh-onboarding-step--todo .mh-onboarding-step__label {
+  color: #999;
+}
+
+.mh-onboarding-progress__resume.button {
+  display: inline-block;
+}

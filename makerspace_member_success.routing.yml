@@ -14,6 +14,23 @@ makerspace_member_success.dashboard:
   requirements:
     _permission: 'access makerspace member success queues'
 
+makerspace_member_success.lead_queue:
+  path: '/admin/makerspace/member-success/leads'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\OnboardingLeadQueueController::build'
+    _title: 'Unpaid Join Leads'
+  requirements:
+    _permission: 'access makerspace member success queues'
+
+makerspace_member_success.lead_dismiss:
+  path: '/admin/makerspace/member-success/leads/{lead}/dismiss'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\OnboardingLeadQueueController::dismiss'
+  requirements:
+    _permission: 'log makerspace member success contacts'
+    _csrf_token: 'TRUE'
+    lead: \d+
+
 makerspace_member_success.log_contact:
   path: '/admin/makerspace/member-success/log-contact/{user}'
   defaults:

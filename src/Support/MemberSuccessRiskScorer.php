@@ -94,25 +94,55 @@ final class MemberSuccessRiskScorer {
         }
       }
 
-      $door_badge_pending = ($data['door_badge_status'] ?? NULL) !== 'active';
-      $has_orientation_scheduled = !empty($data['orientation_scheduled']);
+      // Sub-step stall detection. Instead of a single "waiting N days" signal,
+      // flag the specific funnel step the member is stuck on (profile, safety
+      // training, or booking orientation) once they've been stalled past the
+      // configured grace window. Ops set this to 48 hours — most stalled
+      // members just fail to move forward on one step, and a two-week wait was
+      // far too late to intervene.
+      $stall_hours = (int) ($data['onboarding_stall_hours'] ?? 48);
+      $step = $data['onboarding_step'] ?? NULL;
+      $step_ts = (int) ($data['onboarding_step_ts'] ?? 0);
 
-      // Pipeline-health signal: the signup flow is supposed to prompt new
-      // members to book their orientation immediately. If a day has passed
-      // since signup and they still haven't scheduled one (and don't already
-      // have an active door badge), something in the pipeline broke and
-      // staff should investigate manually. Flag as actionable from day 1.
-      if ($door_badge_pending) {
-        if ($has_orientation_scheduled) {
-          // On track — no score, just surface the signal for transparency.
-          $reasons[] = 'orientation_scheduled_upcoming';
+      // Steps worth surfacing as a stall. 'account' is always done and
+      // 'involve' is a soft post-orientation nudge, so neither is flagged.
+      $actionable_steps = [
+        OnboardingFunnel::STEP_PROFILE,
+        OnboardingFunnel::STEP_VIDEO,
+        OnboardingFunnel::STEP_QUIZ,
+        OnboardingFunnel::STEP_SCHEDULE,
+      ];
+
+      if ($step && in_array($step, $actionable_steps, TRUE)) {
+        if ($step_ts) {
+          $hours = (int) floor(($now_ts - $step_ts) / 3600);
+          if ($hours >= $stall_hours) {
+            // Escalate the score the longer they sit on the same step.
+            if ($hours >= 24 * 14) {
+              $score += 30;
+              $suffix = '_stale';
+            }
+            elseif ($hours >= 24 * 7) {
+              $score += 25;
+              $suffix = '_aging';
+            }
+            else {
+              $score += 20;
+              $suffix = '';
+            }
+            $reasons[] = 'stuck_at_' . $step . $suffix;
+          }
         }
         elseif ($days_since_join >= 1) {
+          // No step timestamp (e.g. legacy/backfilled row) but clearly past the
+          // immediate signup window — still surface as actionable.
           $score += 20;
-          $reasons[] = 'orientation_not_scheduled';
+          $reasons[] = 'stuck_at_' . $step;
         }
-        // Under 1 day old with no orientation yet: still within the normal
-        // book-right-after-signup window.
+      }
+      elseif (($data['door_badge_status'] ?? NULL) !== 'active' && !empty($data['orientation_scheduled'])) {
+        // On track — orientation booked, just waiting for the day to arrive.
+        $reasons[] = 'orientation_scheduled_upcoming';
       }
 
       // Missing serial keeps a 14-day scheduling grace — someone might be

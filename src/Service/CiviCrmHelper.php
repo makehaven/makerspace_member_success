@@ -4,7 +4,6 @@ namespace Drupal\makerspace_member_success\Service;
 
 use Drupal\civicrm\Civicrm;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Psr\Log\LoggerInterface;
 
 /**
  * Helper service for CiviCRM interactions.
@@ -41,7 +40,7 @@ class CiviCrmHelper {
    */
   public function getMessageTemplates(): array {
     $templates = [];
-    
+
     if (!$this->civicrm) {
       return $templates;
     }

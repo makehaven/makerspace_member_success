@@ -36,7 +36,7 @@ class ChargebeeFollowupStatusSync {
   public function pullUserStatus(
     User $user,
     bool $dryRun = FALSE,
-    bool $overwrite = FALSE
+    bool $overwrite = FALSE,
   ): array {
     $result = [
       'uid' => (int) $user->id(),
@@ -145,7 +145,7 @@ class ChargebeeFollowupStatusSync {
     User $user,
     ?string $followupStatus,
     bool $force = FALSE,
-    bool $dryRun = FALSE
+    bool $dryRun = FALSE,
   ): array {
     $result = [
       'uid' => (int) $user->id(),
@@ -415,7 +415,7 @@ class ChargebeeFollowupStatusSync {
     string $auth,
     string $subscriptionId,
     string $fieldParam,
-    string $value
+    string $value,
   ): void {
     $encodedId = rawurlencode($subscriptionId);
     $form = [$fieldParam => $value];

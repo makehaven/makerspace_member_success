@@ -19,7 +19,7 @@ class MarkNoActionNeededForm extends ConfirmFormBase {
    * Constructs the form.
    */
   public function __construct(
-    protected FollowupStatusManager $followupStatusManager
+    protected FollowupStatusManager $followupStatusManager,
   ) {}
 
   /**
@@ -108,4 +108,3 @@ class MarkNoActionNeededForm extends ConfirmFormBase {
   }
 
 }
-

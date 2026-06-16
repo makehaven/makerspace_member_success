@@ -10,6 +10,7 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
+use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Psr\Log\LoggerInterface;
 use Drupal\civicrm\Civicrm;
 
@@ -53,7 +54,6 @@ class MemberSuccessSnapshotBuilder {
     // merge, so we do NOT do a bulk reset here. A bulk reset before the loop
     // would leave all members with is_latest=0 if the process crashes or times
     // out mid-run, causing queues to appear empty until the next full run.
-
     foreach ($uids as $uid) {
       $row = $this->buildSnapshotForUser($uid, $snapshot_date, $snapshot_type, $now_ts);
       $row['is_latest'] = 1;
@@ -108,6 +108,7 @@ class MemberSuccessSnapshotBuilder {
     $badge_watch_days = (int) ($config->get('badge_watch_days') ?? 30);
     $new_member_days = (int) ($config->get('new_member_days') ?? 180);
     $recency_days = (array) ($config->get('retention_recency_days') ?? [30, 60, 90]);
+    $orientation_quiz_nid = (int) ($config->get('orientation_quiz_nid') ?? 1);
 
     $profile = $this->loadProfileData($uid);
     $user_flags = $this->loadUserFlags($uid);
@@ -116,8 +117,9 @@ class MemberSuccessSnapshotBuilder {
     $visit_stats = $this->loadVisitStats($uid, $now_ts);
     $civi_data = $this->loadCiviCrmData($uid);
     $first_card_scan_date = $this->loadFirstCardScan($uid);
+    $quiz = $this->loadQuizPassed($uid, $orientation_quiz_nid);
 
-    // Load previous snapshot to preserve outreach tracking fields
+    // Load previous snapshot to preserve outreach tracking fields.
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
       ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts', 'payment_pause', 'pause_start_date', 'payment_failed', 'payment_failed_since'])
       ->condition('uid', $uid)
@@ -168,6 +170,17 @@ class MemberSuccessSnapshotBuilder {
       else {
         $stage = MemberSuccessLifecycle::STAGE_RETENTION;
       }
+    }
+
+    // Assemble onboarding funnel signals and resolve which step the member is
+    // stuck at. Only meaningful while in the onboarding stage; once the door
+    // badge is active the funnel reports complete.
+    $funnel_signals = self::assembleFunnelSignals($profile, $quiz, $door_badge, $serial_present, $civi_data['orientation_scheduled']);
+    $onboarding_step = NULL;
+    $onboarding_step_ts = NULL;
+    if ($stage === MemberSuccessLifecycle::STAGE_ONBOARDING) {
+      $onboarding_step = OnboardingFunnel::nextStepId($funnel_signals);
+      $onboarding_step_ts = OnboardingFunnel::currentStepSince($funnel_signals);
     }
 
     $tenure_bucket = NULL;
@@ -223,10 +236,13 @@ class MemberSuccessSnapshotBuilder {
       'join_date' => $profile['join_date'],
       'pause_start_date' => $pause_start_date,
       'orientation_scheduled' => $civi_data['orientation_scheduled'],
+      'onboarding_step' => $onboarding_step,
+      'onboarding_step_ts' => $onboarding_step_ts,
+      'onboarding_stall_hours' => (int) ($config->get('onboarding_stall_hours') ?? 48),
     ], $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
 
     // Detect stage transition - if stage changed, reset outreach tracking
-    // This ensures members appear in their new queue immediately
+    // This ensures members appear in their new queue immediately.
     $previous_stage = $previous['stage'] ?? NULL;
     $stage_changed = $previous_stage && $previous_stage !== $stage;
 
@@ -239,14 +255,14 @@ class MemberSuccessSnapshotBuilder {
         $this->recordAutomaticRecoverySuccess($uid, $snapshot_date, $now_ts);
       }
 
-      // Stage transition detected - clear sleep period and reset tracking
+      // Stage transition detected - clear sleep period and reset tracking.
       $this->logger->info('Stage transition detected for user @uid: @old_stage → @new_stage. Clearing sleep period.', [
         '@uid' => $uid,
         '@old_stage' => $previous_stage,
         '@new_stage' => $stage,
       ]);
 
-      // Reset outreach tracking for new stage
+      // Reset outreach tracking for new stage.
       $previous['last_outreach_ts'] = NULL;
       $previous['outreach_status'] = NULL;
       $previous['last_contact_date'] = NULL;
@@ -307,6 +323,8 @@ class MemberSuccessSnapshotBuilder {
       'orientation_date' => $door_badge['created'] ? date('Y-m-d', $door_badge['created']) : NULL,
       'orientation_scheduled_date' => $civi_data['orientation_scheduled'],
       'first_card_scan_date' => $first_card_scan_date,
+      'onboarding_step' => $onboarding_step,
+      'onboarding_step_ts' => $onboarding_step_ts,
       'door_badge_status' => $door_badge['status'],
       'serial_number_present' => $serial_present ? 1 : 0,
       'badge_count_total' => $badge_stats['count_total'],
@@ -397,8 +415,8 @@ class MemberSuccessSnapshotBuilder {
         $followup = NULL;
         if ($followup_field && isset($data[$followup_field])) {
           $followup = $data[$followup_field];
-          // Handle pseudo-constants/option labels if needed, 
-          // but usually APIv3 returns values. 
+          // Handle pseudo-constants/option labels if needed,
+          // but usually APIv3 returns values.
           // If we want labels, we might need another call or use APIv4.
         }
 
@@ -574,33 +592,144 @@ class MemberSuccessSnapshotBuilder {
     $query->addField('term', 'name', 'membership_type');
 
     $record = $query->execute()->fetchAssoc() ?: [];
+    // A real 'main' profile row exists (the member completed the profile step),
+    // as opposed to falling back to the user-created timestamp below.
+    $profile_present = !empty($record['profile_id']);
     $profile_created_ts = !empty($record['created']) ? (int) $record['created'] : NULL;
     $join_date = $record['join_date'] ?? NULL;
     if (empty($join_date) && !empty($record['created'])) {
       $join_date = date('Y-m-d', (int) $record['created']);
     }
-    if (empty($join_date)) {
-      $user_created = $this->database->select('users_field_data', 'u')
-        ->fields('u', ['created'])
-        ->condition('u.uid', $uid)
-        ->range(0, 1)
-        ->execute()
-        ->fetchField();
-      if (!empty($user_created)) {
-        $join_date = date('Y-m-d', (int) $user_created);
-        if ($profile_created_ts === NULL) {
-          $profile_created_ts = (int) $user_created;
-        }
+
+    // Account creation timestamp = the /user/register step, which only happens
+    // after Chargebee payment, so it is the funnel's "paid" anchor.
+    $account_ts = $this->database->select('users_field_data', 'u')
+      ->fields('u', ['created'])
+      ->condition('u.uid', $uid)
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+    $account_ts = !empty($account_ts) ? (int) $account_ts : NULL;
+
+    if (empty($join_date) && $account_ts) {
+      $join_date = date('Y-m-d', $account_ts);
+      if ($profile_created_ts === NULL) {
+        $profile_created_ts = $account_ts;
       }
     }
 
     return [
       'join_date' => $join_date,
       'profile_created_ts' => $profile_created_ts,
+      'profile_present' => $profile_present,
+      'account_ts' => $account_ts,
       'serial_present' => !empty($record['profile_serial']),
       'payment_status' => $record['payment_status'] ?? NULL,
       'membership_type' => $record['membership_type'] ?? NULL,
     ];
+  }
+
+  /**
+   * Loads safety-quiz pass status for a member.
+   *
+   * "Passed" means an evaluated result at or above the quiz's own pass_rate, so
+   * this stays correct if the threshold is ever lowered from 100%.
+   *
+   * @param int $uid
+   *   User id.
+   * @param int $quiz_qid
+   *   The orientation safety quiz id.
+   *
+   * @return array
+   *   ['passed' => bool, 'ts' => int|null] where ts is when they passed.
+   */
+  protected function loadQuizPassed(int $uid, int $quiz_qid): array {
+    $query = $this->database->select('quiz_result', 'r');
+    $query->addField('r', 'changed');
+    $query->innerJoin('quiz', 'q', 'q.qid = r.qid');
+    $query->where('r.score >= q.pass_rate');
+    $query->condition('r.uid', $uid);
+    $query->condition('r.qid', $quiz_qid);
+    $query->condition('r.is_evaluated', 1);
+    $query->orderBy('r.changed', 'ASC');
+    $query->range(0, 1);
+    $changed = $query->execute()->fetchField();
+
+    return [
+      'passed' => $changed !== FALSE && $changed !== NULL,
+      'ts' => ($changed !== FALSE && $changed !== NULL) ? (int) $changed : NULL,
+    ];
+  }
+
+  /**
+   * Builds the OnboardingFunnel signal array from loaded member data.
+   *
+   * Shared by the daily snapshot build and the live member-facing progress
+   * block so both compute the funnel identically.
+   *
+   * @param array $profile
+   *   Result of loadProfileData().
+   * @param array $quiz
+   *   Result of loadQuizPassed().
+   * @param array $door_badge
+   *   Result of loadDoorBadgeStatus().
+   * @param bool $serial_present
+   *   Whether a card serial number is recorded.
+   * @param string|null $orientation_scheduled_date
+   *   YYYY-MM-DD of an upcoming orientation, or NULL.
+   *
+   * @return array
+   *   Signal array consumable by OnboardingFunnel.
+   */
+  protected static function assembleFunnelSignals(array $profile, array $quiz, array $door_badge, bool $serial_present, ?string $orientation_scheduled_date): array {
+    $orientation_scheduled = !empty($orientation_scheduled_date);
+    return [
+      'has_account' => TRUE,
+      'account_ts' => $profile['account_ts'] ?? NULL,
+      'profile_present' => !empty($profile['profile_present']),
+      'profile_ts' => $profile['profile_created_ts'] ?? NULL,
+      'quiz_passed' => !empty($quiz['passed']),
+      'quiz_ts' => $quiz['ts'] ?? NULL,
+      'orientation_scheduled' => $orientation_scheduled,
+      'schedule_ts' => $orientation_scheduled ? strtotime($orientation_scheduled_date . ' 00:00:00') : NULL,
+      'door_badge_active' => ($door_badge['status'] ?? NULL) === 'active' && $serial_present,
+    ];
+  }
+
+  /**
+   * Loads live onboarding funnel signals for a single member.
+   *
+   * Used by the member-facing progress timeline so the bar reflects the
+   * member's real-time state (just-saved profile, just-passed quiz) rather than
+   * waiting for the next daily snapshot. Uses fast DB lookups only; the
+   * orientation-booked signal is read from the latest snapshot to avoid a live
+   * CiviCRM call on every onboarding page load.
+   *
+   * @param int $uid
+   *   User id.
+   *
+   * @return array
+   *   Signal array consumable by OnboardingFunnel.
+   */
+  public function loadOnboardingSignals(int $uid): array {
+    $config = $this->configFactory->get('makerspace_member_success.settings');
+    $door_badge_tid = (int) ($config->get('door_badge_tid') ?? 1519);
+    $orientation_quiz_nid = (int) ($config->get('orientation_quiz_nid') ?? 1);
+
+    $profile = $this->loadProfileData($uid);
+    $door_badge = $this->loadDoorBadgeStatus($uid, $door_badge_tid);
+    $quiz = $this->loadQuizPassed($uid, $orientation_quiz_nid);
+    $serial_present = $profile['serial_present'] || $this->loadUserFlags($uid)['serial_present'];
+
+    $orientation_date = $this->database->select('ms_member_success_snapshot', 'ms')
+      ->fields('ms', ['orientation_scheduled_date'])
+      ->condition('uid', $uid)
+      ->condition('is_latest', 1)
+      ->range(0, 1)
+      ->execute()
+      ->fetchField() ?: NULL;
+
+    return self::assembleFunnelSignals($profile, $quiz, $door_badge, $serial_present, $orientation_date);
   }
 
   /**

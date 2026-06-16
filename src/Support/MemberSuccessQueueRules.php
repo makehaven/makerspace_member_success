@@ -77,7 +77,7 @@ final class MemberSuccessQueueRules {
     ?string $next_followup_date,
     ?string $outreach_status,
     ?string $member_followup_status,
-    ?string $today = NULL
+    ?string $today = NULL,
   ): bool {
     return self::isFollowupDateVisible($next_followup_date, $today)
       && self::isStatusVisible($outreach_status)
@@ -106,7 +106,7 @@ final class MemberSuccessQueueRules {
   public static function shouldResetSuppressionOnStageChange(
     ?string $previous_stage,
     string $new_stage,
-    ?string $followup_status
+    ?string $followup_status,
   ): bool {
     return FALSE;
   }

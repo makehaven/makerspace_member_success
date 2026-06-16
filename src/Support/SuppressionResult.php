@@ -12,8 +12,7 @@ final class SuppressionResult {
    */
   public function __construct(
     public bool $allowed,
-    public ?string $reasonCode = NULL
+    public ?string $reasonCode = NULL,
   ) {}
 
 }
-

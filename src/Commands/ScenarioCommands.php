@@ -19,7 +19,7 @@ class ScenarioCommands extends DrushCommands {
   public function __construct(
     MemberSuccessScenarioSimulator $simulator,
     Connection $database,
-    EntityTypeManagerInterface $entity_type_manager
+    EntityTypeManagerInterface $entity_type_manager,
   ) {
     parent::__construct();
     $this->simulator = $simulator;
@@ -59,7 +59,8 @@ class ScenarioCommands extends DrushCommands {
         '@persona' => $personaName,
       ]));
       $this->status($uid);
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->logger()->error($e->getMessage());
     }
   }
@@ -79,7 +80,8 @@ class ScenarioCommands extends DrushCommands {
           '@uid' => $uid,
           '@persona' => $id,
         ]));
-      } catch (\Exception $e) {
+      }
+      catch (\Exception $e) {
         $this->logger()->error($id . ': ' . $e->getMessage());
       }
     }
@@ -104,7 +106,8 @@ class ScenarioCommands extends DrushCommands {
         '@days' => $days,
       ]));
       $this->status($uid);
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->logger()->error($e->getMessage());
     }
   }
@@ -132,7 +135,7 @@ class ScenarioCommands extends DrushCommands {
     }
 
     $this->io()->title("Status for User $uid");
-    
+
     $snap_rows = [];
     foreach ($snapshot as $k => $v) {
       if ($k === 'risk_reasons') {
@@ -158,7 +161,8 @@ class ScenarioCommands extends DrushCommands {
         $q_rows[] = [$q->id, $q->stage, $q->status, $q->recommended_channel, date('Y-m-d H:i', $q->scheduled_at)];
       }
       $this->io()->table(['ID', 'Stage', 'Status', 'Channel', 'Scheduled At'], $q_rows);
-    } else {
+    }
+    else {
       $this->io()->note('No outreach queue items found.');
     }
   }
@@ -186,7 +190,8 @@ class ScenarioCommands extends DrushCommands {
       $this->simulator->updateSnapshot($uid, $data);
       $this->logger()->success(dt('Updated snapshot for user @uid.', ['@uid' => $uid]));
       $this->status($uid);
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->logger()->error($e->getMessage());
     }
   }
@@ -223,7 +228,8 @@ class ScenarioCommands extends DrushCommands {
         '@uid' => $uid,
         '@value' => $value,
       ]));
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->logger()->error($e->getMessage());
     }
   }
@@ -254,7 +260,8 @@ class ScenarioCommands extends DrushCommands {
         '@outcome' => $outcome,
       ]));
       $this->status($uid);
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->logger()->error($e->getMessage());
     }
   }
@@ -267,7 +274,7 @@ class ScenarioCommands extends DrushCommands {
    */
   public function generateHistory(): void {
     $this->logger()->notice('Generating historical data for Jan/Feb 2026...');
-    
+
     // Create some users first if they don't exist, or just use existing ones.
     // For simplicity, we'll create 5 historical users.
     $uids = [];
@@ -295,4 +302,5 @@ class ScenarioCommands extends DrushCommands {
 
     $this->logger()->success('Historical data generated.');
   }
+
 }

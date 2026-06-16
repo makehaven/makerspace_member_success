@@ -4,6 +4,7 @@ namespace Drupal\Tests\makerspace_member_success\Unit;
 
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
+use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -89,7 +90,8 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
 
     $this->assertGreaterThanOrEqual(50, $score);
-    $this->assertContains('payment_failed', $reasons);
+    $payment_failed_reason = array_filter($reasons, static fn($r) => str_starts_with($r, 'payment_failed'));
+    $this->assertNotEmpty($payment_failed_reason, 'A payment_failed_* reason should be present.');
   }
 
   /**
@@ -148,10 +150,18 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
   }
 
   /**
-   * Base for an onboarding member with no door badge and no orientation
-   * scheduled — i.e., someone the signup pipeline failed to guide.
+   * Base for an onboarding member stalled at a given funnel step.
+   *
+   * @param int $now_ts
+   *   Current time.
+   * @param string $step
+   *   The onboarding step the member is stuck on (OnboardingFunnel::STEP_*).
+   * @param int $hours_on_step
+   *   Hours since they completed the previous step.
+   * @param int $days_since_join
+   *   Total membership age in days (drives the separate serial grace logic).
    */
-  private function onboardingNoOrientationBase(int $now_ts, int $days_since_join): array {
+  private function onboardingStalledBase(int $now_ts, string $step, int $hours_on_step, int $days_since_join): array {
     $join_ts = $now_ts - ($days_since_join * 86400);
     return [
       'stage' => MemberSuccessLifecycle::STAGE_ONBOARDING,
@@ -167,58 +177,71 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
       'join_date' => date('Y-m-d', $join_ts),
       'pause_start_date' => NULL,
       'orientation_scheduled' => NULL,
+      'onboarding_step' => $step,
+      'onboarding_step_ts' => $now_ts - ($hours_on_step * 3600),
     ];
   }
 
-  public function testFreshSignupUnderOneDayNoScore(): void {
-    // Someone who signed up an hour ago shouldn't be flagged yet; they may
-    // still be on the orientation scheduling page.
+  public function testFreshStepUnderStallThresholdNoScore(): void {
+    // Saved profile 12 hours ago, now on the video step — within the 48h grace,
+    // so not flagged yet.
     $now_ts = mktime(12, 0, 0, 6, 1, 2026);
-    $data = $this->onboardingNoOrientationBase($now_ts, 0);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_VIDEO, 12, 0);
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
     $this->assertSame(0, $score);
-    $this->assertNotContains('orientation_not_scheduled', $reasons);
+    $this->assertNotContains('stuck_at_video', $reasons);
   }
 
-  public function testNoOrientationAfterOneDayIsActionable(): void {
-    // Signed up yesterday, still no orientation on the calendar — pipeline
-    // issue, actionable immediately.
+  public function testPaidButNoProfileFlaggedAfter48h(): void {
+    // The exact gap ops called out: paid but never completed the profile.
+    // Stuck at the profile step for 3 days → Actionable.
     $now_ts = mktime(12, 0, 0, 6, 1, 2026);
-    $data = $this->onboardingNoOrientationBase($now_ts, 1);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_PROFILE, 72, 3);
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
     $this->assertSame(20, $score);
-    $this->assertContains('orientation_not_scheduled', $reasons);
-  }
-
-  public function testNoOrientationAt12DaysIsActionable(): void {
-    // This is Timothy Muckell's case: 12 days in, no orientation booked.
-    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
-    $data = $this->onboardingNoOrientationBase($now_ts, 12);
-    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
-    $this->assertSame(20, $score);
-    $this->assertContains('orientation_not_scheduled', $reasons);
+    $this->assertContains('stuck_at_profile', $reasons);
     $this->assertNotContains('missing_serial', $reasons, 'Still inside serial grace.');
   }
 
-  public function testNoOrientationAt30DaysCombinesWithMissingSerial(): void {
-    // Past the serial grace period as well → both signals should fire.
+  public function testStuckAtScheduleAfter48h(): void {
+    // Passed the quiz but never booked orientation, 3 days on the step.
     $now_ts = mktime(12, 0, 0, 6, 1, 2026);
-    $data = $this->onboardingNoOrientationBase($now_ts, 30);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_SCHEDULE, 72, 3);
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
-    $this->assertSame(30, $score);
-    $this->assertContains('orientation_not_scheduled', $reasons);
+    $this->assertSame(20, $score);
+    $this->assertContains('stuck_at_schedule', $reasons);
+  }
+
+  public function testStuckStepEscalatesWhenAging(): void {
+    // 8 days on the same step → aging escalation (+25).
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_QUIZ, 8 * 24, 8);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertSame(25, $score);
+    $this->assertContains('stuck_at_quiz_aging', $reasons);
+  }
+
+  public function testStuckStepEscalatesWhenStale(): void {
+    // 20 days on the same step → stale escalation (+30) plus serial signals.
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_PROFILE, 20 * 24, 20);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    // +30 stuck stale, +10 missing serial (past 14-day grace, under 60 days).
+    $this->assertSame(40, $score);
+    $this->assertContains('stuck_at_profile_stale', $reasons);
     $this->assertContains('missing_serial', $reasons);
   }
 
-  public function testOrientationScheduledSuppressesActionable(): void {
-    // Member on track — orientation booked, no risk even at day 12.
+  public function testOrientationScheduledIsOnTrack(): void {
+    // Member on track — orientation booked, so the funnel reports them past
+    // the actionable steps. No stuck-step score.
     $now_ts = mktime(12, 0, 0, 6, 1, 2026);
-    $data = $this->onboardingNoOrientationBase($now_ts, 12);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_INVOLVE, 72, 3);
     $data['orientation_scheduled'] = '2026-06-05';
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
     $this->assertSame(0, $score);
     $this->assertContains('orientation_scheduled_upcoming', $reasons);
-    $this->assertNotContains('orientation_not_scheduled', $reasons);
+    $this->assertNotContains('stuck_at_involve', $reasons);
   }
 
   /**

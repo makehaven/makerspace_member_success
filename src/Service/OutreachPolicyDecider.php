@@ -15,7 +15,7 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
    */
   public function __construct(
     protected ConfigFactoryInterface $configFactory,
-    protected OutreachSuppressionCheckerInterface $suppressionChecker
+    protected OutreachSuppressionCheckerInterface $suppressionChecker,
   ) {}
 
   /**
@@ -114,7 +114,7 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     string $stage,
     array $riskReasons,
     string $defaultTemplate,
-    array $overrideRules
+    array $overrideRules,
   ): string {
     $stage = strtolower(trim($stage));
     $best_score = -1;
@@ -161,7 +161,7 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     string $stage,
     string $reason,
     string $stagePattern,
-    string $reasonPattern
+    string $reasonPattern,
   ): int {
     if (!$this->matchPattern($stagePattern, $stage) || !$this->matchPattern($reasonPattern, $reason)) {
       return -1;

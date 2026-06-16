@@ -23,16 +23,16 @@ class RiskReasonsField extends FieldPluginBase {
    * {@inheritdoc}
    */
   public function render(ResultRow $values) {
-    // Get risk reasons and risk score
+    // Get risk reasons and risk score.
     $risk_reasons_raw = $values->ms_member_success_snapshot_risk_reasons ?? '';
     $risk_score = $values->ms_member_success_snapshot_risk_score ?? 0;
 
-    // If no risk, show nothing
+    // If no risk, show nothing.
     if ($risk_score < 20) {
       return '';
     }
 
-    // Unserialize risk reasons
+    // Unserialize risk reasons.
     $risk_reasons = [];
     if (!empty($risk_reasons_raw)) {
       $unserialized = @unserialize($risk_reasons_raw);
@@ -41,7 +41,7 @@ class RiskReasonsField extends FieldPluginBase {
       }
     }
 
-    // Map reasons to short codes
+    // Map reasons to short codes.
     $code_map = [
       'payment_issue' => 'PAY',
       'payment_failed' => 'PAY',
@@ -67,10 +67,10 @@ class RiskReasonsField extends FieldPluginBase {
       }
     }
 
-    // Build output with urgency indicator
+    // Build output with urgency indicator.
     $output = '';
 
-    // Add urgency indicator for critical members
+    // Add urgency indicator for critical members.
     if ($risk_score >= 50) {
       $output .= '<span class="badge bg-danger me-1" title="Critical - Immediate Action Required">🔴 ' . $risk_score . '</span>';
     }
@@ -78,7 +78,7 @@ class RiskReasonsField extends FieldPluginBase {
       $output .= '<span class="badge bg-warning text-dark me-1" title="Actionable">' . $risk_score . '</span>';
     }
 
-    // Add reason codes
+    // Add reason codes.
     if (!empty($codes)) {
       $output .= '<span class="text-muted small">' . implode(' + ', $codes) . '</span>';
     }

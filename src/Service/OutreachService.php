@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Service;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -39,7 +40,7 @@ class OutreachService {
     LoggerChannelFactoryInterface $logger_factory,
     CiviCrmActivityLogger $activity_logger,
     CiviFollowupGroupSync $followup_group_sync,
-    ChargebeeFollowupStatusSync $chargebee_followup_sync
+    ChargebeeFollowupStatusSync $chargebee_followup_sync,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
@@ -84,7 +85,7 @@ class OutreachService {
     bool $mark_exhausted,
     bool $log_in_civicrm,
     string $cancellation_reason = '',
-    ?int $existing_civicrm_activity_id = NULL
+    ?int $existing_civicrm_activity_id = NULL,
   ): array {
     $uid = (int) $user->id();
     $today = date('Y-m-d');
@@ -209,7 +210,7 @@ class OutreachService {
 
       // Queue views use tag-based caching; direct table writes must explicitly
       // invalidate the view config tag so updated queue visibility is immediate.
-      \Drupal\Core\Cache\Cache::invalidateTags(['config:views.view.member_success_queue']);
+      Cache::invalidateTags(['config:views.view.member_success_queue']);
 
       $this->logger->notice(
         'Outreach recorded for uid @uid: @method → @outcome (attempt #@count)',

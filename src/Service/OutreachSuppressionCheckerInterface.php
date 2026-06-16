@@ -15,4 +15,3 @@ interface OutreachSuppressionCheckerInterface {
   public function check(int $uid, string $channel, array $context = []): SuppressionResult;
 
 }
-

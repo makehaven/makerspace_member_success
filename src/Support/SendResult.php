@@ -14,8 +14,7 @@ final class SendResult {
     public bool $success,
     public ?string $providerMessageId = NULL,
     public ?string $failureCode = NULL,
-    public ?string $failureMessage = NULL
+    public ?string $failureMessage = NULL,
   ) {}
 
 }
-
