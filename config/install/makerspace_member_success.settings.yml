@@ -44,21 +44,22 @@ outreach_activity_types:
   - 'Phone Call'
   - 'SMS'
 template_onboarding: |
-  Subject: Getting Started at MakeHaven — next step: schedule your orientation
+  Subject: One step left at MakeHaven — {next_step}
 
   Hi {contact.first_name},
 
-  Welcome to MakeHaven! It looks like you still have a step or two to complete before you can start making.
+  You're almost a MakeHaven member — there's just one thing left before you can start making:
 
-  Here's where to pick up:
-  1. Complete your profile: {domain.base_url}/user/current/main
-  2. Watch the safety orientation video: {domain.base_url}/video
-  3. Take the safety quiz (look for the red button on that page)
-  4. Schedule your in-person orientation with staff: {domain.base_url}/facilitator/schedules
+  Next step — {next_step}:
+  {next_step_url}
 
-  The in-person orientation is a short walkthrough where you pick up your key card and get comfortable in the space. It takes about 15 minutes and staff are friendly — no pressure!
+  Once that's done, the rest is quick. Here's the whole path from signup to your key card:
+  1. Complete your member profile
+  2. Watch the safety orientation video
+  3. Pass the safety quiz (look for the red button at the bottom of the video)
+  4. Book your in-person orientation — a 15-minute walkthrough where you pick up your key card. Staff are friendly, no pressure!
 
-  If you have any questions, reply to this email and we will get back to you quickly.
+  Stuck, or have a question? Just reply to this email and we'll help you get unstuck.
 
   Looking forward to seeing you at the space!
 
@@ -120,13 +121,14 @@ template_recovery: |
   Christina Quinonez
   (203) 401-8815
   christina.quinonez@makehaven.org
-sms_template_onboarding: 'Hi {contact.first_name}! Your MakeHaven signup is incomplete. Log in at {domain.base_url}/user/login to finish and get your key! - Christina'
+sms_template_onboarding: 'Hi {contact.first_name}! One step left to finish joining MakeHaven — {next_step}: {next_step_url} Reply here if you get stuck! - Christina'
 sms_template_engagement: 'Hi {contact.first_name}! Ready to start making? Check facilitator schedules at {domain.base_url}/facilitator/schedules to get badged! - Christina'
 sms_template_retention: 'Hi {contact.first_name}! Your MakeHaven payment was unsuccessful. Update your card at {domain.base_url}/pay to keep your access active. - Christina'
 sms_template_recovery: 'Hi {contact.first_name}! We miss you at MakeHaven. If you''re ready to come back, reactivate here: {domain.base_url}/payment - Christina'
 email_template_overrides: []
 sms_template_overrides: []
 automation_enabled: false
+onboarding_auto_nudge_enabled: false
 automation_policy_version: 'v1'
 pause_all: false
 pause_email: false

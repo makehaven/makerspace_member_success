@@ -61,6 +61,16 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       }
     }
 
+    // Dedicated onboarding auto-nudge dark switch. When on, onboarding-stage
+    // candidates auto-approve independently of the global automation_enabled
+    // flag and the generic per-stage manual-approval gate, so the join-funnel
+    // recovery nudge can be enabled (and dry-run reviewed) on its own.
+    if ($status === 'queued'
+      && $stage === 'onboarding'
+      && (bool) $config->get('onboarding_auto_nudge_enabled')) {
+      $status = 'approved';
+    }
+
     if ($risk_score < $min_risk) {
       return $this->insertQueueRow($uid, $stage, $snapshot, $decision, 'suppressed', 'suppressed_below_threshold', $now);
     }
@@ -218,14 +228,16 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
   /**
    * {@inheritdoc}
    */
-  public function processApprovedItems(): int {
+  public function processApprovedItems(array $stages = []): int {
     $now = $this->time->getCurrentTime();
-    $rows = $this->database->select('ms_member_outreach_queue', 'q')
+    $query = $this->database->select('ms_member_outreach_queue', 'q')
       ->fields('q', ['id', 'uid', 'stage', 'recommended_channel', 'destination_email', 'destination_phone', 'consent_snapshot'])
       ->condition('status', 'approved')
-      ->condition('scheduled_at', $now, '<=')
-      ->execute()
-      ->fetchAll();
+      ->condition('scheduled_at', $now, '<=');
+    if (!empty($stages)) {
+      $query->condition('stage', $stages, 'IN');
+    }
+    $rows = $query->execute()->fetchAll();
 
     $processed = 0;
     foreach ($rows as $row) {

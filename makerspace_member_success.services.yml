@@ -117,6 +117,11 @@ services:
       - '@makerspace_member_success.outreach_service'
       - '@makerspace_member_success.outreach_suppression_checker'
 
+  makerspace_member_success.outreach_candidate_generator:
+    class: Drupal\makerspace_member_success\Service\OutreachCandidateGenerator
+    arguments:
+      - '@database'
+
   makerspace_member_success.outreach_message_builder:
     class: Drupal\makerspace_member_success\Service\OutreachMessageBuilder
     arguments:

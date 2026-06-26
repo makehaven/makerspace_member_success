@@ -8,6 +8,7 @@ use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
 use Drupal\makerspace_member_success\Service\FollowupStatusManager;
+use Drupal\makerspace_member_success\Service\OutreachCandidateGenerator;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\Tests\UnitTestCase;
@@ -138,6 +139,7 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
       $this->createMock(Connection::class),
       $queueService,
       $followupStatusManager ?? $this->createMock(FollowupStatusManager::class),
+      $this->createMock(OutreachCandidateGenerator::class),
       $account,
       $messenger
     ) extends OutreachQueueReviewForm {
@@ -145,10 +147,11 @@ class OutreachQueueReviewBulkActionsTest extends UnitTestCase {
         Connection $database,
         OutreachQueueServiceInterface $queueService,
         FollowupStatusManager $followupStatusManager,
+        OutreachCandidateGenerator $candidateGenerator,
         protected AccountInterface $account,
         protected MessengerInterface $testMessenger
       ) {
-        parent::__construct($database, $queueService, $followupStatusManager);
+        parent::__construct($database, $queueService, $followupStatusManager, $candidateGenerator);
       }
 
       protected function currentUser() {

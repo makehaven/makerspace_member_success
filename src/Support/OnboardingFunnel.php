@@ -173,6 +173,60 @@ final class OnboardingFunnel {
   }
 
   /**
+   * Resolves a "stuck_at_<step>" risk reason to its canonical funnel step.
+   *
+   * The risk scorer emits reasons like "stuck_at_video", "stuck_at_profile_aging"
+   * or "stuck_at_schedule_stale". This strips the prefix and the _aging/_stale
+   * severity suffix and returns the matching step (id, label, url) so outreach
+   * copy can name the exact next action without hardcoding step URLs.
+   *
+   * @param string $reason
+   *   A single risk reason string.
+   * @param int $uid
+   *   Member user id, used to build the profile-edit URL. 0 if unknown.
+   *
+   * @return array|null
+   *   The step array (id, label, url, …), or NULL if the reason isn't a
+   *   recognised stuck-at-step reason.
+   */
+  public static function stepFromStuckReason(string $reason, int $uid = 0): ?array {
+    $prefix = 'stuck_at_';
+    if (!str_starts_with($reason, $prefix)) {
+      return NULL;
+    }
+    $id = preg_replace('/_(aging|stale)$/', '', substr($reason, strlen($prefix)));
+    foreach (self::steps([], $uid) as $step) {
+      if ($step['id'] === $id) {
+        return $step;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Picks the first recognised stuck-at-step from a list of risk reasons.
+   *
+   * @param string[] $reasons
+   *   Risk reason strings.
+   * @param int $uid
+   *   Member user id.
+   *
+   * @return array|null
+   *   The matching step array, or NULL if none of the reasons name a step.
+   */
+  public static function stepFromRiskReasons(array $reasons, int $uid = 0): ?array {
+    foreach ($reasons as $reason) {
+      if (is_string($reason)) {
+        $step = self::stepFromStuckReason($reason, $uid);
+        if ($step !== NULL) {
+          return $step;
+        }
+      }
+    }
+    return NULL;
+  }
+
+  /**
    * Unix timestamp the member reached their current position in the funnel.
    *
    * This is the most recent timestamp among completed steps that carry one

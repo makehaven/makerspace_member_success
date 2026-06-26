@@ -150,6 +150,104 @@ class MemberSuccessCommands extends DrushCommands {
   }
 
   /**
+   * Previews the onboarding auto-nudge: who would be emailed, without sending.
+   *
+   * Runs the REAL candidate generation + OutreachQueueService::enqueueCandidate
+   * gates (risk threshold, max attempts, cooldown, consent, template presence)
+   * inside a database transaction that is always rolled back — so the verdicts
+   * exactly match what cron would do, but nothing is written and nothing is
+   * sent. Run before enabling onboarding_auto_nudge_enabled to confirm range.
+   *
+   * @command ms:nudge-preview
+   * @aliases ms-nudge-preview
+   */
+  public function nudgePreview(): void {
+    $config = \Drupal::config('makerspace_member_success.settings');
+    $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+    $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+    $database = \Drupal::database();
+
+    $enabled = (bool) $config->get('onboarding_auto_nudge_enabled');
+    $template = $config->get('template_onboarding');
+
+    $this->io()->note(sprintf(
+      'Auto-nudge is currently %s. Thresholds: min_risk=%d, max_attempts=%d, cooldown=%d days. Onboarding email template: %s.',
+      $enabled ? 'ENABLED' : 'OFF (preview only)',
+      (int) ($config->get('stage_onboarding_min_risk_to_contact') ?? 20),
+      (int) ($config->get('stage_onboarding_max_attempts') ?? 3),
+      (int) ($config->get('stage_onboarding_cooldown_days') ?? 7),
+      $template ? 'set' : 'NOT SET — every nudge would be suppressed until set',
+    ));
+
+    $candidates = $generator->generate(['onboarding']);
+    if (empty($candidates)) {
+      $this->logger()->notice(dt('No onboarding members with risk score above 0 in the latest snapshot.'));
+      return;
+    }
+
+    // Enqueue every candidate through the real gates inside a transaction we
+    // always roll back. A "sendable" verdict means the row landed as queued or
+    // approved rather than suppressed — i.e. it would go out once the flag is on
+    // (the flag only flips queued -> approved; the suppression gates fire the
+    // same either way, so the count is accurate regardless of the flag).
+    $rows = [];
+    $would_send = 0;
+    $transaction = $database->startTransaction();
+    try {
+      foreach ($candidates as $c) {
+        $id = $queue->enqueueCandidate((int) $c['uid'], 'onboarding', $c);
+        $result = $database->select('ms_member_outreach_queue', 'q')
+          ->fields('q', ['status', 'suppression_reason_code'])
+          ->condition('id', $id)
+          ->execute()
+          ->fetchAssoc();
+
+        $status = (string) ($result['status'] ?? '');
+        $sendable = in_array($status, ['queued', 'approved'], TRUE);
+        if ($sendable) {
+          $would_send++;
+        }
+
+        $reasons = @unserialize((string) ($c['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]) ?: [];
+        $stuck = 'n/a';
+        foreach ((array) $reasons as $r) {
+          if (is_string($r) && str_starts_with($r, 'stuck_at_')) {
+            $stuck = $r;
+            break;
+          }
+        }
+
+        $verdict = $sendable
+          ? 'WOULD SEND'
+          : ('skip: ' . str_replace(['suppressed_', '_'], ['', ' '], (string) ($result['suppression_reason_code'] ?? $status)));
+
+        $rows[] = [
+          (string) $c['uid'],
+          (string) ($c['email'] ?? ''),
+          (string) $c['risk_score'],
+          $stuck,
+          (string) $c['contact_count'],
+          (string) ($c['last_contact_date'] ?? '—') ?: '—',
+          $verdict,
+        ];
+      }
+    }
+    finally {
+      // Always undo every enqueue — this command persists nothing.
+      $transaction->rollBack();
+    }
+
+    $this->io()->table(
+      ['UID', 'Email', 'Risk', 'Stuck at', 'Prior contacts', 'Last contact', 'Verdict'],
+      $rows,
+    );
+    $this->logger()->success(dt('@total onboarding candidate(s); @send would receive a nudge on the next cron run.', [
+      '@total' => count($rows),
+      '@send' => $would_send,
+    ]));
+  }
+
+  /**
    * Builds member success snapshots.
    *
    * @param string|null $uid

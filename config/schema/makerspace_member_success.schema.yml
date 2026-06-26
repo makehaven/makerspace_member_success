@@ -154,6 +154,9 @@ makerspace_member_success.settings:
     automation_enabled:
       type: boolean
       label: 'Whether automated outreach sending is enabled'
+    onboarding_auto_nudge_enabled:
+      type: boolean
+      label: 'Automatically email onboarding members stalled at a join-funnel step'
     automation_policy_version:
       type: string
       label: 'Automation policy version identifier'

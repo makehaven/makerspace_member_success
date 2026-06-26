@@ -131,6 +131,13 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    $form['thresholds']['onboarding_auto_nudge_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Automatically email members stalled in onboarding'),
+      '#description' => $this->t('When ON, cron emails paid members who have stalled at a join-funnel step past the stall threshold above, reusing the onboarding cooldown / max-attempts / suppression rules below. Requires the CiviCRM "onboarding stage" email template to be set. Leave OFF and run <code>drush ms-nudge-preview</code> first to review exactly who would be emailed. Default OFF.'),
+      '#default_value' => (bool) $config->get('onboarding_auto_nudge_enabled'),
+    ];
+
     $form['lead_followup'] = [
       '#type' => 'details',
       '#title' => $this->t('Unpaid lead follow-up'),
@@ -410,6 +417,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('badge_four_days', (int) $form_state->getValue('badge_four_days'))
       ->set('new_member_days', (int) $form_state->getValue('new_member_days'))
       ->set('onboarding_stall_hours', (int) $form_state->getValue('onboarding_stall_hours'))
+      ->set('onboarding_auto_nudge_enabled', (bool) $form_state->getValue('onboarding_auto_nudge_enabled'))
       ->set('orientation_quiz_nid', (int) $form_state->getValue('orientation_quiz_nid'))
       ->set('lead_followup_enabled', (bool) $form_state->getValue('lead_followup_enabled'))
       ->set('lead_followup_hours', (int) $form_state->getValue('lead_followup_hours'))

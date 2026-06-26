@@ -7,6 +7,7 @@ use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
 use Drupal\makerspace_member_success\Service\FollowupStatusManager;
+use Drupal\makerspace_member_success\Service\OutreachCandidateGenerator;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Drupal\Tests\UnitTestCase;
 
@@ -24,7 +25,8 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $this->createMock(Connection::class),
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(FollowupStatusManager::class)
+      $this->createMock(FollowupStatusManager::class),
+      $this->createMock(OutreachCandidateGenerator::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);
@@ -52,7 +54,8 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $this->createMock(Connection::class),
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(FollowupStatusManager::class)
+      $this->createMock(FollowupStatusManager::class),
+      $this->createMock(OutreachCandidateGenerator::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);
@@ -90,7 +93,8 @@ class OutreachQueueReviewFormTest extends UnitTestCase {
     $form = new class(
       $database,
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(FollowupStatusManager::class)
+      $this->createMock(FollowupStatusManager::class),
+      $this->createMock(OutreachCandidateGenerator::class)
     ) extends OutreachQueueReviewForm {
       protected function t($string, array $args = [], array $options = []) {
         return strtr((string) $string, $args);

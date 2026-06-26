@@ -75,6 +75,31 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Onboarding lead scan failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // Onboarding auto-nudge: email paid members stalled at a join-funnel step.
+  // Reuses the existing candidate generator + outreach queue, so cooldown,
+  // max-attempts, and suppression are all enforced there. Off by default; the
+  // onboarding-only stage scoping keeps the blast radius to the join funnel.
+  try {
+    $nudge_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $nudge_config->get('onboarding_auto_nudge_enabled')) {
+      $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+      $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      $enqueued = 0;
+      foreach ($generator->generate(['onboarding']) as $candidate) {
+        $queue->enqueueCandidate((int) $candidate['uid'], 'onboarding', $candidate);
+        $enqueued++;
+      }
+      $sent = $queue->processApprovedItems(['onboarding']);
+      \Drupal::logger('makerspace_member_success')->notice(
+        'Onboarding auto-nudge: @enqueued candidates evaluated, @sent nudge(s) sent.',
+        ['@enqueued' => $enqueued, '@sent' => $sent],
+      );
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Onboarding auto-nudge failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   $config = \Drupal::config('makerspace_member_success.settings');
   if (!(bool) $config->get('chargebee_followup_reconcile_on_cron')) {
     return;

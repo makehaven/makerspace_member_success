@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\makerspace_member_success\Support\PreparedMessage;
 
 /**
@@ -50,7 +51,12 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     $template_content = $this->resolveTemplateContent($template_id, $channel);
 
     // Build token substitution map.
-    $tokens = $this->buildTokens($uid, (string) ($row['stage'] ?? ''), (int) ($row['risk_score'] ?? 0));
+    $tokens = $this->buildTokens(
+      $uid,
+      (string) ($row['stage'] ?? ''),
+      (int) ($row['risk_score'] ?? 0),
+      $row['risk_reasons'] ?? NULL,
+    );
 
     // Apply token substitution.
     $template_content = $this->replaceTokens($template_content, $tokens);
@@ -93,8 +99,18 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
 
   /**
    * Builds a token map for a member.
+   *
+   * @param int $uid
+   *   Member user id.
+   * @param string $stage
+   *   Lifecycle stage.
+   * @param int $riskScore
+   *   Risk score.
+   * @param mixed $riskReasonsRaw
+   *   Serialized/array risk reasons from the queue row, used to derive the
+   *   stage-aware {next_step} / {next_step_url} tokens for onboarding nudges.
    */
-  protected function buildTokens(int $uid, string $stage, int $riskScore): array {
+  protected function buildTokens(int $uid, string $stage, int $riskScore, mixed $riskReasonsRaw = NULL): array {
     $tokens = [
       'uid' => $uid,
       'stage' => $stage,
@@ -153,7 +169,46 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     }
     $tokens['domain.base_url'] = $base_url;
 
+    // Stage-aware "next step" tokens for onboarding nudges. Derived from the
+    // member's stuck-at-step risk reason and the canonical OnboardingFunnel
+    // step (single source of truth for label + URL, so copy never drifts).
+    // Falls back to a generic resume action when no step-specific reason is
+    // present (e.g. missing-serial), so the template still reads naturally.
+    $next_label = 'finish setting up your membership';
+    $next_url = $base_url . '/user';
+    $reasons = $this->decodeRiskReasons($riskReasonsRaw);
+    $step = OnboardingFunnel::stepFromRiskReasons($reasons, $uid);
+    if ($step !== NULL) {
+      $next_label = lcfirst((string) $step['label']);
+      $next_url = $base_url . $step['url'];
+    }
+    $tokens['next_step'] = $next_label;
+    $tokens['next_step_url'] = $next_url;
+
     return $tokens;
+  }
+
+  /**
+   * Decodes risk reasons (possibly single- or double-serialized) to an array.
+   */
+  protected function decodeRiskReasons(mixed $raw): array {
+    if (is_array($raw)) {
+      return $raw;
+    }
+    if (!is_string($raw) || trim($raw) === '') {
+      return [];
+    }
+    $parsed = @unserialize($raw, ['allowed_classes' => FALSE]);
+    if (is_array($parsed)) {
+      return $parsed;
+    }
+    if (is_string($parsed) && $parsed !== '') {
+      $nested = @unserialize($parsed, ['allowed_classes' => FALSE]);
+      if (is_array($nested)) {
+        return $nested;
+      }
+    }
+    return [];
   }
 
   /**

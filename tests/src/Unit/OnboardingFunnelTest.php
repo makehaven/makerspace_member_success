@@ -125,4 +125,43 @@ class OnboardingFunnelTest extends UnitTestCase {
     $this->assertSame(0, OnboardingFunnel::hoursStalled($signals, 1_000_000));
   }
 
+  /**
+   * A "stuck_at_<step>" reason resolves to the canonical step (label + URL).
+   */
+  public function testStepFromStuckReason(): void {
+    $video = OnboardingFunnel::stepFromStuckReason('stuck_at_video', 7);
+    $this->assertSame('video', $video['id']);
+    $this->assertSame('Watch the safety video', $video['label']);
+    $this->assertSame('/video', $video['url']);
+
+    // Profile step builds a uid-scoped URL.
+    $profile = OnboardingFunnel::stepFromStuckReason('stuck_at_profile', 42);
+    $this->assertSame('/user/42/main', $profile['url']);
+  }
+
+  /**
+   * The _aging / _stale severity suffixes are stripped before matching.
+   */
+  public function testStepFromStuckReasonStripsSeveritySuffix(): void {
+    $this->assertSame('schedule', OnboardingFunnel::stepFromStuckReason('stuck_at_schedule_aging')['id']);
+    $this->assertSame('video', OnboardingFunnel::stepFromStuckReason('stuck_at_video_stale')['id']);
+  }
+
+  /**
+   * Non-step reasons return NULL so callers can fall back gracefully.
+   */
+  public function testStepFromStuckReasonRejectsUnrelated(): void {
+    $this->assertNull(OnboardingFunnel::stepFromStuckReason('missing_serial'));
+    $this->assertNull(OnboardingFunnel::stepFromStuckReason('payment_failed'));
+  }
+
+  /**
+   * The first recognised stuck-at-step in a reason list wins.
+   */
+  public function testStepFromRiskReasonsPicksFirstMatch(): void {
+    $reasons = ['missing_serial', 'stuck_at_quiz_aging', 'stuck_at_video'];
+    $this->assertSame('quiz', OnboardingFunnel::stepFromRiskReasons($reasons)['id']);
+    $this->assertNull(OnboardingFunnel::stepFromRiskReasons(['missing_serial', 'foo']));
+  }
+
 }
