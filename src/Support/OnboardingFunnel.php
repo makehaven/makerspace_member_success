@@ -74,7 +74,11 @@ final class OnboardingFunnel {
     $schedule_done = $door_active || !empty($signals['orientation_scheduled']);
     $involve_done = $door_active || !empty($signals['engaged']);
 
-    $profile_url = $uid > 0 ? '/user/' . $uid . '/main' : '/user';
+    // Carry nextpage=video so profile_redirect advances the member to the
+    // orientation video after saving — without it the save is a dead end
+    // ("no further redirection was needed"), which stranded a member who
+    // re-entered the profile via this block's Resume link (2026-07-11).
+    $profile_url = $uid > 0 ? '/user/' . $uid . '/main?nextpage=video' : '/user';
 
     $steps = [
       [
@@ -112,7 +116,10 @@ final class OnboardingFunnel {
         'label' => 'Book your in-person orientation',
         'done' => $schedule_done,
         'ts' => $signals['schedule_ts'] ?? NULL,
-        'url' => '/facilitator/schedules',
+        // /schedule is the key-pickup/orientation booking page used by the
+        // rest of the join flow; /facilitator/schedules is the generic tool
+        // checkout grid and confused new members.
+        'url' => '/schedule',
       ],
       [
         'id' => self::STEP_INVOLVE,
