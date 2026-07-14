@@ -86,7 +86,16 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $cache = [
       // Per-user, and invalidate when the member's badges/profile change.
       'contexts' => ['user'],
-      'tags' => ['user:' . $uid, 'node_list:badge_request'],
+      // profile_list / quiz_result_list: the profile and quiz-pass signals
+      // live on their own entities, whose saves don't touch user:{uid} — a
+      // member who saved their profile kept seeing "Complete your member
+      // profile" for up to an hour without these (found 2026-07-14).
+      'tags' => [
+        'user:' . $uid,
+        'node_list:badge_request',
+        'profile_list',
+        'quiz_result_list',
+      ],
       // Time-sensitive copy ("stuck for N hours") — refresh hourly.
       'max-age' => 3600,
     ];
