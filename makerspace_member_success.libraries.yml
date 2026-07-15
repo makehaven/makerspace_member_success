@@ -21,3 +21,11 @@ onboarding_progress:
       css/onboarding-progress.css: {}
   dependencies:
     - core/drupal
+
+onboarding_focus:
+  version: 1.x
+  css:
+    theme:
+      css/onboarding-focus.css: {}
+  dependencies:
+    - core/drupal

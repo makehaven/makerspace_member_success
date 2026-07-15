@@ -12,16 +12,22 @@ use Drupal\Core\Url;
 use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
 use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Data-driven new-member onboarding progress timeline.
+ * Data-driven new-member onboarding progress bar.
  *
- * Replaces the static "Member Registration Path Progress Bar" block. Instead of
- * highlighting the current page via CSS, it reads the member's real completion
- * state (profile saved, quiz passed, orientation booked) and shows each step as
- * done / current / to-do, a "you're not done yet" reminder, and a single
- * Resume button pointing at the next incomplete step — so a member who got
- * called away mid-signup can pick up exactly where they left off.
+ * Renders the funnel as a horizontal left-to-right stepper (the layout of the
+ * retired static "Member Registration Path Progress Bar" block, which staff
+ * preferred), driven by the member's real completion state (profile saved,
+ * quiz passed, orientation booked) instead of the current page.
+ *
+ * Also shown to anonymous visitors on the join/register pages so the bar is
+ * visible from the very start of the flow; their step state is derived from
+ * the page they are on (no signals exist yet).
+ *
+ * Copy note: the heading avoids "you're almost a maker" phrasing — staff
+ * feedback (2026-07-14) was that people are makers before they join.
  *
  * Returns empty (renders nothing) once onboarding is complete.
  *
@@ -39,6 +45,7 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     mixed $plugin_definition,
     protected readonly AccountInterface $currentUser,
     protected readonly MemberSuccessSnapshotBuilder $snapshotBuilder,
+    protected readonly RequestStack $requestStack,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -53,20 +60,25 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       $plugin_definition,
       $container->get('current_user'),
       $container->get('makerspace_member_success.snapshot_builder'),
+      $container->get('request_stack'),
     );
   }
 
   /**
    * {@inheritdoc}
    *
-   * Shown to any authenticated member still working through onboarding. The
-   * build() method hides it once onboarding is complete.
+   * Anonymous visitors are allowed so the bar shows from the start of the
+   * join flow (block placement limits it to funnel pages). Authenticated
+   * users must be members or pending members; build() hides the bar once
+   * onboarding is complete.
    */
   protected function blockAccess(AccountInterface $account): AccessResult {
+    if ($account->isAnonymous()) {
+      return AccessResult::allowed()->addCacheContexts(['user.roles:anonymous']);
+    }
     $onboarding_roles = ['member', 'member_pending_approval'];
     return AccessResult::allowedIf(
-      $account->isAuthenticated()
-      && array_intersect($onboarding_roles, $account->getRoles()) !== [],
+      array_intersect($onboarding_roles, $account->getRoles()) !== [],
     )->addCacheContexts(['user.roles']);
   }
 
@@ -75,59 +87,109 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
    */
   public function build(): array {
     $uid = (int) $this->currentUser->id();
-    if ($uid <= 0) {
-      return [];
-    }
+    $is_authenticated = $uid > 0;
+    $path = $this->requestStack->getCurrentRequest()?->getPathInfo() ?? '/';
 
-    $signals = $this->snapshotBuilder->loadOnboardingSignals($uid);
+    $signals = $is_authenticated ? $this->snapshotBuilder->loadOnboardingSignals($uid) : [];
     $steps = OnboardingFunnel::steps($signals, $uid);
-    $next = OnboardingFunnel::nextStep($signals, $uid);
+    $next = $is_authenticated ? OnboardingFunnel::nextStep($signals, $uid) : NULL;
 
     $cache = [
-      // Per-user, and invalidate when the member's badges/profile change.
-      'contexts' => ['user'],
+      // Per-user; url.path because the current page decides whether the
+      // continue link is redundant (and, for anonymous, the step state).
+      'contexts' => ['user', 'url.path'],
       // profile_list / quiz_result_list: the profile and quiz-pass signals
       // live on their own entities, whose saves don't touch user:{uid} — a
       // member who saved their profile kept seeing "Complete your member
       // profile" for up to an hour without these (found 2026-07-14).
-      'tags' => [
-        'user:' . $uid,
-        'node_list:badge_request',
-        'profile_list',
-        'quiz_result_list',
-      ],
-      // Time-sensitive copy ("stuck for N hours") — refresh hourly.
+      'tags' => array_merge(
+        $is_authenticated ? ['user:' . $uid] : [],
+        ['node_list:badge_request', 'profile_list', 'quiz_result_list'],
+      ),
       'max-age' => 3600,
     ];
 
     // Onboarding complete — render nothing.
-    if ($next === NULL) {
+    if ($is_authenticated && $next === NULL) {
       return ['#cache' => $cache];
     }
 
-    $items = [];
+    // Presentation-only first step covering the join form + Chargebee payment,
+    // which precede account creation. Anyone authenticated in this flow has
+    // already paid; anonymous visitors are placed on it (or past it, once they
+    // reach the register page).
+    $on_register = $this->pathMatches($path, ['/user/register']);
+    $display_steps = [
+      [
+        'id' => 'join',
+        'label' => (string) $this->t('Join & pay'),
+        'state' => ($is_authenticated || $on_register) ? 'done' : 'current',
+        'url' => '/join-makehaven',
+      ],
+    ];
     foreach ($steps as $step) {
-      $icon = match ($step['state']) {
-        'done' => '✓',
-        'current' => '→',
-        default => '',
-      };
+      if (!$is_authenticated) {
+        // No signals yet: everything after payment is upcoming, except the
+        // account step becomes current on the register page itself.
+        $step['state'] = ($on_register && $step['id'] === OnboardingFunnel::STEP_ACCOUNT) ? 'current' : 'todo';
+      }
+      $display_steps[] = $step;
+    }
+
+    $total = count($display_steps);
+    $current_position = 1;
+    $current_label = $display_steps[0]['label'];
+    foreach (array_values($display_steps) as $i => $step) {
+      if ($step['state'] === 'current') {
+        $current_position = $i + 1;
+        $current_label = $step['label'];
+        break;
+      }
+    }
+
+    $items = [];
+    foreach (array_values($display_steps) as $i => $step) {
+      $dot_text = $step['state'] === 'done' ? '✓' : (string) ($i + 1);
+      $dot = [
+        '#type' => 'html_tag',
+        '#tag' => 'span',
+        '#attributes' => [
+          'class' => ['mh-setup-step__dot'],
+          'aria-hidden' => 'true',
+        ],
+        '#value' => $dot_text,
+      ];
+      $label = [
+        '#type' => 'html_tag',
+        '#tag' => 'span',
+        '#attributes' => ['class' => ['mh-setup-step__label']],
+        '#value' => $step['label'],
+      ];
+
+      // Only the current step is clickable — earlier steps are finished and
+      // later ones aren't actionable yet; keeping them inert keeps the
+      // funnel focused.
+      if ($step['state'] === 'current' && $is_authenticated) {
+        $content = [
+          '#type' => 'link',
+          '#title' => ['dot' => $dot, 'label' => $label],
+          '#url' => Url::fromUserInput($step['url']),
+          '#attributes' => ['class' => ['mh-setup-step__link']],
+        ];
+      }
+      else {
+        $content = ['dot' => $dot, 'label' => $label];
+      }
+
+      $wrapper_attributes = [
+        'class' => ['mh-setup-step', 'mh-setup-step--' . $step['state']],
+      ];
+      if ($step['state'] === 'current') {
+        $wrapper_attributes['aria-current'] = 'step';
+      }
       $items[] = [
-        '#wrapper_attributes' => [
-          'class' => ['mh-onboarding-step', 'mh-onboarding-step--' . $step['state']],
-        ],
-        'icon' => [
-          '#type' => 'html_tag',
-          '#tag' => 'span',
-          '#attributes' => ['class' => ['mh-onboarding-step__icon']],
-          '#value' => $icon,
-        ],
-        'label' => [
-          '#type' => 'html_tag',
-          '#tag' => 'span',
-          '#attributes' => ['class' => ['mh-onboarding-step__label']],
-          '#value' => $step['label'],
-        ],
+        '#wrapper_attributes' => $wrapper_attributes,
+        'content' => $content,
       ];
     }
 
@@ -135,40 +197,74 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       '#cache' => $cache,
       '#attached' => ['library' => ['makerspace_member_success/onboarding_progress']],
       '#type' => 'container',
-      '#attributes' => ['class' => ['mh-onboarding-progress']],
+      '#attributes' => [
+        'class' => ['mh-setup-bar'],
+        'role' => 'navigation',
+        'aria-label' => (string) $this->t('Member setup progress'),
+      ],
     ];
 
-    $build['heading'] = [
-      '#type' => 'html_tag',
-      '#tag' => 'h3',
-      '#attributes' => ['class' => ['mh-onboarding-progress__heading']],
-      '#value' => $this->t("You're almost a maker — finish setting up"),
-    ];
-
-    $build['reminder'] = [
+    $build['status'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#attributes' => ['class' => ['mh-onboarding-progress__reminder']],
-      '#value' => $this->t("You're not done yet. Complete these steps to start using the space:"),
+      '#attributes' => ['class' => ['mh-setup-bar__status']],
+      '#value' => $this->t('Member setup — step @position of @total: <strong>@label</strong>', [
+        '@position' => $current_position,
+        '@total' => $total,
+        '@label' => $current_label,
+      ]),
     ];
 
     $build['steps'] = [
       '#theme' => 'item_list',
       '#list_type' => 'ol',
       '#items' => $items,
-      '#attributes' => ['class' => ['mh-onboarding-progress__steps']],
+      '#attributes' => ['class' => ['mh-setup-bar__steps']],
+      '#wrapper_attributes' => ['class' => ['mh-setup-bar__steps-wrapper']],
     ];
 
-    $build['resume'] = [
-      '#type' => 'link',
-      '#title' => $this->t('Resume: @step', ['@step' => $next['label']]),
-      '#url' => Url::fromUserInput($next['url']),
-      '#attributes' => [
-        'class' => ['button', 'button--primary', 'mh-onboarding-progress__resume'],
-      ],
-    ];
+    // A single continue link to the next incomplete step — shown only when
+    // the member is NOT already on that step's page (a "Resume: book your
+    // orientation" button on the booking page itself read as noise in the
+    // 2026-07-14 staff review).
+    if ($is_authenticated && $next !== NULL && !$this->onStepPage($path, $next)) {
+      $build['continue'] = [
+        '#type' => 'link',
+        '#title' => $this->t('Continue: @step', ['@step' => $next['label']]),
+        '#url' => Url::fromUserInput($next['url']),
+        '#attributes' => [
+          'class' => ['button', 'button--primary', 'mh-setup-bar__continue'],
+        ],
+      ];
+    }
 
     return $build;
+  }
+
+  /**
+   * Whether the given request path is one of this step's pages.
+   */
+  protected function onStepPage(string $path, array $step): bool {
+    $aliases = match ($step['id']) {
+      OnboardingFunnel::STEP_VIDEO => ['/video', '/orientation-video'],
+      OnboardingFunnel::STEP_QUIZ => ['/quiz/1'],
+      OnboardingFunnel::STEP_SCHEDULE => ['/schedule', '/key-pickup-and-site-safety-intro'],
+      OnboardingFunnel::STEP_INVOLVE => ['/involve', '/thank-you-joining-makehaven'],
+      default => [parse_url($step['url'], PHP_URL_PATH) ?: $step['url']],
+    };
+    return $this->pathMatches($path, $aliases);
+  }
+
+  /**
+   * Prefix-match a request path against a list of path aliases.
+   */
+  protected function pathMatches(string $path, array $aliases): bool {
+    foreach ($aliases as $alias) {
+      if ($path === $alias || str_starts_with($path, $alias . '/')) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
 }

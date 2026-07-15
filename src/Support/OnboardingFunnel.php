@@ -286,6 +286,48 @@ final class OnboardingFunnel {
   }
 
   /**
+   * Request-path prefixes of the member-facing funnel pages.
+   *
+   * Includes both alias variants where a page has more than one. The member
+   * profile form (/user/{uid}/main) is covered by isMemberFacingPath(), not
+   * listed here, because it embeds a user id.
+   *
+   * @return string[]
+   *   Path prefixes as requested by the browser (aliases, not internal
+   *   paths).
+   */
+  public static function memberPagePrefixes(): array {
+    return [
+      '/user/register',
+      '/video',
+      '/orientation-video',
+      '/quiz/1',
+      '/schedule',
+      '/key-pickup-and-site-safety-intro',
+      '/involve',
+      '/thank-you-joining-makehaven',
+    ];
+  }
+
+  /**
+   * Whether a request path is one of the member-facing funnel pages.
+   *
+   * @param string $path
+   *   Request path (Request::getPathInfo(), no query string).
+   */
+  public static function isMemberFacingPath(string $path): bool {
+    if (preg_match('#^/user/\d+/main(/|$)#', $path)) {
+      return TRUE;
+    }
+    foreach (self::memberPagePrefixes() as $prefix) {
+      if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
    * Short human label for a step machine name.
    *
    * Used by staff-facing views where only the stored step id is available.

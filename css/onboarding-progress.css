@@ -1,86 +1,147 @@
 /**
- * Member-facing onboarding progress timeline.
+ * Member-facing onboarding progress bar.
  *
- * Rendered by OnboardingProgressBlock. Uses MakeHaven brand tokens with a
- * hardcoded fallback so it still reads correctly if the token file is absent.
+ * Rendered by OnboardingProgressBlock as a horizontal left-to-right stepper
+ * (the layout staff preferred from the retired bs-wizard block). Uses
+ * MakeHaven brand tokens with hardcoded fallbacks so it still reads
+ * correctly if the token file is absent.
  */
 
-.mh-onboarding-progress {
-  border: 1px solid var(--mh-color-brand-primary, #8b1919);
-  border-radius: 8px;
-  padding: 1.25rem 1.5rem;
-  margin: 0 0 1.5rem;
-  background: #fff;
-}
-
-.mh-onboarding-progress__heading {
-  margin: 0 0 0.25rem;
-  color: var(--mh-color-brand-primary, #8b1919);
-}
-
-.mh-onboarding-progress__reminder {
-  margin: 0 0 1rem;
-  font-weight: 600;
-}
-
-.mh-onboarding-progress__steps {
-  list-style: none;
+.mh-setup-bar {
+  padding: 0.75rem 0 0.75rem;
   margin: 0 0 1.25rem;
-  padding: 0;
+  border-bottom: 1px solid var(--mh-color-border, #d9d9d9);
+  font-family: var(--mh-font-sans, inherit);
 }
 
-.mh-onboarding-step {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid #eee;
-}
-
-.mh-onboarding-step:last-child {
-  border-bottom: 0;
-}
-
-.mh-onboarding-step__icon {
-  flex: 0 0 1.5rem;
-  width: 1.5rem;
-  height: 1.5rem;
-  line-height: 1.5rem;
+.mh-setup-bar__status {
+  margin: 0 0 0.75rem;
   text-align: center;
+  font-size: 0.9rem;
+  color: var(--mh-color-neutral-600, #616161);
+}
+
+.mh-setup-bar__status strong {
+  color: var(--mh-color-neutral-900, #1e1f24);
+}
+
+.mh-setup-bar__steps-wrapper {
+  margin: 0;
+}
+
+.mh-setup-bar__steps {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.mh-setup-step {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+  text-align: center;
+  padding: 0 0.25rem;
+}
+
+/* Connector line between a step's dot and the previous step's dot. */
+.mh-setup-step::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: -50%;
+  width: 100%;
+  height: 4px;
+  background: var(--mh-color-neutral-200, #dcdcdc);
+  z-index: 0;
+}
+
+.mh-setup-step:first-child::before {
+  display: none;
+}
+
+/* The line leading INTO a completed or current step is "earned" progress. */
+.mh-setup-step--done::before,
+.mh-setup-step--current::before {
+  background: var(--mh-color-brand-primary, #8b1919);
+}
+
+.mh-setup-step__dot {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
+  background: var(--mh-color-surface, #fff);
+  border: 2px solid var(--mh-color-neutral-300, #c2c2c2);
+  color: var(--mh-color-neutral-500, #7c7c7c);
   font-size: 0.85rem;
   font-weight: 700;
-  background: #e9e9e9;
-  color: #888;
+  line-height: 1;
 }
 
-/* Completed steps: brand-filled check. */
-.mh-onboarding-step--done .mh-onboarding-step__icon {
+.mh-setup-step--done .mh-setup-step__dot {
   background: var(--mh-color-brand-primary, #8b1919);
+  border-color: var(--mh-color-brand-primary, #8b1919);
   color: #fff;
 }
 
-.mh-onboarding-step--done .mh-onboarding-step__label {
-  color: #666;
-  text-decoration: line-through;
-}
-
-/* Current step: emphasized, brand outline. */
-.mh-onboarding-step--current .mh-onboarding-step__icon {
-  background: #fff;
+.mh-setup-step--current .mh-setup-step__dot {
+  border-color: var(--mh-color-brand-primary, #8b1919);
   color: var(--mh-color-brand-primary, #8b1919);
-  border: 2px solid var(--mh-color-brand-primary, #8b1919);
+  box-shadow: 0 0 0 4px rgba(139, 25, 25, 0.15);
 }
 
-.mh-onboarding-step--current .mh-onboarding-step__label {
+.mh-setup-step__label {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--mh-color-neutral-500, #7c7c7c);
+}
+
+.mh-setup-step--done .mh-setup-step__label {
+  color: var(--mh-color-neutral-600, #616161);
+}
+
+.mh-setup-step--current .mh-setup-step__label {
+  color: var(--mh-color-neutral-900, #1e1f24);
   font-weight: 700;
 }
 
-/* Upcoming steps: muted. */
-.mh-onboarding-step--todo .mh-onboarding-step__label {
-  color: #999;
+.mh-setup-step__link {
+  display: block;
+  text-decoration: none;
 }
 
-.mh-onboarding-progress__resume.button {
-  display: inline-block;
+.mh-setup-step__link:hover .mh-setup-step__label {
+  text-decoration: underline;
+}
+
+.mh-setup-bar__continue.button {
+  display: table;
+  margin: 0.75rem auto 0;
+}
+
+/* Small screens: the status line above the bar carries the current step
+   label, so per-step labels are dropped and dots shrink. */
+@media (max-width: 640px) {
+  .mh-setup-step__label {
+    display: none;
+  }
+
+  .mh-setup-step__dot {
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+  }
+
+  .mh-setup-step::before {
+    top: 10px;
+  }
 }

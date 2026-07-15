@@ -9,6 +9,14 @@ services:
       - '@logger.factory'
       - '@civicrm'
 
+  makerspace_member_success.onboarding_quiz_redirect:
+    class: Drupal\makerspace_member_success\EventSubscriber\OnboardingQuizRedirectSubscriber
+    arguments:
+      - '@current_route_match'
+      - '@current_user'
+    tags:
+      - { name: event_subscriber }
+
   makerspace_member_success.onboarding_lead_tracker:
     class: Drupal\makerspace_member_success\Service\OnboardingLeadTracker
     arguments:

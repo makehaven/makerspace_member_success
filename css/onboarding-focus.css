@@ -1,0 +1,39 @@
+/**
+ * Onboarding focus mode.
+ *
+ * Applied (as body.mh-onboarding-focus) on member-facing funnel pages for
+ * members still completing onboarding. Strips navigation chrome so the page
+ * asks only for what the step needs — every menu item mid-signup is an exit
+ * ramp. The site logo and footer remain as the escape hatch.
+ *
+ * Selectors target the barrio_boostrap_5_makehaven_d11 front-end theme (the
+ * one members see) with a few generic fallbacks for the older themes.
+ */
+
+/* Primary menu (About / Programming / … / Donate), header search, and the
+   mobile/off-canvas togglers. */
+body.mh-onboarding-focus #CollapsingNavbar,
+body.mh-onboarding-focus .navbar-toggler,
+/* Secondary/top header bar (search box, log-in button). */
+body.mh-onboarding-focus #navbar-top,
+body.mh-onboarding-focus .navbar-top,
+/* Local task tabs (also emptied server-side; this catches cached markup). */
+body.mh-onboarding-focus .block-local-tasks-block,
+body.mh-onboarding-focus nav.tabs,
+/* Breadcrumb trail. */
+body.mh-onboarding-focus .region-breadcrumb,
+body.mh-onboarding-focus .breadcrumb,
+/* Sidebars (member menu / website menu blocks). */
+body.mh-onboarding-focus #sidebar_first,
+body.mh-onboarding-focus .sidebar_first,
+body.mh-onboarding-focus #sidebar_second,
+body.mh-onboarding-focus .sidebar_second {
+  display: none !important;
+}
+
+/* With sidebars gone, let the main column take the full row. */
+body.mh-onboarding-focus main {
+  flex: 0 0 100%;
+  max-width: 100%;
+  width: 100%;
+}

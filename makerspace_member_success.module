@@ -1706,3 +1706,63 @@ function makerspace_member_success_civicrm_postProcess($formName, &$form): void 
     }
   }
 }
+
+/**
+ * Whether the current request should render in onboarding "focus mode".
+ *
+ * Focus mode strips navigation chrome (menus, tabs, sidebars) on the
+ * member-facing funnel pages for members who have not finished onboarding,
+ * so the only obvious way forward is the next step — staff feedback
+ * (2026-07-14) was that every visible menu was an exit ramp mid-signup.
+ *
+ * Only pending members (member_pending_approval without the full member
+ * role) qualify: once approved, members get the normal site chrome back
+ * even while finishing late steps.
+ */
+function _makerspace_member_success_onboarding_focus_active(): bool {
+  $account = \Drupal::currentUser();
+  $roles = $account->getRoles();
+  if (!in_array('member_pending_approval', $roles, TRUE) || in_array('member', $roles, TRUE)) {
+    return FALSE;
+  }
+  $path = \Drupal::requestStack()->getCurrentRequest()?->getPathInfo() ?? '/';
+  return \Drupal\makerspace_member_success\Support\OnboardingFunnel::isMemberFacingPath($path);
+}
+
+/**
+ * Implements hook_page_attachments().
+ *
+ * Declares the cache variance for focus mode and attaches its CSS.
+ */
+function makerspace_member_success_page_attachments(array &$attachments): void {
+  $attachments['#cache']['contexts'][] = 'user.roles';
+  $attachments['#cache']['contexts'][] = 'url.path';
+  if (_makerspace_member_success_onboarding_focus_active()) {
+    $attachments['#attached']['library'][] = 'makerspace_member_success/onboarding_focus';
+  }
+}
+
+/**
+ * Implements hook_preprocess_html().
+ *
+ * Adds the focus-mode body class the onboarding_focus CSS keys off.
+ */
+function makerspace_member_success_preprocess_html(array &$variables): void {
+  if (_makerspace_member_success_onboarding_focus_active()) {
+    $variables['attributes']['class'][] = 'mh-onboarding-focus';
+  }
+}
+
+/**
+ * Implements hook_menu_local_tasks_alter().
+ *
+ * Removes ALL local task tabs (View / Edit / Payment Requests / profile
+ * types / Year in Review…) on funnel pages during onboarding — the member
+ * profile form should just ask for the data.
+ */
+function makerspace_member_success_menu_local_tasks_alter(array &$data, string $route_name, \Drupal\Core\Cache\RefinableCacheableDependencyInterface &$cacheability): void {
+  $cacheability->addCacheContexts(['user.roles', 'url.path']);
+  if (_makerspace_member_success_onboarding_focus_active()) {
+    $data['tabs'] = [];
+  }
+}

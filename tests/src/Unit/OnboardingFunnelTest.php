@@ -90,7 +90,7 @@ class OnboardingFunnelTest extends UnitTestCase {
   public function testNextStepUrlIncludesUid(): void {
     $signals = ['has_account' => TRUE];
     $next = OnboardingFunnel::nextStep($signals, 42);
-    $this->assertSame('/user/42/main', $next['url']);
+    $this->assertSame('/user/42/main?nextpage=video', $next['url']);
   }
 
   /**
@@ -136,7 +136,7 @@ class OnboardingFunnelTest extends UnitTestCase {
 
     // Profile step builds a uid-scoped URL.
     $profile = OnboardingFunnel::stepFromStuckReason('stuck_at_profile', 42);
-    $this->assertSame('/user/42/main', $profile['url']);
+    $this->assertSame('/user/42/main?nextpage=video', $profile['url']);
   }
 
   /**
@@ -153,6 +153,22 @@ class OnboardingFunnelTest extends UnitTestCase {
   public function testStepFromStuckReasonRejectsUnrelated(): void {
     $this->assertNull(OnboardingFunnel::stepFromStuckReason('missing_serial'));
     $this->assertNull(OnboardingFunnel::stepFromStuckReason('payment_failed'));
+  }
+
+  /**
+   * Funnel-page detection matches aliases and the uid-scoped profile form.
+   */
+  public function testIsMemberFacingPath(): void {
+    $this->assertTrue(OnboardingFunnel::isMemberFacingPath('/user/42/main'));
+    $this->assertTrue(OnboardingFunnel::isMemberFacingPath('/quiz/1'));
+    $this->assertTrue(OnboardingFunnel::isMemberFacingPath('/quiz/1/take/3'));
+    $this->assertTrue(OnboardingFunnel::isMemberFacingPath('/orientation-video'));
+    $this->assertTrue(OnboardingFunnel::isMemberFacingPath('/key-pickup-and-site-safety-intro'));
+    $this->assertFalse(OnboardingFunnel::isMemberFacingPath('/user/42'));
+    $this->assertFalse(OnboardingFunnel::isMemberFacingPath('/user/42/instructor'));
+    $this->assertFalse(OnboardingFunnel::isMemberFacingPath('/quiz/12'));
+    $this->assertFalse(OnboardingFunnel::isMemberFacingPath('/'));
+    $this->assertFalse(OnboardingFunnel::isMemberFacingPath('/videos'));
   }
 
   /**
