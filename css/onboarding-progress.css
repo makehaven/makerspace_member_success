@@ -136,6 +136,27 @@
   margin: 0.75rem auto 0;
 }
 
+/* Reminder variant: points BACK at a step the member skipped (e.g. quiz not
+   yet passed while they're on the booking page). Deliberately quiet — a
+   loose-end note, not the page's main action. */
+.mh-setup-bar__continue--reminder {
+  display: table;
+  margin: 0.6rem auto 0;
+  padding: 0.2rem 0.85rem;
+  font-size: 0.82rem;
+  color: var(--mh-color-brand-primary, #8b1919);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--mh-radius-pill, 999px);
+  text-decoration: none;
+}
+
+.mh-setup-bar__continue--reminder:hover,
+.mh-setup-bar__continue--reminder:focus-visible {
+  color: var(--mh-color-brand-primary-strong, #710a0a);
+  text-decoration: underline;
+}
+
 /* Small screens: the status line above the bar carries the current step
    label, so per-step labels are dropped and dots shrink. */
 @media (max-width: 640px) {

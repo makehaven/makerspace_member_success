@@ -137,3 +137,13 @@ makerspace_member_success.export_all:
     _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::exportAll'
   requirements:
     _permission: 'administer makerspace member success'
+
+makerspace_member_success.continue_setup:
+  path: '/continue-setup'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\ContinueSetupController::redirectToNextStep'
+    _title: 'Continue your member setup'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
