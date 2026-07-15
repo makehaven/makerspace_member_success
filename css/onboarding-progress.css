@@ -29,9 +29,14 @@
   margin: 0;
 }
 
+/* The item-list wrapper gets Bootstrap's .list-group / .list-group-item
+   (flex-column, bordered white cards) from the theme, whose CSS loads AFTER
+   module CSS — so the contested properties need !important or the bar
+   stacks vertically in white boxes (seen in the 2026-07-15 test capture). */
 .mh-setup-bar__steps {
   list-style: none;
-  display: flex;
+  display: flex !important;
+  flex-direction: row !important;
   align-items: flex-start;
   margin: 0;
   padding: 0;
@@ -39,11 +44,14 @@
 }
 
 .mh-setup-step {
-  flex: 1 1 0;
+  flex: 1 1 0 !important;
   min-width: 0;
   position: relative;
-  text-align: center;
-  padding: 0 0.25rem;
+  text-align: center !important;
+  padding: 0 0.25rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 /* Connector line between a step's dot and the previous step's dot. */

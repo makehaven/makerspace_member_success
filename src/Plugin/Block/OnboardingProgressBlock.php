@@ -150,20 +150,15 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $items = [];
     foreach (array_values($display_steps) as $i => $step) {
       $dot_text = $step['state'] === 'done' ? '✓' : (string) ($i + 1);
-      $dot = [
-        '#type' => 'html_tag',
-        '#tag' => 'span',
-        '#attributes' => [
-          'class' => ['mh-setup-step__dot'],
-          'aria-hidden' => 'true',
+      // A single template per item — multiple child elements would be
+      // re-wrapped as a nested list by the theme's item-list handling.
+      $content = [
+        '#type' => 'inline_template',
+        '#template' => '<span class="mh-setup-step__dot" aria-hidden="true">{{ dot }}</span><span class="mh-setup-step__label">{{ label }}</span>',
+        '#context' => [
+          'dot' => $dot_text,
+          'label' => $step['label'],
         ],
-        '#value' => $dot_text,
-      ];
-      $label = [
-        '#type' => 'html_tag',
-        '#tag' => 'span',
-        '#attributes' => ['class' => ['mh-setup-step__label']],
-        '#value' => $step['label'],
       ];
 
       // Only the current step is clickable — earlier steps are finished and
@@ -172,13 +167,10 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       if ($step['state'] === 'current' && $is_authenticated) {
         $content = [
           '#type' => 'link',
-          '#title' => ['dot' => $dot, 'label' => $label],
+          '#title' => $content,
           '#url' => Url::fromUserInput($step['url']),
           '#attributes' => ['class' => ['mh-setup-step__link']],
         ];
-      }
-      else {
-        $content = ['dot' => $dot, 'label' => $label];
       }
 
       $wrapper_attributes = [
@@ -187,10 +179,8 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       if ($step['state'] === 'current') {
         $wrapper_attributes['aria-current'] = 'step';
       }
-      $items[] = [
-        '#wrapper_attributes' => $wrapper_attributes,
-        'content' => $content,
-      ];
+      $content['#wrapper_attributes'] = $wrapper_attributes;
+      $items[] = $content;
     }
 
     $build = [

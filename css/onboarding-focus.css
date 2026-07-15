@@ -14,6 +14,14 @@
    mobile/off-canvas togglers. */
 body.mh-onboarding-focus #CollapsingNavbar,
 body.mh-onboarding-focus .navbar-toggler,
+/* Core Navigation module's left rail (Member Menu / Website Menu groups) —
+   the "main menu side bar" from the staff feedback screenshots. */
+body.mh-onboarding-focus #admin-toolbar,
+body.mh-onboarding-focus .admin-toolbar,
+body.mh-onboarding-focus .admin-toolbar-control-bar,
+body.mh-onboarding-focus .admin-toolbar-overlay,
+body.mh-onboarding-focus .admin-toolbar__displace-placeholder,
+body.mh-onboarding-focus .top-bar,
 /* Secondary/top header bar (search box, log-in button). */
 body.mh-onboarding-focus #navbar-top,
 body.mh-onboarding-focus .navbar-top,
@@ -31,9 +39,24 @@ body.mh-onboarding-focus .sidebar_second {
   display: none !important;
 }
 
+/* The theme pins the top bar open with `header#header nav#navbar-top
+   { display:flex !important }` (two ids) — match and beat that specificity. */
+body.mh-onboarding-focus header#header nav#navbar-top {
+  display: none !important;
+}
+
 /* With sidebars gone, let the main column take the full row. */
 body.mh-onboarding-focus main {
   flex: 0 0 100%;
   max-width: 100%;
   width: 100%;
+}
+
+/* The Navigation rail displaces the page via injected offsets — reset them
+   so hiding the rail doesn't leave a dead gutter. */
+body.mh-onboarding-focus,
+body.mh-onboarding-focus .dialog-off-canvas-main-canvas {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+  --drupal-displace-offset-left: 0px;
 }
