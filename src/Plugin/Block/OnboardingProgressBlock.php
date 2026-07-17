@@ -91,7 +91,7 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $path = $this->requestStack->getCurrentRequest()?->getPathInfo() ?? '/';
 
     $signals = $is_authenticated ? $this->snapshotBuilder->loadOnboardingSignals($uid) : [];
-    $steps = OnboardingFunnel::steps($signals, $uid);
+    $steps = $this->mergeVideoAndQuiz(OnboardingFunnel::steps($signals, $uid));
     $next = $is_authenticated ? OnboardingFunnel::nextStep($signals, $uid) : NULL;
 
     $cache = [
@@ -247,7 +247,7 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
         '#type' => 'link',
         '#title' => $skipped_back
           ? $this->t('Still to do: @step', ['@step' => $label])
-          : $this->t('Continue: @step', ['@step' => $next['label']]),
+          : $this->t('Continue: @step', ['@step' => $label]),
         '#url' => Url::fromUserInput($next['url']),
         '#attributes' => [
           'class' => $skipped_back
@@ -258,6 +258,31 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     }
 
     return $build;
+  }
+
+  /**
+   * Folds the quiz row into the video row for display.
+   *
+   * The two funnel steps share a single completion signal (passing the quiz
+   * is the only evidence the video was watched), so the quiz row can never
+   * become "current" — the bar kept saying "Watch the safety video" all the
+   * way through the quiz, which staff read as the bar being stuck
+   * (feedback 2026-07-15/16). One combined row keeps every displayed
+   * step's state truthful. Funnel data (snapshots, staff queues) still
+   * tracks the two ids separately.
+   */
+  protected function mergeVideoAndQuiz(array $steps): array {
+    $merged = [];
+    foreach ($steps as $step) {
+      if ($step['id'] === OnboardingFunnel::STEP_QUIZ) {
+        continue;
+      }
+      if ($step['id'] === OnboardingFunnel::STEP_VIDEO) {
+        $step['label'] = (string) $this->t('Watch the video & pass the quiz');
+      }
+      $merged[] = $step;
+    }
+    return $merged;
   }
 
   /**
