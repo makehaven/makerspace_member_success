@@ -234,6 +234,31 @@ final class OnboardingFunnel {
   }
 
   /**
+   * Whether a stalled member's step is in an allowed-steps list.
+   *
+   * Shared by the auto-nudge cron and its dry-run preview so both scope to the
+   * same funnel steps. An empty allow-list means "no step restriction" — every
+   * stalled member is allowed (the original stage-only behaviour).
+   *
+   * @param string[] $reasons
+   *   The member's risk reasons (e.g. ["stuck_at_profile_aging"]).
+   * @param string[] $allowed_steps
+   *   Step machine names to allow (e.g. ["profile"]). Empty = allow all.
+   * @param int $uid
+   *   Member user id (only used to build step URLs; not needed for matching).
+   *
+   * @return bool
+   *   TRUE if the member should be nudged under this step scoping.
+   */
+  public static function stuckStepAllowed(array $reasons, array $allowed_steps, int $uid = 0): bool {
+    if ($allowed_steps === []) {
+      return TRUE;
+    }
+    $step = self::stepFromRiskReasons($reasons, $uid);
+    return $step !== NULL && in_array($step['id'], $allowed_steps, TRUE);
+  }
+
+  /**
    * Unix timestamp the member reached their current position in the funnel.
    *
    * This is the most recent timestamp among completed steps that carry one

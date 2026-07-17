@@ -190,11 +190,19 @@ class MemberSuccessCommands extends DrushCommands {
     // approved rather than suppressed — i.e. it would go out once the flag is on
     // (the flag only flips queued -> approved; the suppression gates fire the
     // same either way, so the count is accurate regardless of the flag).
+    // Mirror the cron's step scoping so the preview reflects who would really
+    // be nudged, not every onboarding-stalled member.
+    $nudge_steps = array_values(array_filter((array) ($config->get('onboarding_auto_nudge_steps') ?? [])));
+
     $rows = [];
     $would_send = 0;
     $transaction = $database->startTransaction();
     try {
       foreach ($candidates as $c) {
+        $reasons_scope = @unserialize((string) ($c['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]);
+        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::stuckStepAllowed(is_array($reasons_scope) ? $reasons_scope : [], $nudge_steps, (int) $c['uid'])) {
+          continue;
+        }
         $id = $queue->enqueueCandidate((int) $c['uid'], 'onboarding', $c);
         $result = $database->select('ms_member_outreach_queue', 'q')
           ->fields('q', ['status', 'suppression_reason_code'])

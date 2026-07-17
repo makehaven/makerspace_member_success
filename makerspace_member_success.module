@@ -84,8 +84,18 @@ function makerspace_member_success_cron(): void {
     if ((bool) $nudge_config->get('onboarding_auto_nudge_enabled')) {
       $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
       $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      // Optionally scope the nudge to specific funnel steps. Default is
+      // profile-only — the biggest recent drop-out (funnel review 2026-07-17).
+      // An empty list nudges every onboarding-stalled member (the original
+      // stage-only behaviour). The candidate's stuck step is derived from its
+      // risk reasons (e.g. "stuck_at_profile").
+      $nudge_steps = array_values(array_filter((array) ($nudge_config->get('onboarding_auto_nudge_steps') ?? [])));
       $enqueued = 0;
       foreach ($generator->generate(['onboarding']) as $candidate) {
+        $reasons = @unserialize((string) ($candidate['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]);
+        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::stuckStepAllowed(is_array($reasons) ? $reasons : [], $nudge_steps, (int) $candidate['uid'])) {
+          continue;
+        }
         $queue->enqueueCandidate((int) $candidate['uid'], 'onboarding', $candidate);
         $enqueued++;
       }

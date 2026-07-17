@@ -156,6 +156,26 @@ class OnboardingFunnelTest extends UnitTestCase {
   }
 
   /**
+   * The auto-nudge step scoping allows only members stuck at listed steps.
+   */
+  public function testStuckStepAllowedScopesToListedSteps(): void {
+    // Empty allow-list = no restriction (original stage-only behaviour).
+    $this->assertTrue(OnboardingFunnel::stuckStepAllowed(['stuck_at_schedule'], []));
+
+    // Profile-only scoping: profile-stalled allowed, others not.
+    $this->assertTrue(OnboardingFunnel::stuckStepAllowed(['stuck_at_profile_aging'], ['profile']));
+    $this->assertFalse(OnboardingFunnel::stuckStepAllowed(['stuck_at_schedule'], ['profile']));
+    $this->assertFalse(OnboardingFunnel::stuckStepAllowed(['stuck_at_video_stale'], ['profile']));
+
+    // No recognisable stuck-at step = not allowed under any non-empty scope.
+    $this->assertFalse(OnboardingFunnel::stuckStepAllowed(['missing_serial'], ['profile']));
+    $this->assertFalse(OnboardingFunnel::stuckStepAllowed([], ['profile']));
+
+    // Multi-step scope matches any listed step.
+    $this->assertTrue(OnboardingFunnel::stuckStepAllowed(['stuck_at_video'], ['profile', 'video']));
+  }
+
+  /**
    * Funnel-page detection matches aliases and the uid-scoped profile form.
    */
   public function testIsMemberFacingPath(): void {
