@@ -113,7 +113,7 @@ final class OnboardingFunnel {
       ],
       [
         'id' => self::STEP_SCHEDULE,
-        'label' => 'Book your in-person orientation',
+        'label' => 'Book your Site Orientation',
         'done' => $schedule_done,
         'ts' => $signals['schedule_ts'] ?? NULL,
         // /schedule is the key-pickup/orientation booking page used by the
@@ -344,7 +344,7 @@ final class OnboardingFunnel {
       self::STEP_PROFILE => 'Profile',
       self::STEP_VIDEO => 'Safety video',
       self::STEP_QUIZ => 'Safety quiz',
-      self::STEP_SCHEDULE => 'Book orientation',
+      self::STEP_SCHEDULE => 'Site Orientation',
       self::STEP_INVOLVE => 'Get involved',
       self::STEP_DONE => 'Complete',
       default => 'Unknown',

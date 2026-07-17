@@ -91,7 +91,7 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $path = $this->requestStack->getCurrentRequest()?->getPathInfo() ?? '/';
 
     $signals = $is_authenticated ? $this->snapshotBuilder->loadOnboardingSignals($uid) : [];
-    $steps = $this->mergeVideoAndQuiz(OnboardingFunnel::steps($signals, $uid));
+    $steps = $this->splitVideoQuizByPath(OnboardingFunnel::steps($signals, $uid), $path);
     $next = $is_authenticated ? OnboardingFunnel::nextStep($signals, $uid) : NULL;
 
     $cache = [
@@ -261,28 +261,34 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
   }
 
   /**
-   * Folds the quiz row into the video row for display.
+   * Uses the current page to pick which of video/quiz is "current".
    *
    * The two funnel steps share a single completion signal (passing the quiz
-   * is the only evidence the video was watched), so the quiz row can never
-   * become "current" — the bar kept saying "Watch the safety video" all the
-   * way through the quiz, which staff read as the bar being stuck
-   * (feedback 2026-07-15/16). One combined row keeps every displayed
-   * step's state truthful. Funnel data (snapshots, staff queues) still
-   * tracks the two ids separately.
+   * is the only evidence the video was watched), so the funnel always marks
+   * the video row current until the quiz is passed — mid-quiz that read as
+   * a stuck bar (staff feedback 2026-07-15/16). The page URL is the missing
+   * signal: on the quiz pages, show the video as done and the quiz as
+   * current (JR, 2026-07-17). Funnel data (snapshots, staff queues) is
+   * untouched.
    */
-  protected function mergeVideoAndQuiz(array $steps): array {
-    $merged = [];
-    foreach ($steps as $step) {
-      if ($step['id'] === OnboardingFunnel::STEP_QUIZ) {
-        continue;
-      }
-      if ($step['id'] === OnboardingFunnel::STEP_VIDEO) {
-        $step['label'] = (string) $this->t('Watch the video & pass the quiz');
-      }
-      $merged[] = $step;
+  protected function splitVideoQuizByPath(array $steps, string $path): array {
+    if (!$this->pathMatches($path, ['/quiz/1'])) {
+      return $steps;
     }
-    return $merged;
+    $video_i = $quiz_i = NULL;
+    foreach ($steps as $i => $step) {
+      if ($step['id'] === OnboardingFunnel::STEP_VIDEO) {
+        $video_i = $i;
+      }
+      elseif ($step['id'] === OnboardingFunnel::STEP_QUIZ) {
+        $quiz_i = $i;
+      }
+    }
+    if ($video_i !== NULL && $quiz_i !== NULL && $steps[$video_i]['state'] === 'current') {
+      $steps[$video_i]['state'] = 'done';
+      $steps[$quiz_i]['state'] = 'current';
+    }
+    return $steps;
   }
 
   /**
