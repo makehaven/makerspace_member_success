@@ -91,8 +91,21 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $path = $this->requestStack->getCurrentRequest()?->getPathInfo() ?? '/';
 
     $signals = $is_authenticated ? $this->snapshotBuilder->loadOnboardingSignals($uid) : [];
-    $steps = $this->splitVideoQuizByPath(OnboardingFunnel::steps($signals, $uid), $path);
-    $next = $is_authenticated ? OnboardingFunnel::nextStep($signals, $uid) : NULL;
+    // Completion is judged from real signals only — the page can advance the
+    // "current" marker (below) but must never un-hide a finished bar.
+    $data_complete = $is_authenticated && OnboardingFunnel::nextStep($signals, $uid) === NULL;
+    $steps = $this->applyPageAwareProgress(OnboardingFunnel::steps($signals, $uid), $path, $is_authenticated);
+    // Resume target = first not-done step AFTER the page-aware pass, so a
+    // "Continue" link can never contradict the highlighted current step.
+    $next = NULL;
+    if ($is_authenticated) {
+      foreach ($steps as $candidate) {
+        if ($candidate['state'] !== 'done') {
+          $next = $candidate;
+          break;
+        }
+      }
+    }
 
     $cache = [
       // Per-user; url.path because the current page decides whether the
@@ -110,7 +123,7 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     ];
 
     // Onboarding complete — render nothing.
-    if ($is_authenticated && $next === NULL) {
+    if ($data_complete) {
       return ['#cache' => $cache];
     }
 
@@ -213,46 +226,20 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       '#wrapper_attributes' => ['class' => ['mh-setup-bar__steps-wrapper']],
     ];
 
-    // A single link to the next incomplete step — shown only when the member
-    // is NOT already on that step's page (a "Resume: book your orientation"
-    // button on the booking page itself read as noise in the 2026-07-14
-    // staff review). Two variants:
-    //  - pointing FORWARD (member behind the page's step): a primary
-    //    "Continue" button;
-    //  - pointing BACK at a step the member skipped: a small "Still to do"
-    //    reminder pill, so it reads as a loose end rather than the main
-    //    action of the page (staff follow-up 2026-07-15).
+    // A single "Continue" link to the next incomplete step — shown only when
+    // the member is NOT already on that step's page (a "Resume: book your
+    // orientation" button on the booking page itself read as noise in the
+    // 2026-07-14 staff review). After applyPageAwareProgress, $next is the
+    // page's own step whenever the member is on a funnel page, so this only
+    // renders when they have browsed BACK to an earlier, already-finished
+    // page — a genuine "pick up where you left off" affordance.
     if ($is_authenticated && $next !== NULL && !$this->onStepPage($path, $next)) {
-      $page_step_index = NULL;
-      $next_step_index = NULL;
-      foreach (array_values($steps) as $i => $step) {
-        if ($page_step_index === NULL && $this->onStepPage($path, $step)) {
-          $page_step_index = $i;
-        }
-        if ($step['id'] === $next['id']) {
-          $next_step_index = $i;
-        }
-      }
-      $skipped_back = $page_step_index !== NULL && $next_step_index !== NULL
-        && $next_step_index < $page_step_index;
-
-      // The video step has no completion signal of its own — passing the
-      // quiz is what finishes it — so a reminder pointing at it should name
-      // the whole loose end, not imply there's a new video to watch.
-      $label = $next['id'] === OnboardingFunnel::STEP_VIDEO
-        ? $this->t('watch the safety video & pass the quiz')
-        : $next['label'];
-
       $build['continue'] = [
         '#type' => 'link',
-        '#title' => $skipped_back
-          ? $this->t('Still to do: @step', ['@step' => $label])
-          : $this->t('Continue: @step', ['@step' => $label]),
+        '#title' => $this->t('Continue: @step', ['@step' => $next['label']]),
         '#url' => Url::fromUserInput($next['url']),
         '#attributes' => [
-          'class' => $skipped_back
-            ? ['mh-setup-bar__continue', 'mh-setup-bar__continue--reminder']
-            : ['button', 'button--primary', 'mh-setup-bar__continue'],
+          'class' => ['button', 'button--primary', 'mh-setup-bar__continue'],
         ],
       ];
     }
@@ -261,33 +248,51 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
   }
 
   /**
-   * Uses the current page to pick which of video/quiz is "current".
+   * Advances the "current" step marker to match the page the member is on.
    *
-   * The two funnel steps share a single completion signal (passing the quiz
-   * is the only evidence the video was watched), so the funnel always marks
-   * the video row current until the quiz is passed — mid-quiz that read as
-   * a stuck bar (staff feedback 2026-07-15/16). The page URL is the missing
-   * signal: on the quiz pages, show the video as done and the quiz as
-   * current (JR, 2026-07-17). Funnel data (snapshots, staff queues) is
-   * untouched.
+   * Several steps can't be completed from real-time signals: the video and
+   * quiz share one completion signal (passing the quiz), and the orientation
+   * booking is only detected from the once-daily snapshot. Left to data
+   * alone, the bar reads a step (or two) behind where the member actually
+   * is — "stuck" on the video all through the quiz, and never reaching the
+   * final "get involved" step even while sitting on that page
+   * (staff feedback 2026-07-15/17; JR asked for the page/URL to drive this).
+   *
+   * So: find the funnel step whose page the member is on and, if they aren't
+   * already further along by real signals, mark everything before it done
+   * and that step current. This only ever moves the marker FORWARD — if the
+   * page's step is already complete (they browsed back), the data states are
+   * left untouched so the bar doesn't rewind. Funnel data (snapshots, staff
+   * queues) is never affected; this is display only.
    */
-  protected function splitVideoQuizByPath(array $steps, string $path): array {
-    if (!$this->pathMatches($path, ['/quiz/1'])) {
+  protected function applyPageAwareProgress(array $steps, string $path, bool $is_authenticated): array {
+    if (!$is_authenticated) {
       return $steps;
     }
-    $video_i = $quiz_i = NULL;
+    $steps = array_values($steps);
+    // LAST match wins: the video step's aliases include /quiz/1 (for the
+    // continue-link suppression in onStepPage), so on the quiz pages we want
+    // the later-listed quiz step, not the video step.
+    $page_index = NULL;
     foreach ($steps as $i => $step) {
-      if ($step['id'] === OnboardingFunnel::STEP_VIDEO) {
-        $video_i = $i;
-      }
-      elseif ($step['id'] === OnboardingFunnel::STEP_QUIZ) {
-        $quiz_i = $i;
+      if ($this->onStepPage($path, $step)) {
+        $page_index = $i;
       }
     }
-    if ($video_i !== NULL && $quiz_i !== NULL && $steps[$video_i]['state'] === 'current') {
-      $steps[$video_i]['state'] = 'done';
-      $steps[$quiz_i]['state'] = 'current';
+    // Not on a funnel page, or already past this page by real signals — leave
+    // the data-driven states alone.
+    if ($page_index === NULL || $steps[$page_index]['state'] === 'done') {
+      return $steps;
     }
+    foreach ($steps as $i => &$step) {
+      if ($i < $page_index) {
+        $step['state'] = 'done';
+      }
+      elseif ($i === $page_index) {
+        $step['state'] = 'current';
+      }
+    }
+    unset($step);
     return $steps;
   }
 
