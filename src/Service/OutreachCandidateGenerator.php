@@ -41,6 +41,7 @@ class OutreachCandidateGenerator {
       'civicrm_do_not_sms',
       'last_contact_date',
       'contact_count',
+      'door_badge_status',
     ]);
     $query->innerJoin('users_field_data', 'u', 'u.uid = ms.uid');
     $query->addField('u', 'mail', 'email');
@@ -79,6 +80,7 @@ class OutreachCandidateGenerator {
         'do_not_sms' => (int) ($row->civicrm_do_not_sms ?? 0),
         'last_contact_date' => (string) ($row->last_contact_date ?? ''),
         'contact_count' => (int) ($row->contact_count ?? 0),
+        'door_badge_status' => (string) ($row->door_badge_status ?? ''),
         'email' => (string) ($row->email ?? ''),
         'phone' => (string) ($row->phone ?? ''),
         'is_opt_out' => (int) ($row->is_opt_out ?? 0),

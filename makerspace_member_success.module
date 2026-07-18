@@ -92,6 +92,14 @@ function makerspace_member_success_cron(): void {
       $nudge_steps = array_values(array_filter((array) ($nudge_config->get('onboarding_auto_nudge_steps') ?? [])));
       $enqueued = 0;
       foreach ($generator->generate(['onboarding']) as $candidate) {
+        // Never nudge a member who already has an active door badge: they've
+        // been to orientation and are in the building, so a "finish your setup"
+        // / "book your orientation" email would be wrong. The snapshot can
+        // briefly label a door-active member as onboarding-stalled (stage vs
+        // door-status lag), and that must not turn into an outbound email.
+        if (($candidate['door_badge_status'] ?? '') === 'active') {
+          continue;
+        }
         $reasons = @unserialize((string) ($candidate['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]);
         if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::stuckStepAllowed(is_array($reasons) ? $reasons : [], $nudge_steps, (int) $candidate['uid'])) {
           continue;
