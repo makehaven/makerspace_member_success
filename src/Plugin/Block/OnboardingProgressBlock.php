@@ -127,16 +127,24 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       return ['#cache' => $cache];
     }
 
-    // Presentation-only first step covering the join form + Chargebee payment,
-    // which precede account creation. Anyone authenticated in this flow has
-    // already paid; anonymous visitors are placed on it (or past it, once they
-    // reach the register page).
+    // Two presentation-only first steps — Join (the join form) then Pay (the
+    // Chargebee hosted checkout), which precede account creation. Payment happens
+    // off-site, so "Pay" is never the CURRENT step in our bar (there is no bar on
+    // Chargebee): on the join form it shows upcoming, and once the member is past
+    // payment — authenticated, or landed on the register page — both show done.
     $on_register = $this->pathMatches($path, ['/user/register']);
+    $paid = ($is_authenticated || $on_register);
     $display_steps = [
       [
         'id' => 'join',
-        'label' => (string) $this->t('Join & pay'),
-        'state' => ($is_authenticated || $on_register) ? 'done' : 'current',
+        'label' => (string) $this->t('Join'),
+        'state' => $paid ? 'done' : 'current',
+        'url' => '/join-makehaven',
+      ],
+      [
+        'id' => 'pay',
+        'label' => (string) $this->t('Pay'),
+        'state' => $paid ? 'done' : 'todo',
         'url' => '/join-makehaven',
       ],
     ];
