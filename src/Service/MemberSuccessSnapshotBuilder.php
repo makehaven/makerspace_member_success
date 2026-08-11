@@ -769,6 +769,12 @@ class MemberSuccessSnapshotBuilder {
 
   /**
    * Loads door badge status for a member.
+   *
+   * Requests marked "duplicate" are excluded: a duplicate-card request says
+   * nothing about the member's door access, and because only the newest
+   * request is read, a duplicate row would otherwise shadow the member's
+   * real (usually active) badge — misclassifying long-standing members as
+   * onboarding-stalled.
    */
   protected function loadDoorBadgeStatus(int $uid, int $door_badge_tid): array {
     $query = $this->database->select('node_field_data', 'n');
@@ -781,6 +787,9 @@ class MemberSuccessSnapshotBuilder {
     $query->condition('n.status', 1);
     $query->condition('member.field_member_to_badge_target_id', $uid);
     $query->condition('badge.field_badge_requested_target_id', $door_badge_tid);
+    $query->condition($query->orConditionGroup()
+      ->isNull('status.field_badge_status_value')
+      ->condition('status.field_badge_status_value', 'duplicate', '<>'));
     $query->orderBy('n.created', 'DESC');
     $query->range(0, 1);
 
