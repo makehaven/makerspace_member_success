@@ -192,6 +192,45 @@ class OnboardingFunnelTest extends UnitTestCase {
   }
 
   /**
+   * Each funnel page maps to its own step — and only its own.
+   */
+  public function testIsStepPath(): void {
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_ACCOUNT, '/user/register'));
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_PROFILE, '/user/42/main'));
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_VIDEO, '/orientation-video'));
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_QUIZ, '/quiz/1/take/3'));
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_SCHEDULE, '/key-pickup-and-site-safety-intro'));
+    $this->assertTrue(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_INVOLVE, '/thank-you-joining-makehaven'));
+
+    // The register page must never read as the profile step: the profile URL
+    // has no uid to embed for an anonymous visitor, and a "/user" prefix match
+    // would swallow the whole account step.
+    $this->assertFalse(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_PROFILE, '/user/register'));
+    $this->assertFalse(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_PROFILE, '/user'));
+    $this->assertFalse(OnboardingFunnel::isStepPath(OnboardingFunnel::STEP_INVOLVE, '/join-makehaven'));
+  }
+
+  /**
+   * The page a visitor is on resolves to its position in the funnel.
+   *
+   * Regression guard for the logged-out progress bar, which reported the
+   * post-join getting-started guide as "step 1 of 8: Join" (2026-08-13).
+   */
+  public function testStepIndexForPath(): void {
+    $steps = OnboardingFunnel::steps([], 42);
+    $this->assertSame(0, OnboardingFunnel::stepIndexForPath($steps, '/user/register'));
+    $this->assertSame(1, OnboardingFunnel::stepIndexForPath($steps, '/user/42/main'));
+    $this->assertSame(2, OnboardingFunnel::stepIndexForPath($steps, '/orientation-video'));
+    // Quiz pages match the video step too; the later quiz step must win.
+    $this->assertSame(3, OnboardingFunnel::stepIndexForPath($steps, '/quiz/1/take/3'));
+    $this->assertSame(4, OnboardingFunnel::stepIndexForPath($steps, '/schedule'));
+    $this->assertSame(5, OnboardingFunnel::stepIndexForPath($steps, '/thank-you-joining-makehaven'));
+    // Off-funnel pages (the join form, anything else) have no position.
+    $this->assertNull(OnboardingFunnel::stepIndexForPath($steps, '/join-makehaven'));
+    $this->assertNull(OnboardingFunnel::stepIndexForPath($steps, '/'));
+  }
+
+  /**
    * The first recognised stuck-at-step in a reason list wins.
    */
   public function testStepFromRiskReasonsPicksFirstMatch(): void {

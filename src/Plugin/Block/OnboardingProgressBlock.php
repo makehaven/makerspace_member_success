@@ -94,7 +94,14 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     // Completion is judged from real signals only — the page can advance the
     // "current" marker (below) but must never un-hide a finished bar.
     $data_complete = $is_authenticated && OnboardingFunnel::nextStep($signals, $uid) === NULL;
-    $steps = $this->applyPageAwareProgress(OnboardingFunnel::steps($signals, $uid), $path, $is_authenticated);
+    $steps = array_values(OnboardingFunnel::steps($signals, $uid));
+    // Which funnel step this page belongs to (NULL when the page isn't one of
+    // them, e.g. the join form). Drives the marker for anonymous visitors,
+    // who have no signals at all.
+    $page_index = OnboardingFunnel::stepIndexForPath($steps, $path);
+    $steps = $is_authenticated
+      ? $this->applyPageAwareProgress($steps, $page_index)
+      : $this->applyAnonymousPageProgress($steps, $page_index);
     // Resume target = first not-done step AFTER the page-aware pass, so a
     // "Continue" link can never contradict the highlighted current step.
     $next = NULL;
@@ -131,9 +138,12 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     // Chargebee hosted checkout), which precede account creation. Payment happens
     // off-site, so "Pay" is never the CURRENT step in our bar (there is no bar on
     // Chargebee): on the join form it shows upcoming, and once the member is past
-    // payment — authenticated, or landed on the register page — both show done.
-    $on_register = $this->pathMatches($path, ['/user/register']);
-    $paid = ($is_authenticated || $on_register);
+    // payment — authenticated, or on any page from the register step onward —
+    // both show done. Anonymous visitors reach those later pages when their
+    // session has lapsed (a member opening the welcome email on a second
+    // device); before 2026-08-13 they were told they were on "step 1: Join"
+    // while reading the post-join getting-started guide.
+    $paid = ($is_authenticated || $page_index !== NULL);
     $display_steps = [
       [
         'id' => 'join',
@@ -149,11 +159,6 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       ],
     ];
     foreach ($steps as $step) {
-      if (!$is_authenticated) {
-        // No signals yet: everything after payment is upcoming, except the
-        // account step becomes current on the register page itself.
-        $step['state'] = ($on_register && $step['id'] === OnboardingFunnel::STEP_ACCOUNT) ? 'current' : 'todo';
-      }
       $display_steps[] = $step;
     }
 
@@ -252,6 +257,22 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
       ];
     }
 
+    // A logged-out visitor on a page past account creation is almost always a
+    // member whose session lapsed (welcome-email link opened on a phone). The
+    // bar can only show them where the PAGE sits, so offer the one action that
+    // restores their real progress. Deliberately quiet, and never on the
+    // register page itself — that step is kept free of login/reset links.
+    if (!$is_authenticated && $page_index !== NULL && $page_index > 0) {
+      $build['login'] = [
+        '#type' => 'link',
+        '#title' => $this->t('Already a member? Log in to pick up your setup'),
+        '#url' => Url::fromRoute('user.login', [], ['query' => ['destination' => $path]]),
+        '#attributes' => [
+          'class' => ['mh-setup-bar__continue', 'mh-setup-bar__continue--reminder'],
+        ],
+      ];
+    }
+
     return $build;
   }
 
@@ -273,20 +294,8 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
    * left untouched so the bar doesn't rewind. Funnel data (snapshots, staff
    * queues) is never affected; this is display only.
    */
-  protected function applyPageAwareProgress(array $steps, string $path, bool $is_authenticated): array {
-    if (!$is_authenticated) {
-      return $steps;
-    }
+  protected function applyPageAwareProgress(array $steps, ?int $page_index): array {
     $steps = array_values($steps);
-    // LAST match wins: the video step's aliases include /quiz/1 (for the
-    // continue-link suppression in onStepPage), so on the quiz pages we want
-    // the later-listed quiz step, not the video step.
-    $page_index = NULL;
-    foreach ($steps as $i => $step) {
-      if ($this->onStepPage($path, $step)) {
-        $page_index = $i;
-      }
-    }
     // Not on a funnel page, or already past this page by real signals — leave
     // the data-driven states alone.
     if ($page_index === NULL || $steps[$page_index]['state'] === 'done') {
@@ -305,32 +314,36 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
   }
 
   /**
-   * Whether the given request path is one of this step's pages.
+   * Positions the marker for an anonymous visitor purely from the page.
+   *
+   * There are no signals to read, so the page IS the state: the funnel page
+   * being viewed is the current step and everything before it is treated as
+   * finished. Off-funnel pages (the join form) leave every step upcoming, so
+   * the presentation-only "Join" step stays current there.
    */
-  protected function onStepPage(string $path, array $step): bool {
-    $aliases = match ($step['id']) {
-      // The quiz pages count as the video step's pages too: passing the quiz
-      // is how the video step completes, so "Continue: watch the safety
-      // video" mid-quiz would be pure noise.
-      OnboardingFunnel::STEP_VIDEO => ['/video', '/orientation-video', '/quiz/1'],
-      OnboardingFunnel::STEP_QUIZ => ['/quiz/1'],
-      OnboardingFunnel::STEP_SCHEDULE => ['/schedule', '/key-pickup-and-site-safety-intro'],
-      OnboardingFunnel::STEP_INVOLVE => ['/involve', '/thank-you-joining-makehaven'],
-      default => [parse_url($step['url'], PHP_URL_PATH) ?: $step['url']],
-    };
-    return $this->pathMatches($path, $aliases);
+  protected function applyAnonymousPageProgress(array $steps, ?int $page_index): array {
+    $steps = array_values($steps);
+    foreach ($steps as $i => &$step) {
+      if ($page_index === NULL) {
+        $step['state'] = 'todo';
+      }
+      else {
+        $step['state'] = match (TRUE) {
+          $i < $page_index => 'done',
+          $i === $page_index => 'current',
+          default => 'todo',
+        };
+      }
+    }
+    unset($step);
+    return $steps;
   }
 
   /**
-   * Prefix-match a request path against a list of path aliases.
+   * Whether the given request path is one of this step's pages.
    */
-  protected function pathMatches(string $path, array $aliases): bool {
-    foreach ($aliases as $alias) {
-      if ($path === $alias || str_starts_with($path, $alias . '/')) {
-        return TRUE;
-      }
-    }
-    return FALSE;
+  protected function onStepPage(string $path, array $step): bool {
+    return OnboardingFunnel::isStepPath($step['id'], $path);
   }
 
 }

@@ -353,6 +353,67 @@ final class OnboardingFunnel {
   }
 
   /**
+   * Whether a request path is one of a given step's pages.
+   *
+   * The member-facing progress bar uses this to move its "current" marker to
+   * the page being viewed — the only state signal available for a logged-out
+   * visitor, and the one that keeps the marker honest for steps with no
+   * real-time completion signal.
+   *
+   * @param string $step_id
+   *   A STEP_* constant.
+   * @param string $path
+   *   Request path (Request::getPathInfo(), no query string).
+   */
+  public static function isStepPath(string $step_id, string $path): bool {
+    // The profile form embeds a user id, so it is matched by shape. Never by
+    // prefix: the step URL degrades to a bare "/user" when the uid is unknown
+    // (anonymous), which would swallow every /user/* page, /user/register
+    // included.
+    if ($step_id === self::STEP_PROFILE) {
+      return (bool) preg_match('#^/user/\d+/main(/|$)#', $path);
+    }
+    $aliases = match ($step_id) {
+      self::STEP_ACCOUNT => ['/user/register'],
+      // The quiz pages count as the video step's pages too: passing the quiz
+      // is how the video step completes, so "Continue: watch the safety
+      // video" mid-quiz would be pure noise.
+      self::STEP_VIDEO => ['/video', '/orientation-video', '/quiz/1'],
+      self::STEP_QUIZ => ['/quiz/1'],
+      self::STEP_SCHEDULE => ['/schedule', '/key-pickup-and-site-safety-intro'],
+      self::STEP_INVOLVE => ['/involve', '/thank-you-joining-makehaven'],
+      default => [],
+    };
+    foreach ($aliases as $alias) {
+      if ($path === $alias || str_starts_with($path, $alias . '/')) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
+   * Index of the step whose page the request is on, or NULL if off-funnel.
+   *
+   * LAST match wins: the video step's aliases include /quiz/1, so on the quiz
+   * pages the later-listed quiz step is the one meant.
+   *
+   * @param array[] $steps
+   *   Steps as returned by steps().
+   * @param string $path
+   *   Request path (Request::getPathInfo(), no query string).
+   */
+  public static function stepIndexForPath(array $steps, string $path): ?int {
+    $index = NULL;
+    foreach (array_values($steps) as $i => $step) {
+      if (self::isStepPath($step['id'], $path)) {
+        $index = $i;
+      }
+    }
+    return $index;
+  }
+
+  /**
    * Short human label for a step machine name.
    *
    * Used by staff-facing views where only the stored step id is available.
