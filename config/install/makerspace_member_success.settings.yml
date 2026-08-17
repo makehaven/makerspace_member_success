@@ -34,6 +34,8 @@ chargebee_followup_reconcile_on_cron: false
 chargebee_followup_reconcile_limit: 200
 chargebee_followup_reconcile_dry_run: true
 chargebee_followup_reconcile_force: false
+civicrm_backfill_on_cron: true
+civicrm_backfill_days: 7
 civicrm_do_not_fields:
   - do_not_phone
   - do_not_email
@@ -86,6 +88,25 @@ template_engagement: |
   (203) 401-8815
   christina.quinonez@makehaven.org
 template_retention: |
+  Subject: We miss you at MakeHaven!
+
+  Hi {contact.first_name},
+
+  I noticed it's been a while since we've seen you at MakeHaven, and I wanted to check in. Your membership is active and ready whenever you are — sometimes life just gets busy!
+
+  If something is keeping you away, I'd love to help:
+  1. Not sure what to work on next? Reply and tell me what you'd like to make, and I'll point you at the right tools and trainings.
+  2. Want a refresher or a new badge? See the facilitator schedules: {domain.base_url}/facilitator/schedules
+  3. Or just come to a meetup — upcoming events: {domain.base_url}/events
+
+  If your needs have changed, I'm happy to talk through options too. We'd love to see you back in the space!
+
+  Happy Making!
+
+  Christina Quinonez
+  (203) 401-8815
+  christina.quinonez@makehaven.org
+template_recovery: |
   Subject: Monthly Membership Fee Not Processed
 
   Hi {contact.first_name},
@@ -103,28 +124,10 @@ template_retention: |
   Christina Quinonez
   (203) 401-8815
   christina.quinonez@makehaven.org
-template_recovery: |
-  Subject: We'd love to have you back at MakeHaven!
-
-  Hi {contact.first_name},
-
-  I noticed your membership at MakeHaven recently ended. We're sorry to see you go, but we hope your time with us was productive and inspiring!
-
-  If you ever find you have more time or a new project in mind, jumping back in is easy. You can reactivate your membership at any time here: {domain.base_url}/payment
-
-  Also, if finances are ever a barrier, we want to make sure the makerspace stays accessible. We offer a sliding scale plan with a very simple application process: {domain.base_url}/sliding
-
-  We'd love to see you back in the space whenever the time is right. Until then, best wishes on all your future making endeavors!
-
-  Happy Making,
-
-  Christina Quinonez
-  (203) 401-8815
-  christina.quinonez@makehaven.org
 sms_template_onboarding: 'Hi {contact.first_name}! One step left to finish joining MakeHaven — {next_step}: {next_step_url} Reply here if you get stuck! - Christina'
 sms_template_engagement: 'Hi {contact.first_name}! Ready to start making? Check facilitator schedules at {domain.base_url}/facilitator/schedules to get badged! - Christina'
-sms_template_retention: 'Hi {contact.first_name}! Your MakeHaven payment was unsuccessful. Update your card at {domain.base_url}/pay to keep your access active. - Christina'
-sms_template_recovery: 'Hi {contact.first_name}! We miss you at MakeHaven. If you''re ready to come back, reactivate here: {domain.base_url}/payment - Christina'
+sms_template_retention: 'Hi {contact.first_name}! We miss you at MakeHaven — your membership is ready whenever you are. What would you like to make next? Reply and we''ll help you dive back in. - Christina'
+sms_template_recovery: 'Hi {contact.first_name}! Your MakeHaven payment was unsuccessful. Update your card at {domain.base_url}/pay to keep your access active. - Christina'
 email_template_overrides: []
 sms_template_overrides: []
 automation_enabled: false

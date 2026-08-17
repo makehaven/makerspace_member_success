@@ -111,4 +111,47 @@ class FollowupStatusManager {
     return TRUE;
   }
 
+  /**
+   * Clears an episode-scoped followup status because a new episode started.
+   *
+   * Only statuses in followupStatusesResetOnNewPaymentEpisode() are cleared
+   * — needs_review and anything unknown are left alone. Clearing propagates
+   * to the CiviCRM followup groups and the Chargebee custom field the same
+   * way setting a status does, so the three systems stay in agreement.
+   *
+   * The caller (snapshot builder / update hook) owns the snapshot row; this
+   * method deliberately does not touch ms_member_success_snapshot.
+   *
+   * @param int $uid
+   *   The member's user id.
+   *
+   * @return string|null
+   *   The status that was cleared, or NULL if nothing needed clearing.
+   */
+  public function clearStatusForNewEpisode(int $uid): ?string {
+    $user = $this->entityTypeManager->getStorage('user')->load($uid);
+    if (!$user || !$user->hasField('field_member_followup_status')) {
+      return NULL;
+    }
+
+    $current = $user->get('field_member_followup_status')->value;
+    if (!in_array($current, MemberSuccessLifecycle::followupStatusesResetOnNewPaymentEpisode(), TRUE)) {
+      return NULL;
+    }
+
+    $user->set('field_member_followup_status', NULL);
+    $user->save();
+    $this->followupGroupSync->syncForUser($user, NULL);
+    $this->chargebeeFollowupSync->pushUserStatus($user, NULL);
+
+    $this->logger->notice(
+      'New payment-failure episode for uid @uid: cleared followup status @status so they re-enter the recovery queue.',
+      ['@uid' => $uid, '@status' => $current]
+    );
+
+    $this->cacheTagsInvalidator->invalidateTags(['config:views.view.member_success_queue']);
+
+    return $current;
+  }
+
 }

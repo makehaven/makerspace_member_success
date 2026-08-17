@@ -101,6 +101,12 @@ makerspace_member_success.settings:
     chargebee_followup_reconcile_force:
       type: boolean
       label: 'Whether cron reconciliation bypasses push-disabled config'
+    civicrm_backfill_on_cron:
+      type: boolean
+      label: 'Whether cron imports recent CiviCRM email/phone activities into the outreach log'
+    civicrm_backfill_days:
+      type: integer
+      label: 'How many days back the cron CiviCRM activity backfill scans'
     civicrm_do_not_fields:
       type: sequence
       label: 'CiviCRM do-not contact fields'

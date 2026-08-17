@@ -118,6 +118,35 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Onboarding auto-nudge failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // Import recent CiviCRM email/phone activities into the outreach log so
+  // outreach done through the console's CiviCRM email buttons (Christina's
+  // workflow) is visible to Intervention Performance and the queue's
+  // cooldown fallback. Log-only: it never writes snapshots, so a stray
+  // CiviCRM email can't snooze an actionable member. Idempotent per
+  // activity id; conservative outcomes (no keyword inference) on this
+  // unattended path.
+  try {
+    $backfill_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $backfill_config->get('civicrm_backfill_on_cron')) {
+      $days = max(1, (int) ($backfill_config->get('civicrm_backfill_days') ?? 7));
+      $summary = \Drupal::service('makerspace_member_success.civi_backfill')
+        ->backfill($days, [2, 3], FALSE, TRUE);
+      if (!empty($summary['imported']) || !empty($summary['errors'])) {
+        \Drupal::logger('makerspace_member_success')->notice(
+          'CiviCRM activity backfill: @imported imported, @examined examined, @errors error(s).',
+          [
+            '@imported' => $summary['imported'],
+            '@examined' => $summary['examined'],
+            '@errors' => $summary['errors'],
+          ],
+        );
+      }
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('CiviCRM activity backfill failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   $config = \Drupal::config('makerspace_member_success.settings');
   if (!(bool) $config->get('chargebee_followup_reconcile_on_cron')) {
     return;

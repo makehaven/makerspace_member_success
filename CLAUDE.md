@@ -50,8 +50,19 @@ onboarding → engagement → retention
 - **Engagement**: door badge active, activation < `new_member_days` (default 180d)
 - **Retention**: door badge active, activation ≥ 180d
 - **Recovery**: `payment_failed = true` (payment pause does NOT trigger recovery)
+- **Paused**: `payment_pause = true` — and pause WINS over a lingering
+  payment-failed flag (2026-08-17): a member whose failed invoice was written
+  off before pausing must not sit in recovery for their whole pause.
 
-Stage transition resets outreach tracking. All stage/outcome/status constants live in `src/Support/MemberSuccessLifecycle.php` — always use those, never raw strings.
+Stage transition resets outreach tracking (but never operator suppression
+statuses). Separately, a **new payment-failure episode** — the payment-failed
+flag going 0→1 against the previous snapshot — re-opens the member's outreach
+file entirely: snoozes, attempt counts, AND the episode-scoped statuses
+`outreach_exhausted` / `confirmed_cancellation` / `no_action_needed` /
+`return_intent` (policy: Kate 2026-08-17; `needs_review` survives). Card
+retries and second cards inside one unresolved failure are the SAME episode
+and never re-trigger this. All stage/outcome/status constants live in
+`src/Support/MemberSuccessLifecycle.php` — always use those, never raw strings.
 
 ### Queue Visibility (snooze/suppression)
 

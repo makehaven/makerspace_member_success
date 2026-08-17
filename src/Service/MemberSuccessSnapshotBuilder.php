@@ -31,14 +31,24 @@ class MemberSuccessSnapshotBuilder {
 
   protected Civicrm $civicrm;
 
-  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm) {
+  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm, ?FollowupStatusManager $followup_status_manager = NULL) {
     $this->database = $database;
     $this->configFactory = $config_factory;
     $this->time = $time;
     $this->entityTypeManager = $entity_type_manager;
     $this->logger = $logger_factory->get('makerspace_member_success');
     $this->civicrm = $civicrm;
+    $this->followupStatusManager = $followup_status_manager;
   }
+
+  /**
+   * Followup status manager, used to clear statuses on a new episode.
+   *
+   * Optional so long-lived callers constructing the builder directly keep
+   * working; without it, episode resets still clear snapshot tracking but
+   * leave the user-level followup status untouched.
+   */
+  protected ?FollowupStatusManager $followupStatusManager = NULL;
 
   /**
    * Builds daily snapshots for active members.
@@ -154,13 +164,16 @@ class MemberSuccessSnapshotBuilder {
     }
 
     $stage = MemberSuccessLifecycle::STAGE_ONBOARDING;
-    // Only payment FAILED goes to recovery (needs action).
-    // Payment paused gets STAGE_PAUSED (intentional break with time-aware risk).
-    if ($payment_failed) {
-      $stage = MemberSuccessLifecycle::STAGE_RECOVERY;
-    }
-    elseif ($payment_pause) {
+    // A pause is an agreed break, so it wins over a lingering payment-failed
+    // flag: a member whose failed invoice was written off before pausing
+    // must not sit in the recovery queue for their whole pause (Kate,
+    // 2026-08-17 — Azrael case). When the pause ends, a still-set failed
+    // flag puts them straight back into recovery.
+    if ($payment_pause) {
       $stage = MemberSuccessLifecycle::STAGE_PAUSED;
+    }
+    elseif ($payment_failed) {
+      $stage = MemberSuccessLifecycle::STAGE_RECOVERY;
     }
     elseif ($door_badge['status'] === 'active' && $serial_present) {
       $engagement_window = $badge_four_days * 86400;
@@ -271,11 +284,12 @@ class MemberSuccessSnapshotBuilder {
 
       // Suppression flags (outreach_exhausted, confirmed_cancellation,
       // no_action_needed, needs_review) are explicit operator decisions and
-      // are NOT auto-reset on stage change — staff feedback (Christina
-      // 2026-04-28) confirmed that members marked exhausted or cancelled
-      // popping back into the queue after a payment-failure-driven stage
-      // shift was unwanted. If renewed outreach is needed, staff re-open via
-      // the Log Contact form. The helper currently always returns FALSE; the
+      // are NOT auto-reset on a stage change alone — staff feedback
+      // (Christina 2026-04-28) confirmed that members marked exhausted or
+      // cancelled popping back into the queue after any stage shift was
+      // unwanted. The one event that DOES wipe them is the start of a new
+      // payment-failure episode, handled in the dedicated block below
+      // (Kate 2026-08-17). The helper currently always returns FALSE; the
       // call is kept so future policy can re-introduce conditional resets
       // without touching this branch.
       if (MemberSuccessQueueRules::shouldResetSuppressionOnStageChange($previous_stage, $stage, $member_followup_status)) {
@@ -293,13 +307,51 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
+    // A NEW payment-failure episode re-opens the member's outreach file
+    // (Kate, 2026-08-17). "New episode" means the payment-failed flag went
+    // 0 → 1 since the previous snapshot: the member had recovered (or never
+    // failed) and a later charge failed. Card retries and second cards
+    // inside one unresolved failure never re-trigger this, so snoozes staff
+    // set during an episode survive. Snoozes, attempt counts, and
+    // episode-scoped statuses (exhausted, confirmed cancellation, return
+    // intent, no action needed) all clear; needs_review survives. The
+    // membership guard is structural: only current members are snapshotted,
+    // so a genuinely departed member cannot re-enter a queue this way.
+    $episode_reset = MemberSuccessLifecycle::isNewPaymentEpisode($previous, $payment_failed);
+    if ($episode_reset) {
+      $this->logger->info('New payment-failure episode for user @uid (was clear, now failed). Re-opening outreach file.', [
+        '@uid' => $uid,
+      ]);
+
+      $previous['last_outreach_ts'] = NULL;
+      $previous['outreach_status'] = NULL;
+      $previous['last_contact_date'] = NULL;
+      $previous['next_followup_date'] = NULL;
+      $previous['contact_count'] = 0;
+
+      $this->followupStatusManager?->clearStatusForNewEpisode($uid);
+      if (in_array($member_followup_status, MemberSuccessLifecycle::followupStatusesResetOnNewPaymentEpisode(), TRUE)) {
+        $member_followup_status = NULL;
+      }
+    }
+
+    // Log fallback: adopt outreach state from the log when the snapshot has
+    // none. Never right after an episode reset, and — for a payment-failed
+    // member — never from log rows that predate the current episode: both
+    // would resurrect exactly the stale snooze the episode reset clears.
     if (
-      empty($previous['last_contact_date'])
+      !$episode_reset
+      && empty($previous['last_contact_date'])
       && empty($previous['next_followup_date'])
       && empty($previous['contact_count'])
     ) {
       $log_state = $this->loadLatestOutreachLogState($uid);
-      if (!empty($log_state)) {
+      $log_contact_date = (string) ($log_state['last_contact_date'] ?? '');
+      $predates_episode = $payment_failed
+        && !empty($payment_failed_since)
+        && $log_contact_date !== ''
+        && $log_contact_date < $payment_failed_since;
+      if (!empty($log_state) && !$predates_episode) {
         $previous['last_contact_date'] = $log_state['last_contact_date'] ?? NULL;
         $previous['next_followup_date'] = $log_state['next_followup_date'] ?? NULL;
         $previous['outreach_status'] = $log_state['outreach_status'] ?? ($previous['outreach_status'] ?? NULL);

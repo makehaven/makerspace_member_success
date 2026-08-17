@@ -1686,3 +1686,78 @@ function makerspace_member_success_update_9031(): void {
     $schema->createTable('ms_onboarding_lead', _makerspace_member_success_lead_table_schema());
   }
 }
+
+/**
+ * Re-opens outreach files stuck closed across payment-failure episodes.
+ *
+ * One-time repair backing the 2026-08-17 policy decision (Kate): a NEW
+ * payment-failure episode re-opens a member's outreach file. The snapshot
+ * builder now does this on the flag's 0→1 transition, but members already
+ * mid-episode at deploy time transitioned before the code existed, so their
+ * stale snoozes / attempt counts / episode-scoped statuses from a PREVIOUS
+ * episode still hide them from the actionable recovery queue (Sam Stoddard,
+ * Zane Birks, Gabriel Harris, Azrael Von Kohler — feedback sid 20275).
+ *
+ * A member qualifies when currently payment-failed AND their last logged
+ * contact predates the current episode's start (payment_failed_since), or
+ * they were never contacted but carry an episode-resettable status.
+ */
+function makerspace_member_success_update_9032(): string {
+  $database = \Drupal::database();
+  $resettable = \Drupal\makerspace_member_success\Support\MemberSuccessLifecycle::followupStatusesResetOnNewPaymentEpisode();
+
+  $rows = $database->select('ms_member_success_snapshot', 'ms')
+    ->fields('ms', ['id', 'uid', 'member_followup_status', 'last_contact_date', 'payment_failed_since', 'next_followup_date', 'contact_count'])
+    ->condition('is_latest', 1)
+    ->condition('snapshot_type', 'daily')
+    ->condition('payment_failed', 1)
+    ->execute()
+    ->fetchAll(\Drupal\Core\Database\Statement\FetchAs::Associative);
+
+  $reset_uids = [];
+  foreach ($rows as $row) {
+    $since = (string) ($row['payment_failed_since'] ?? '');
+    if ($since === '') {
+      // Unknown episode start — leave untouched rather than guess.
+      continue;
+    }
+    $last_contact = (string) ($row['last_contact_date'] ?? '');
+    $stale_contact = $last_contact === '' || $last_contact < $since;
+    if (!$stale_contact) {
+      continue;
+    }
+    $has_stale_state = !empty($row['next_followup_date'])
+      || (int) $row['contact_count'] > 0
+      || in_array($row['member_followup_status'], $resettable, TRUE);
+    if (!$has_stale_state) {
+      continue;
+    }
+
+    $fields = [
+      'last_outreach_ts' => NULL,
+      'outreach_status' => NULL,
+      'last_contact_date' => NULL,
+      'next_followup_date' => NULL,
+      'contact_count' => 0,
+    ];
+    if (in_array($row['member_followup_status'], $resettable, TRUE)) {
+      $fields['member_followup_status'] = NULL;
+    }
+    $database->update('ms_member_success_snapshot')
+      ->fields($fields)
+      ->condition('id', $row['id'])
+      ->execute();
+
+    // Clear the user-level status too (no-op unless episode-resettable);
+    // propagates to CiviCRM groups / Chargebee like any status change.
+    \Drupal::service('makerspace_member_success.followup_status_manager')
+      ->clearStatusForNewEpisode((int) $row['uid']);
+
+    $reset_uids[] = (int) $row['uid'];
+  }
+
+  $message = count($reset_uids) . ' outreach file(s) re-opened for the current payment-failure episode'
+    . ($reset_uids ? ' (uids: ' . implode(', ', $reset_uids) . ')' : '') . '.';
+  \Drupal::logger('makerspace_member_success')->notice($message);
+  return $message;
+}

@@ -8,6 +8,7 @@ services:
       - '@entity_type.manager'
       - '@logger.factory'
       - '@civicrm'
+      - '@makerspace_member_success.followup_status_manager'
 
   makerspace_member_success.onboarding_quiz_redirect:
     class: Drupal\makerspace_member_success\EventSubscriber\OnboardingQuizRedirectSubscriber

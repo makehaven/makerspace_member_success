@@ -69,6 +69,47 @@ final class MemberSuccessLifecycle {
   }
 
   /**
+   * Followup statuses a NEW payment-failure episode wipes.
+   *
+   * Policy (Kate, 2026-08-17): when a member who had recovered falls into a
+   * fresh payment failure, their outreach file re-opens — including members
+   * previously closed as exhausted or "confirmed cancellation". The guard is
+   * structural: snapshots only cover current members, so someone whose
+   * membership actually ended never re-enters a queue this way. Retries and
+   * extra cards within one unresolved failure are the SAME episode and never
+   * trigger this. needs_review is deliberately kept — it is an escalation to
+   * staff, not a stop-contact decision.
+   */
+  public static function followupStatusesResetOnNewPaymentEpisode(): array {
+    return [
+      self::FOLLOWUP_CONFIRMED_CANCELLATION,
+      self::FOLLOWUP_OUTREACH_EXHAUSTED,
+      self::FOLLOWUP_NO_ACTION_NEEDED,
+      self::FOLLOWUP_RETURN_INTENT,
+    ];
+  }
+
+  /**
+   * Whether this build observes the START of a new payment-failure episode.
+   *
+   * True only on the flag's 0→1 transition against the previous snapshot:
+   * the member currently has a failed payment and the prior snapshot did
+   * not. A missing previous snapshot is NOT an episode start — we have no
+   * history to judge, and wiping operator decisions on first sight would be
+   * destructive.
+   *
+   * @param array $previous
+   *   The previous snapshot row (may be empty for first-ever builds).
+   * @param bool $payment_failed
+   *   Whether the member is payment-failed in the current build.
+   */
+  public static function isNewPaymentEpisode(array $previous, bool $payment_failed): bool {
+    return $payment_failed
+      && $previous !== []
+      && empty($previous['payment_failed']);
+  }
+
+  /**
    * Outcomes that count as a positive intervention resolution.
    *
    * Used by performance analytics ("Resolution Rate") to credit outreach when

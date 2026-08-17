@@ -40,11 +40,18 @@ class CiviCrmActivityBackfillService {
    *   Activity type IDs to include (e.g. [2, 3] for Phone Call, Email).
    * @param bool $dryRun
    *   If TRUE, no database writes will occur.
+   * @param bool $conservative
+   *   When TRUE (the cron path), skip the subject-keyword outcome heuristics
+   *   and record plain outcomes only: email → email_sent, everything else →
+   *   no_answer. The keyword guesses ("cancel" → confirmed cancellation!)
+   *   are acceptable for a one-off supervised import but far too aggressive
+   *   to run unattended — a dunning email with "cancellation" in the subject
+   *   must not paint the member as a confirmed cancel.
    *
    * @return array
    *   Summary of processing results.
    */
-  public function backfill(int $days = 90, array $activityTypes = [2, 3], bool $dryRun = FALSE): array {
+  public function backfill(int $days = 90, array $activityTypes = [2, 3], bool $dryRun = FALSE, bool $conservative = FALSE): array {
     $summary = [
       'examined' => 0,
       'imported' => 0,
@@ -133,17 +140,26 @@ class CiviCrmActivityBackfillService {
           $method = $method_map[$act['activity_type_id']] ?? 'other';
           $date = substr($act['activity_date_time'], 0, 10);
 
-          // Heuristic for outcome:
-          // Since CiviCRM doesn't have our specific outcomes, we assume 'no_answer'
-          // unless keywords suggest otherwise.
-          $outcome = MemberSuccessLifecycle::OUTCOME_NO_ANSWER;
-          $subject = strtolower($act['subject'] ?? '');
-          if (str_contains($subject, 'spoke') || str_contains($subject, 'connected') || str_contains($subject, 'resolved')) {
-            // Conservative success.
-            $outcome = MemberSuccessLifecycle::OUTCOME_WILL_RETURN;
+          if ($conservative) {
+            // Unattended import: record what verifiably happened, infer
+            // nothing. An email activity means an email was sent.
+            $outcome = $method === 'email'
+              ? MemberSuccessLifecycle::OUTCOME_EMAIL_SENT
+              : MemberSuccessLifecycle::OUTCOME_NO_ANSWER;
           }
-          if (str_contains($subject, 'cancel')) {
-            $outcome = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
+          else {
+            // Heuristic for outcome:
+            // Since CiviCRM doesn't have our specific outcomes, we assume 'no_answer'
+            // unless keywords suggest otherwise.
+            $outcome = MemberSuccessLifecycle::OUTCOME_NO_ANSWER;
+            $subject = strtolower($act['subject'] ?? '');
+            if (str_contains($subject, 'spoke') || str_contains($subject, 'connected') || str_contains($subject, 'resolved')) {
+              // Conservative success.
+              $outcome = MemberSuccessLifecycle::OUTCOME_WILL_RETURN;
+            }
+            if (str_contains($subject, 'cancel')) {
+              $outcome = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
+            }
           }
 
           if (!$dryRun) {
@@ -157,8 +173,7 @@ class CiviCrmActivityBackfillService {
 
 " . strip_tags($act['details'] ?? ''),
                 'followup_status' => MemberSuccessLifecycle::followupStatusForOutcome($outcome),
-            // Default to admin for backfills.
-                'staff_uid' => 1,
+                'staff_uid' => $this->resolveStaffUid($activity_id),
                 'civicrm_activity_id' => $activity_id,
                 'created_at' => strtotime($act['activity_date_time']),
                 'sleep_days' => MemberSuccessLifecycle::sleepDaysForOutcome($outcome),
@@ -181,6 +196,42 @@ class CiviCrmActivityBackfillService {
     }
 
     return $summary;
+  }
+
+  /**
+   * Resolves the Drupal uid of the staff member who performed an activity.
+   *
+   * Uses the activity's Source contact (the person who added it in CiviCRM)
+   * so Intervention Performance attributes outreach to the person who
+   * actually did it — Kate's 2026-08-17 report was that the numbers "don't
+   * match what Christina is doing", and blanket-attributing backfills to
+   * admin was half of why. Falls back to uid 1 when the source contact has
+   * no Drupal account.
+   */
+  protected function resolveStaffUid(int $activity_id): int {
+    try {
+      $source = civicrm_api3('ActivityContact', 'get', [
+        'activity_id' => $activity_id,
+        'record_type_id' => 'Activity Source',
+        'sequential' => 1,
+        'options' => ['limit' => 1],
+      ]);
+      $contact_id = (int) ($source['values'][0]['contact_id'] ?? 0);
+      if ($contact_id > 0) {
+        $uid = $this->database->select('civicrm_uf_match', 'uf')
+          ->fields('uf', ['uf_id'])
+          ->condition('contact_id', $contact_id)
+          ->execute()
+          ->fetchField();
+        if ($uid) {
+          return (int) $uid;
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Fall through to the admin default.
+    }
+    return 1;
   }
 
 }
