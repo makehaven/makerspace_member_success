@@ -131,6 +131,9 @@ automation_enabled: false
 onboarding_auto_nudge_enabled: false
 onboarding_auto_nudge_steps:
   - profile
+  - video
+  - quiz
+  - schedule
 automation_policy_version: 'v1'
 pause_all: false
 pause_email: false

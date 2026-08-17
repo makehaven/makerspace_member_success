@@ -3,8 +3,12 @@
 namespace Drupal\Tests\makerspace_member_success\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\makerspace_member_success\Service\OutreachMessageBuilderInterface;
 use Drupal\makerspace_member_success\Service\OutreachPolicyDeciderInterface;
 use Drupal\makerspace_member_success\Service\OutreachQueueService;
+use Drupal\makerspace_member_success\Service\OutreachSenderInterface;
+use Drupal\makerspace_member_success\Service\OutreachService;
+use Drupal\makerspace_member_success\Service\OutreachSuppressionCheckerInterface;
 use Drupal\makerspace_member_success\Support\OutreachDecision;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -184,6 +188,61 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests gate suppressions reuse the member's open row instead of inserting.
+   *
+   * Regression test: the max-attempts/cooldown/below-threshold gates used to
+   * insert a fresh suppressed row on every candidate run, so an exhausted
+   * member accumulated a new row per cron run forever. They must dedup into
+   * the one open row like every other enqueue outcome — and that row must be
+   * revivable once the gates pass again.
+   */
+  public function testGateSuppressionReusesOpenRow(): void {
+    $this->installSchema('system', ['sequences']);
+    $this->installSchema('makerspace_member_success', ['ms_member_outreach_queue']);
+
+    $service = $this->buildQueueService();
+    $exhausted = [
+      'stage' => 'retention',
+      'risk_score' => 55,
+      'risk_reasons' => ['inactive_30'],
+      'contact_count' => 3,
+      'last_contact_date' => date('Y-m-d', strtotime('-30 days')),
+      'email' => 'member106@example.com',
+      'phone' => '',
+      'is_opt_out' => 0,
+      'do_not_email' => 0,
+      'do_not_sms' => 0,
+    ];
+
+    $first_id = $service->enqueueCandidate(106, 'retention', $exhausted);
+    $second_id = $service->enqueueCandidate(106, 'retention', $exhausted);
+
+    $this->assertSame($first_id, $second_id);
+    $count = (int) $this->container->get('database')
+      ->select('ms_member_outreach_queue', 'q')
+      ->condition('q.uid', 106)
+      ->condition('q.stage', 'retention')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+    $this->assertSame(1, $count);
+
+    $row = $this->databaseRow($first_id);
+    $this->assertSame('suppressed', (string) $row['status']);
+    $this->assertSame('suppressed_max_attempts', (string) $row['suppression_reason_code']);
+
+    // Once the gates pass again (e.g. attempts reset on a stage transition),
+    // the same row revives instead of a duplicate appearing.
+    $revived_id = $service->enqueueCandidate(106, 'retention', [
+      'contact_count' => 1,
+    ] + $exhausted);
+
+    $this->assertSame($first_id, $revived_id);
+    $row = $this->databaseRow($first_id);
+    $this->assertSame('queued', (string) $row['status']);
+  }
+
+  /**
    * Tests cooldown uses outreach-log fallback when snapshot date is empty.
    */
   public function testEnqueueUsesOutreachLogFallbackForCooldownSuppression(): void {
@@ -261,7 +320,12 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
       $this->container->get('database'),
       $this->container->get('datetime.time'),
       $policy_decider,
-      $this->container->get('config.factory')
+      $this->container->get('config.factory'),
+      $this->createMock(OutreachMessageBuilderInterface::class),
+      $this->createMock(OutreachSenderInterface::class),
+      $this->container->get('entity_type.manager'),
+      $this->createMock(OutreachService::class),
+      $this->createMock(OutreachSuppressionCheckerInterface::class)
     );
   }
 

@@ -3,6 +3,7 @@
 namespace Drupal\makerspace_member_success\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 
 /**
@@ -226,7 +227,7 @@ class RecoveryMetrics {
       ORDER BY contact_method
     ";
 
-    $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
+    $results = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
     $effectiveness = [];
 
     foreach ($results as $row) {
@@ -269,7 +270,7 @@ class RecoveryMetrics {
       ORDER BY attempt_bucket
     ";
 
-    $results = $this->database->query($query)->fetchAll(\PDO::FETCH_ASSOC);
+    $results = $this->database->query($query)->fetchAll(FetchAs::Associative);
     $distribution = [];
 
     foreach ($results as $row) {
@@ -352,7 +353,7 @@ class RecoveryMetrics {
       ORDER BY resolved DESC, members_contacted DESC
     ";
 
-    $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
+    $results = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
 
     // Get average days to resolution per staff member using subquery.
     // Note: inner subquery uses 'log' alias so $date_where (log.contact_date) works.
@@ -491,7 +492,7 @@ class RecoveryMetrics {
       GROUP BY log.uid, payment.field_member_payment_monthly_value
     ";
 
-    $members = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
+    $members = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
 
     $total_at_risk = 0;
     $value_saved = 0;
@@ -545,7 +546,7 @@ class RecoveryMetrics {
       ORDER BY month ASC
     ";
 
-    $results = $this->database->query($query, $params)->fetchAll(\PDO::FETCH_ASSOC);
+    $results = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
     $trends = [];
 
     foreach ($results as $row) {

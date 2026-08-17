@@ -71,24 +71,31 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       $status = 'approved';
     }
 
+    // Policy gates. These override any earlier decision (including a
+    // manual_only channel suppression) so the recorded reason is the gate
+    // that actually blocked the send. Gate suppressions flow through the
+    // same dedup below as every other outcome: a member re-suppressed on
+    // every cron run must update their one open row, not append a new row
+    // per run.
     if ($risk_score < $min_risk) {
-      return $this->insertQueueRow($uid, $stage, $snapshot, $decision, 'suppressed', 'suppressed_below_threshold', $now);
+      $status = 'suppressed';
+      $suppression_reason = 'suppressed_below_threshold';
     }
-
-    if ($contact_count >= $max_attempts && $max_attempts > 0) {
-      return $this->insertQueueRow($uid, $stage, $snapshot, $decision, 'suppressed', 'suppressed_max_attempts', $now);
+    elseif ($contact_count >= $max_attempts && $max_attempts > 0) {
+      $status = 'suppressed';
+      $suppression_reason = 'suppressed_max_attempts';
     }
-
-    if ($cooldown_days > 0 && $last_contact_date !== '') {
+    elseif ($cooldown_days > 0 && $last_contact_date !== '') {
       $next_allowed_ts = strtotime($last_contact_date . ' +' . $cooldown_days . ' days');
       if ($next_allowed_ts !== FALSE && $next_allowed_ts > $now) {
-        return $this->insertQueueRow($uid, $stage, $snapshot, $decision, 'suppressed', 'suppressed_cooldown', $now);
+        $status = 'suppressed';
+        $suppression_reason = 'suppressed_cooldown';
       }
     }
 
     $scheduled_at = isset($snapshot['scheduled_at'])
       ? (int) $snapshot['scheduled_at']
-      : $this->computeDefaultScheduledAt($now, $config);
+      : ($status === 'suppressed' ? $now : $this->computeDefaultScheduledAt($now, $config));
     $existing = $this->findExistingOpenRow($uid, $stage);
     if (!empty($existing['id'])) {
       $existing_id = (int) $existing['id'];
@@ -291,47 +298,6 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       }
     }
     return $processed;
-  }
-
-  /**
-   * Inserts a suppression row and returns its ID.
-   */
-  protected function insertQueueRow(
-    int $uid,
-    string $stage,
-    array $snapshot,
-    OutreachDecision $decision,
-    string $status,
-    ?string $suppressionReason,
-    int $now,
-  ): int {
-    return (int) $this->database->insert('ms_member_outreach_queue')
-      ->fields([
-        'uid' => $uid,
-        'civicrm_contact_id' => (int) ($snapshot['civicrm_contact_id'] ?? $snapshot['contact_id_raw'] ?? 0) ?: NULL,
-        'stage' => $stage,
-        'risk_score' => (int) ($snapshot['risk_score'] ?? 0),
-        'risk_reasons' => $this->normalizeRiskReasons($snapshot['risk_reasons'] ?? NULL),
-        'recommended_channel' => $decision->channel,
-        'recommended_template_id' => $decision->templateId,
-        'recommended_reason_code' => $decision->reasonCode,
-        'destination_email' => (string) ($snapshot['email'] ?? '') ?: NULL,
-        'destination_phone' => (string) ($snapshot['phone'] ?? '') ?: NULL,
-        'consent_snapshot' => !empty($snapshot) ? serialize([
-          'is_opt_out' => (int) ($snapshot['is_opt_out'] ?? 0),
-          'do_not_email' => (int) ($snapshot['do_not_email'] ?? 0),
-          'do_not_sms' => (int) ($snapshot['do_not_sms'] ?? 0),
-          'sms_consent' => $snapshot['sms_consent'] ?? NULL,
-          'preferred_outreach_method' => (string) ($snapshot['preferred_outreach_method'] ?? ''),
-        ]) : NULL,
-        'policy_version' => (string) ($snapshot['policy_version'] ?? 'v1'),
-        'status' => $status,
-        'suppression_reason_code' => $suppressionReason,
-        'scheduled_at' => (int) ($snapshot['scheduled_at'] ?? $now),
-        'created_at' => $now,
-        'updated_at' => $now,
-      ])
-      ->execute();
   }
 
   /**
