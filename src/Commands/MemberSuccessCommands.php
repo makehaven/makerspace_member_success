@@ -1053,4 +1053,122 @@ class MemberSuccessCommands extends DrushCommands {
     }
   }
 
+  /**
+   * Backfills confirmed-cancel log rows for past recovery departures.
+   *
+   * Until 2026-08, a member whose subscription cancelled while in payment
+   * recovery simply stopped being snapshotted: no confirmed_cancel row was
+   * ever written, so the Intervention Performance page showed 0 confirmed
+   * cancellations for everyone. The daily build now sweeps these departures
+   * as they happen (recordDepartedRecoveryCancellations); this command
+   * repairs the historical gap by finding members whose LAST daily snapshot
+   * was in the recovery stage, who are no longer active members, and who
+   * have no confirmed-cancel row near that date — then writing the same
+   * back-attributed auto row the sweep would have written.
+   *
+   * @option since
+   *   Only consider members whose last snapshot is on/after this date.
+   *   Default 2026-04-20 — the last manually-logged cancellation.
+   * @option dry-run
+   *   Report what would be written without writing.
+   *
+   * @command ms:backfill-cancellations
+   * @aliases ms-backfill-cancel
+   */
+  public function backfillCancellations(array $options = ['since' => '2026-04-20', 'dry-run' => FALSE]): void {
+    $database = \Drupal::database();
+    $since = (string) $options['since'];
+    $dry_run = (bool) $options['dry-run'];
+
+    // Members whose last-ever daily snapshot was recovery-stage.
+    $candidates = $database->query("
+      SELECT s.uid, s.snapshot_date
+      FROM {ms_member_success_snapshot} s
+      INNER JOIN (
+        SELECT uid, MAX(snapshot_date) AS last_date
+        FROM {ms_member_success_snapshot}
+        WHERE snapshot_type = 'daily'
+        GROUP BY uid
+      ) latest ON latest.uid = s.uid AND latest.last_date = s.snapshot_date
+      WHERE s.snapshot_type = 'daily'
+        AND s.stage = :recovery
+        AND s.snapshot_date >= :since
+    ", [':recovery' => MemberSuccessLifecycle::STAGE_RECOVERY, ':since' => $since])->fetchAllKeyed();
+
+    // Drop anyone who is still an active member (their case is still open).
+    $active = [];
+    if (!empty($candidates)) {
+      $active = $database->select('users_field_data', 'u')
+        ->fields('u', ['uid'])
+        ->condition('u.uid', array_keys($candidates), 'IN')
+        ->condition('u.status', 1)
+        ->execute()
+        ->fetchCol();
+      $member_roles = $database->select('user__roles', 'r')
+        ->fields('r', ['entity_id'])
+        ->condition('r.entity_id', array_keys($candidates), 'IN')
+        ->condition('r.roles_target_id', ['member', 'member_pending_approval'], 'IN')
+        ->execute()
+        ->fetchCol();
+      $active = array_intersect($active, $member_roles);
+    }
+
+    $rows = [];
+    $written = 0;
+    $skipped_active = 0;
+    foreach ($candidates as $uid => $last_date) {
+      if (in_array($uid, $active)) {
+        $skipped_active++;
+        continue;
+      }
+
+      $name = $database->select('users_field_data', 'u')
+        ->fields('u', ['name'])
+        ->condition('u.uid', $uid)
+        ->execute()
+        ->fetchField();
+
+      if ($dry_run) {
+        // Report whether the runtime guard (existing cancel row within 90
+        // days) would skip this member.
+        $guard_date = date('Y-m-d', strtotime($last_date . ' -90 days'));
+        $has_existing = (bool) $database->select('ms_member_outreach_log', 'log')
+          ->fields('log', ['id'])
+          ->condition('uid', $uid)
+          ->condition('outcome', MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL)
+          ->condition('contact_date', $guard_date, '>=')
+          ->range(0, 1)
+          ->execute()
+          ->fetchField();
+        $rows[] = [
+          (string) $uid,
+          (string) $name,
+          (string) $last_date,
+          $has_existing ? 'skip (already logged)' : 'would write',
+        ];
+        continue;
+      }
+
+      $this->snapshotBuilder->recordAutomaticCancellation((int) $uid, (string) $last_date, time());
+      $rows[] = [(string) $uid, (string) $name, (string) $last_date, 'processed'];
+      $written++;
+    }
+
+    if (!empty($rows)) {
+      $this->io()->table(['UID', 'Member', 'Last recovery snapshot', 'Action'], $rows);
+    }
+    $this->io()->table(['Metric', 'Count'], [
+      ['Departed-in-recovery candidates since ' . $since, (string) count($candidates)],
+      ['Skipped — still an active member', (string) $skipped_active],
+      [$dry_run ? 'Would process' : 'Processed', (string) ($dry_run ? count($candidates) - $skipped_active : $written)],
+    ]);
+
+    if ($dry_run) {
+      $this->logger()->info('Dry run complete. No data written.');
+    }
+    else {
+      $this->logger()->success('Cancellation backfill complete.');
+    }
+  }
+
 }

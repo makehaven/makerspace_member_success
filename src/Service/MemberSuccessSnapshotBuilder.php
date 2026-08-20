@@ -71,6 +71,16 @@ class MemberSuccessSnapshotBuilder {
       $count++;
     }
 
+    // Members whose latest snapshot says "recovery" but who are no longer
+    // active members departed while their payment was failing — in practice
+    // the Chargebee dunning window ran out and the subscription cancelled.
+    // Log that loss before the is_latest flags are cleared below, or the
+    // departure becomes invisible: successes were already auto-logged on
+    // recovery exit, but cancellations silently vanished from the outreach
+    // log (and the Intervention Performance page showed 0 confirmed cancels
+    // for everyone — Kate/Christina, 2026-08-20).
+    $this->recordDepartedRecoveryCancellations($uids, $snapshot_type, $snapshot_date, $now_ts);
+
     // After a successful pass, clear is_latest on any rows belonging to users
     // who are no longer active members. Done at the end (not before the loop)
     // so a mid-run crash leaves prior is_latest rows intact.
@@ -558,6 +568,113 @@ class MemberSuccessSnapshotBuilder {
     catch (\Throwable $e) {
       $this->logger->warning(
         'Unable to record automatic recovery success for uid @uid: @message',
+        ['@uid' => $uid, '@message' => $e->getMessage()]
+      );
+    }
+  }
+
+  /**
+   * Writes confirmed-cancel log rows for members who departed in recovery.
+   *
+   * @param int[] $active_uids
+   *   User ids that were just snapshotted (still active members).
+   * @param string $snapshot_type
+   *   Snapshot type to scope the sweep to (e.g. 'daily').
+   * @param string $contact_date
+   *   Date to stamp on the auto rows (Y-m-d).
+   * @param int $created_at
+   *   Timestamp for the created_at column.
+   *
+   * @return int
+   *   Number of members swept.
+   */
+  protected function recordDepartedRecoveryCancellations(array $active_uids, string $snapshot_type, string $contact_date, int $created_at): int {
+    $query = $this->database->select('ms_member_success_snapshot', 'ms')
+      ->fields('ms', ['uid'])
+      ->condition('snapshot_type', $snapshot_type)
+      ->condition('is_latest', 1)
+      ->condition('stage', MemberSuccessLifecycle::STAGE_RECOVERY);
+    if (!empty($active_uids)) {
+      $query->condition('uid', $active_uids, 'NOT IN');
+    }
+    $departed = array_map('intval', $query->execute()->fetchCol());
+
+    foreach ($departed as $uid) {
+      $this->recordAutomaticCancellation($uid, $contact_date, $created_at);
+    }
+
+    return count($departed);
+  }
+
+  /**
+   * Records a one-time automatic "confirmed cancel" outreach outcome.
+   *
+   * Mirror image of recordAutomaticRecoverySuccess(): when a recovery member
+   * pays we auto-log the win, so when a recovery member's membership ends we
+   * must auto-log the loss — otherwise the outreach log only ever contains
+   * successes and the Confirmed Cancel columns read 0 for everyone. Uses the
+   * same 30-day back-attribution so the staff member who worked the case gets
+   * the closure credited to them.
+   */
+  public function recordAutomaticCancellation(int $uid, string $contact_date, int $created_at): void {
+    try {
+      // One cancellation per episode: skip if any confirmed-cancel row exists
+      // in the past 90 days (manual or automatic).
+      $lookback_guard = date('Y-m-d', strtotime($contact_date . ' -90 days'));
+      $existing = $this->database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['id'])
+        ->condition('uid', $uid)
+        ->condition('outcome', MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL)
+        ->condition('contact_date', $lookback_guard, '>=')
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+
+      if (!empty($existing)) {
+        return;
+      }
+
+      // Back-attribute to the most recent human outreach within 30 days.
+      $lookback_date = date('Y-m-d', strtotime($contact_date . ' -30 days'));
+      $recent_human = $this->database->select('ms_member_outreach_log', 'log')
+        ->fields('log', ['contact_method', 'staff_uid'])
+        ->condition('uid', $uid)
+        ->condition('staff_uid', NULL, 'IS NOT NULL')
+        ->condition('contact_date', $lookback_date, '>=')
+        ->condition('contact_date', $contact_date, '<=')
+        ->orderBy('contact_date', 'DESC')
+        ->orderBy('id', 'DESC')
+        ->range(0, 1)
+        ->execute()
+        ->fetchAssoc();
+
+      if ($recent_human && !empty($recent_human['staff_uid'])) {
+        $contact_method = (string) $recent_human['contact_method'];
+        $staff_uid = (int) $recent_human['staff_uid'];
+        $notes = 'Auto-confirmed cancellation: membership ended while in payment recovery (subscription cancelled). Credit to most recent human outreach within 30 days.';
+      }
+      else {
+        $contact_method = 'system';
+        $staff_uid = NULL;
+        $notes = 'Automatic cancellation: membership ended while in payment recovery (subscription cancelled). No human outreach in past 30 days.';
+      }
+
+      $this->database->insert('ms_member_outreach_log')
+        ->fields([
+          'uid' => $uid,
+          'contact_date' => $contact_date,
+          'contact_method' => $contact_method,
+          'outcome' => MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL,
+          'notes' => $notes,
+          'staff_uid' => $staff_uid,
+          'sleep_days' => MemberSuccessLifecycle::sleepDaysForOutcome(MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL),
+          'created_at' => $created_at,
+        ])
+        ->execute();
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning(
+        'Unable to record automatic cancellation for uid @uid: @message',
         ['@uid' => $uid, '@message' => $e->getMessage()]
       );
     }

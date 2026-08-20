@@ -361,6 +361,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $retention_value = $this->recoveryMetrics->getRetentionValue($start_date, $end_date);
     $monthly_trends = $this->recoveryMetrics->getMonthlyTrends(6);
     $all_metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
+    $resolution_details = $this->recoveryMetrics->getResolutionDetails($start_date, $end_date);
 
     $build = [
       '#prefix' => '<div class="ms-performance-dashboard">',
@@ -393,7 +394,8 @@ class MemberSuccessDashboardController extends ControllerBase {
         '#markup' => $this->t('<strong>How metrics are calculated:</strong><ul class="mb-0 mt-2">
           <li><strong>Members Contacted:</strong> Distinct members with at least one outreach contact logged in this date range</li>
           <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach</li>
-          <li><strong>Resolution Rate:</strong> % of contacted members with a positive case-closing outcome — <em>payment updated</em>, <em>will return</em>, or <em>no action needed</em>. <em>Confirmed cancellation</em> is case-closing but counted separately as a loss.</li>
+          <li><strong>Resolution Rate:</strong> % of contacted members with a positive case-closing outcome — <em>payment updated</em>, <em>will return</em>, or <em>no action needed</em>. <em>Confirmed cancellation</em> is case-closing but counted separately as a loss. The individual members behind both counts are listed in the "Who is behind these numbers?" section below.</li>
+          <li><strong>Confirmed Cancel:</strong> logged when staff record a cancellation via Log Contact, and (since 2026-08) automatically when a member\'s subscription ends while they are in payment recovery — with credit going to the staff member who last reached out within 30 days. Cancellations handled directly in Chargebee before this automation never reached this log, so older date ranges under-count cancels.</li>
           <li><strong>Avg Days to Resolution:</strong> Average time from first contact to the resolved outcome across resolved members</li>
           <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, sms, in-person, other, system). <em>System</em> rows are auto-written when a recovery member quietly pays via Chargebee — these are now back-attributed to the staff member whose recent outreach drove the recovery, so they no longer all collapse into a 100%/system row.</li>
           </ul>'),
@@ -435,7 +437,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         'Resolution Rate',
         $all_metrics['resolution_rate']['rate'] . '%',
         'info',
-        $all_metrics['resolution_rate']['resolved'] . ' of ' . $all_metrics['resolution_rate']['total'] . ' resolved'
+        $all_metrics['resolution_rate']['resolved'] . ' of ' . $all_metrics['resolution_rate']['total'] . ' contacted members resolved — names listed below'
       ),
     ];
 
@@ -449,6 +451,9 @@ class MemberSuccessDashboardController extends ControllerBase {
         NULL
       ),
     ];
+
+    // Drill-down: the individual members behind the resolution numbers.
+    $build['resolution_detail'] = $this->buildResolutionDetailSection($resolution_details);
 
     // Staff Performance Table.
     $build['staff_table'] = [
@@ -642,7 +647,7 @@ class MemberSuccessDashboardController extends ControllerBase {
           <li><strong>will_return:</strong> Member committed to returning</li>
           <li><strong>no_action_needed:</strong> Outreach revealed nothing to fix</li>
         </ul>
-        <p><strong>confirmed_cancel</strong> is case-closing but lost — it is surfaced in its own column and not counted toward the resolved/success rate.</p>
+        <p><strong>confirmed_cancel</strong> is case-closing but lost — it is surfaced in its own column and not counted toward the resolved/success rate. It is recorded two ways: staff logging a cancellation conversation via Log Contact, and (since 2026-08) an automatic row written by the daily snapshot when a member\'s membership ends while they are in payment recovery — the mirror image of the automatic payment-updated row, using the same 30-day staff back-attribution. Before that automation, cancellations completed inside Chargebee never produced a log row here, which is why ranges between 2026-04-20 and the automation\'s deploy showed zero confirmed cancels until the <code>ms:backfill-cancellations</code> repair ran.</p>
         <p>Holding outcomes (no_answer, left_message, email_sent, sms_sent, email_bounced, invalid_contact, needs_time) do NOT count as resolved — the case is still open or pending.</p>
 
         <h5>Paused Members</h5>
@@ -660,6 +665,111 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['#attached']['library'][] = 'makerspace_member_success/dashboard';
 
     return $build;
+  }
+
+  /**
+   * Builds the drill-down section listing members behind the counts.
+   *
+   * @param array{resolved: array, cancelled: array} $details
+   *   Per-member rows from RecoveryMetrics::getResolutionDetails().
+   */
+  private function buildResolutionDetailSection(array $details): array {
+    $section = [
+      '#type' => 'details',
+      '#title' => $this->t('👥 Who is behind these numbers? (@resolved resolved, @cancelled confirmed cancellations)', [
+        '@resolved' => count($details['resolved']),
+        '@cancelled' => count($details['cancelled']),
+      ]),
+      '#open' => FALSE,
+      '#attributes' => ['class' => ['mb-4']],
+    ];
+
+    $section['intro'] = [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => $this->t('Each member counted in the Resolution Rate card, with the first case-closing contact in this date range. "Credited to" is the staff member on that log row; automatic payment recoveries are credited to the staff member whose outreach preceded them by up to 30 days, or shown as self-recovery when nobody had reached out.'),
+      '#attributes' => ['class' => ['text-muted', 'small']],
+    ];
+
+    $lists = [
+      'resolved' => $this->t('Resolved members'),
+      'cancelled' => $this->t('Confirmed cancellations'),
+    ];
+    foreach ($lists as $key => $title) {
+      $rows = [];
+      foreach ($details[$key] as $detail) {
+        $member_cell = $detail['member_name'] ?: ('uid ' . $detail['uid']);
+        if (!empty($detail['uid'])) {
+          $member_cell = [
+            'data' => [
+              '#type' => 'link',
+              '#title' => $member_cell,
+              '#url' => Url::fromRoute('entity.user.canonical', ['user' => $detail['uid']]),
+            ],
+          ];
+        }
+        $rows[] = [
+          $member_cell,
+          $detail['contact_date'],
+          $this->outcomeLabel((string) $detail['outcome']),
+          $detail['contact_method'],
+          $this->staffAttributionLabel($detail),
+        ];
+      }
+
+      $section[$key . '_title'] = [
+        '#type' => 'html_tag',
+        '#tag' => 'h5',
+        '#value' => $title,
+        '#attributes' => ['class' => ['mt-3']],
+      ];
+      $section[$key . '_table'] = [
+        '#type' => 'table',
+        '#header' => [
+          $this->t('Member'),
+          $this->t('Date'),
+          $this->t('Outcome'),
+          $this->t('Channel'),
+          $this->t('Credited to'),
+        ],
+        '#rows' => $rows,
+        '#empty' => $key === 'cancelled'
+          ? $this->t('No confirmed cancellations were logged in this date range. Note: before the automatic cancellation detection shipped, cancellations handled directly in Chargebee never reached this log.')
+          : $this->t('No members were resolved in this date range.'),
+        '#attributes' => ['class' => ['table', 'table-sm', 'table-striped']],
+      ];
+    }
+
+    return $section;
+  }
+
+  /**
+   * Human label for an outreach outcome machine name.
+   */
+  private function outcomeLabel(string $outcome): string {
+    $labels = [
+      'payment_updated' => 'Payment updated',
+      'will_return' => 'Will return',
+      'no_action_needed' => 'No action needed',
+      'confirmed_cancel' => 'Confirmed cancellation',
+    ];
+    return $labels[$outcome] ?? $outcome;
+  }
+
+  /**
+   * Describes who gets credit for a case-closing log row.
+   */
+  private function staffAttributionLabel(array $detail): string {
+    $staff_name = trim((string) ($detail['staff_name'] ?? ''));
+    if ($staff_name !== '') {
+      return $staff_name;
+    }
+    if ($detail['staff_uid'] === NULL) {
+      return 'Self-recovery (no staff outreach in prior 30 days)';
+    }
+    return ((int) $detail['staff_uid'] === 0)
+      ? 'Automated nudge (cron)'
+      : 'Unknown (uid ' . $detail['staff_uid'] . ')';
   }
 
   /**
@@ -729,7 +839,8 @@ class MemberSuccessDashboardController extends ControllerBase {
         <div class="col-md-4 text-end">
           <span class="me-2 text-muted small fw-bold">Export:</span>
           <a href="' . Url::fromRoute('makerspace_member_success.export_staff_performance', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-outline-success btn-sm me-1" title="Per-person breakdown: contacts made, resolved, resolution rate">📥 By Person</a>
-          <a href="' . Url::fromRoute('makerspace_member_success.export_all', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-success btn-sm" title="Every outreach contact log row: member, staff, channel, outcome, date">📊 Full Contact Log</a>
+          <a href="' . Url::fromRoute('makerspace_member_success.export_summary', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-outline-success btn-sm me-1" title="The summary tables on this page (ROI, per-person, per-channel) as one CSV">📄 Summary</a>
+          <a href="' . Url::fromRoute('makerspace_member_success.export_all', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-success btn-sm" title="Every outreach contact log row: member, staff, channel, outcome, date, notes">📊 Full Contact Log</a>
         </div>
       </form>
     ';
@@ -815,9 +926,56 @@ class MemberSuccessDashboardController extends ControllerBase {
   }
 
   /**
-   * Export all intervention performance data as CSV.
+   * Export the row-level contact log as CSV.
+   *
+   * This is the "Full Contact Log" download: one row per logged contact, not
+   * a summary. Staff asked for the underlying transactions (Kate, 2026-08-20)
+   * and the button already promised them.
    */
   public function exportAll() {
+    $start_date = \Drupal::request()->query->get('start_date');
+    $end_date = \Drupal::request()->query->get('end_date');
+
+    $log_rows = $this->recoveryMetrics->getContactLogRows($start_date, $end_date);
+
+    $rows = [];
+    $rows[] = ['Contact Date', 'Member', 'Member UID', 'Logged By', 'Channel', 'Outcome', 'Notes'];
+
+    foreach ($log_rows as $log) {
+      $staff = trim((string) ($log['staff_name'] ?? ''));
+      if ($staff === '') {
+        if ($log['staff_uid'] === NULL) {
+          $staff = 'System (automatic)';
+        }
+        else {
+          $staff = ((int) $log['staff_uid'] === 0) ? 'Automated nudge (cron)' : 'Unknown (uid ' . $log['staff_uid'] . ')';
+        }
+      }
+
+      // Notes arrive with HTML entities and literal \n sequences from the
+      // CiviCRM backfill; flatten them so the CSV cell reads cleanly.
+      $notes = (string) ($log['notes'] ?? '');
+      $notes = str_replace('\n', "\n", $notes);
+      $notes = trim(html_entity_decode(strip_tags($notes), ENT_QUOTES | ENT_HTML5));
+
+      $rows[] = [
+        $log['contact_date'],
+        $log['member_name'] ?? ('uid ' . $log['uid']),
+        $log['uid'],
+        $staff,
+        $log['contact_method'],
+        $log['outcome'],
+        $notes,
+      ];
+    }
+
+    return $this->generateCsvResponse($rows, 'contact-log');
+  }
+
+  /**
+   * Export the dashboard's summary tables as CSV.
+   */
+  public function exportSummary() {
     $start_date = \Drupal::request()->query->get('start_date');
     $end_date = \Drupal::request()->query->get('end_date');
 
@@ -868,7 +1026,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       ];
     }
 
-    return $this->generateCsvResponse($rows, 'intervention-performance-full');
+    return $this->generateCsvResponse($rows, 'intervention-performance-summary');
   }
 
   /**

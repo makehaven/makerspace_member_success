@@ -397,9 +397,16 @@ class RecoveryMetrics {
       $rate = $contacted > 0 ? round(($resolved / $contacted) * 100, 1) : 0;
       $staff_uid = (int) $row['staff_uid'];
 
+      // Cron-sent queue nudges are logged with the anonymous uid (0); show
+      // them as an explicit automation row instead of a blank name.
+      $staff_name = trim((string) ($row['staff_name'] ?? ''));
+      if ($staff_name === '') {
+        $staff_name = $staff_uid === 0 ? 'Automated nudges (cron)' : 'Unknown (uid ' . $staff_uid . ')';
+      }
+
       $performance[$staff_uid] = [
         'staff_uid' => $staff_uid,
-        'staff_name' => $row['staff_name'] ?? 'Unknown',
+        'staff_name' => $staff_name,
         'members_contacted' => $contacted,
         'resolved' => $resolved,
         'confirmed_cancel' => $confirmed_cancel,
@@ -516,6 +523,91 @@ class RecoveryMetrics {
       'annual_value_saved' => round($value_saved, 2),
       'annual_value_lost' => round($total_at_risk - $value_saved, 2),
       'value_saved_rate' => $total_at_risk > 0 ? round(($value_saved / $total_at_risk) * 100, 1) : 0,
+    ];
+  }
+
+  /**
+   * Get every outreach log row in the range, with member and staff names.
+   *
+   * @return array
+   *   Row-level contact log data, newest first.
+   */
+  public function getContactLogRows($start_date = NULL, $end_date = NULL) {
+    $params = [];
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+
+    $query = "
+      SELECT
+        log.contact_date,
+        log.uid,
+        member.name as member_name,
+        log.staff_uid,
+        staff.name as staff_name,
+        log.contact_method,
+        log.outcome,
+        log.notes
+      FROM {ms_member_outreach_log} log
+      LEFT JOIN {users_field_data} member ON member.uid = log.uid
+      LEFT JOIN {users_field_data} staff ON staff.uid = log.staff_uid
+      WHERE 1=1" . $date_where . "
+      ORDER BY log.contact_date DESC, log.id DESC
+    ";
+
+    return $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
+  }
+
+  /**
+   * Lists the individual members behind the resolution-rate numbers.
+   *
+   * Mirrors getResolutionRate()'s distinct-member semantics: a member appears
+   * in 'resolved' when any of their rows in range has a positive case-closing
+   * outcome (first such row is shown), and in 'cancelled' when any row is a
+   * confirmed cancellation. A member can appear in both lists, matching how
+   * the counts are produced.
+   *
+   * @return array{resolved: array, cancelled: array}
+   *   Per-member detail rows: uid, member_name, contact_date, outcome,
+   *   contact_method, staff_uid, staff_name.
+   */
+  public function getResolutionDetails($start_date = NULL, $end_date = NULL) {
+    $params = [];
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $params += $resolved_params;
+    $params[':cancel_outcome'] = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
+
+    $query = "
+      SELECT
+        log.uid,
+        member.name as member_name,
+        log.contact_date,
+        log.outcome,
+        log.contact_method,
+        log.staff_uid,
+        staff.name as staff_name
+      FROM {ms_member_outreach_log} log
+      LEFT JOIN {users_field_data} member ON member.uid = log.uid
+      LEFT JOIN {users_field_data} staff ON staff.uid = log.staff_uid
+      WHERE (log.outcome IN ({$resolved_in}) OR log.outcome = :cancel_outcome)" . $date_where . "
+      ORDER BY log.contact_date ASC, log.id ASC
+    ";
+
+    $rows = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
+    $resolved = [];
+    $cancelled = [];
+    foreach ($rows as $row) {
+      $uid = (int) $row['uid'];
+      if ($row['outcome'] === MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL) {
+        $cancelled[$uid] = $cancelled[$uid] ?? $row;
+      }
+      else {
+        $resolved[$uid] = $resolved[$uid] ?? $row;
+      }
+    }
+
+    return [
+      'resolved' => array_values($resolved),
+      'cancelled' => array_values($cancelled),
     ];
   }
 
