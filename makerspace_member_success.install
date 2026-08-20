@@ -1761,3 +1761,16 @@ function makerspace_member_success_update_9032(): string {
   \Drupal::logger('makerspace_member_success')->notice($message);
   return $message;
 }
+
+/**
+ * Add the cron snapshot time budget so the build can no longer starve cron.
+ */
+function makerspace_member_success_update_9033(): string {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $existing = $config->get('snapshot_cron_time_budget');
+  if ($existing === NULL || (int) $existing <= 0) {
+    $config->set('snapshot_cron_time_budget', 45)->save();
+    return 'Set snapshot_cron_time_budget to 45 seconds.';
+  }
+  return 'snapshot_cron_time_budget already set to ' . (int) $existing . ' seconds; left as is.';
+}

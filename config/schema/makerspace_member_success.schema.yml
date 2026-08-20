@@ -23,6 +23,9 @@ makerspace_member_success.settings:
     orientation_quiz_nid:
       type: integer
       label: 'Safety quiz node ID'
+    snapshot_cron_time_budget:
+      type: integer
+      label: 'Seconds of each cron run the snapshot build may use'
     lead_followup_enabled:
       type: boolean
       label: 'Auto-email unpaid leads'

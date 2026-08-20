@@ -11,6 +11,7 @@ use Drupal\Core\Url;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\makerspace_member_success\Service\MemberSuccessQueueQueryApplier;
+use Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder;
 
 /**
  * Implements hook_help().
@@ -60,14 +61,27 @@ function makerspace_member_success_mail(string $key, array &$message, array $par
 
 /**
  * Implements hook_cron().
+ *
+ * ORDER MATTERS. Cron runs as a web request on Pantheon and therefore dies at
+ * the 120-second ceiling with a fatal that no try/catch can intercept — so
+ * whatever runs last is whatever gets dropped when the budget runs out.
+ *
+ * On 2026-08-19 the snapshot builder (the one expensive stage, ~870 members
+ * each costing several queries plus a CiviCRM lookup) grew past the ceiling
+ * while running FIRST. It took the join-form lead scan and the onboarding
+ * nudge down with it: snapshots fell 868/day to 419, no lead was recorded
+ * after 08-18 15:32, and no nudge was sent after 08-18 15:36 — with nothing
+ * logged anywhere, because the process was killed rather than throwing.
+ *
+ * So: the cheap, time-critical, member-facing stages run FIRST, each guarded
+ * independently, and the expensive snapshot build runs LAST under an explicit
+ * time budget that lets it resume across cron runs.
  */
 function makerspace_member_success_cron(): void {
-  /** @var \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $builder */
-  $builder = \Drupal::service('makerspace_member_success.snapshot_builder');
-  $builder->buildDailySnapshots();
-
-  // Track unpaid join-form leads and (if enabled) send due follow-ups. Runs
-  // every cron regardless of the Chargebee-reconcile toggle below.
+  // 1. Track unpaid join-form leads and (if enabled) send due follow-ups.
+  //    Cheapest stage and the most time-critical: the follow-up only converts
+  //    if it reaches someone within a day or two of them abandoning checkout
+  //    (2 of the 7 ever sent converted, both nudged within 1-4 days).
   try {
     \Drupal::service('makerspace_member_success.onboarding_lead_tracker')->scan();
   }
@@ -75,7 +89,7 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Onboarding lead scan failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
-  // Onboarding auto-nudge: email paid members stalled at a join-funnel step.
+  // 2. Onboarding auto-nudge: email paid members stalled at a join-funnel step.
   // Reuses the existing candidate generator + outreach queue, so cooldown,
   // max-attempts, and suppression are all enforced there. Off by default; the
   // onboarding-only stage scoping keeps the blast radius to the join funnel.
@@ -116,6 +130,33 @@ function makerspace_member_success_cron(): void {
   }
   catch (\Throwable $e) {
     \Drupal::logger('makerspace_member_success')->error('Onboarding auto-nudge failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
+  // 3. Daily member snapshots — the expensive stage, so it runs last and under
+  //    a wall-clock budget. It snapshots as many members as fit, then returns;
+  //    the next cron resumes with the members that still have no row for
+  //    today. A full day completes over a few runs instead of being truncated
+  //    at the same place every time.
+  try {
+    $snapshot_config = \Drupal::config('makerspace_member_success.settings');
+    $budget = (int) ($snapshot_config->get('snapshot_cron_time_budget') ?? 45);
+    /** @var \Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder $builder */
+    $builder = \Drupal::service('makerspace_member_success.snapshot_builder');
+    $builder->buildDailySnapshots(NULL, 'daily', max(5, $budget));
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Member success snapshot build failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
+  // 4. Staleness alarm. Every stage above fails silently by nature — a
+  //    half-built roster looks exactly like a healthy one from the outside,
+  //    which is why the 2026-08-19 breakage went unnoticed for two days. Warn
+  //    once a full snapshot pass has not completed in over a day.
+  try {
+    _makerspace_member_success_check_snapshot_freshness();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Snapshot freshness check failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
   // Import recent CiviCRM email/phone activities into the outreach log so
@@ -254,6 +295,53 @@ function makerspace_member_success_cron(): void {
       '@skipped_same' => $skipped_same,
       '@dry_run' => $dry_run ? 'yes' : 'no',
       '@reasons' => empty($reason_summary) ? 'none' : implode(', ', $reason_summary),
+    ]
+  );
+}
+
+/**
+ * Warns when a full member-success snapshot pass has gone stale.
+ *
+ * The builder stamps state on every completed full pass. If that stamp is more
+ * than $max_age_hours old, something is stopping the pass from finishing —
+ * most likely the cron request dying before the snapshot stage completes.
+ * Logged at warning level so it surfaces in the weekly watchdog trend review.
+ */
+function _makerspace_member_success_check_snapshot_freshness(int $max_age_hours = 30): void {
+  $state = \Drupal::state();
+  $last = (int) $state->get(MemberSuccessSnapshotBuilder::STATE_LAST_COMPLETE, 0);
+  $now = (int) \Drupal::time()->getRequestTime();
+
+  if ($last === 0) {
+    // No pass has ever completed since this stamp was introduced. Give the
+    // slicing a day to finish its first full roster before crying wolf.
+    $state->set(MemberSuccessSnapshotBuilder::STATE_LAST_COMPLETE, $now);
+    return;
+  }
+
+  $age_hours = (int) floor(($now - $last) / 3600);
+  if ($age_hours < $max_age_hours) {
+    return;
+  }
+
+  // Report how far behind the roster actually is, so the warning is actionable
+  // rather than just "something is stale".
+  $database = \Drupal::database();
+  $today = (new \DateTimeImmutable('now', new \DateTimeZone(date_default_timezone_get())))->format('Y-m-d');
+  $built = (int) $database->select('ms_member_success_snapshot', 'ms')
+    ->condition('ms.snapshot_date', $today)
+    ->condition('ms.snapshot_type', 'daily')
+    ->countQuery()
+    ->execute()
+    ->fetchField();
+
+  \Drupal::logger('makerspace_member_success')->warning(
+    'Member success snapshots are stale: no full pass has completed in @hours hours (last @last). Only @built rows exist for @today. The cron snapshot stage is not finishing — the join-form lead scan and onboarding nudge may also be affected.',
+    [
+      '@hours' => $age_hours,
+      '@last' => date('Y-m-d H:i', $last),
+      '@built' => $built,
+      '@today' => $today,
     ]
   );
 }

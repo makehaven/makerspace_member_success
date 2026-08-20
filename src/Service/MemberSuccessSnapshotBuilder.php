@@ -7,6 +7,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Support\MemberSuccessQueueRules;
 use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
@@ -31,7 +32,7 @@ class MemberSuccessSnapshotBuilder {
 
   protected Civicrm $civicrm;
 
-  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm, ?FollowupStatusManager $followup_status_manager = NULL) {
+  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm, ?FollowupStatusManager $followup_status_manager = NULL, ?StateInterface $state = NULL) {
     $this->database = $database;
     $this->configFactory = $config_factory;
     $this->time = $time;
@@ -39,6 +40,7 @@ class MemberSuccessSnapshotBuilder {
     $this->logger = $logger_factory->get('makerspace_member_success');
     $this->civicrm = $civicrm;
     $this->followupStatusManager = $followup_status_manager;
+    $this->state = $state;
   }
 
   /**
@@ -51,24 +53,145 @@ class MemberSuccessSnapshotBuilder {
   protected ?FollowupStatusManager $followupStatusManager = NULL;
 
   /**
-   * Builds daily snapshots for active members.
+   * State service, used to record when a full snapshot pass last completed.
+   *
+   * Optional so callers constructing the builder directly (and unit tests)
+   * keep working; without it, slicing still resumes correctly — only the
+   * staleness stamp is skipped.
    */
-  public function buildDailySnapshots(?\DateTimeInterface $date = NULL, string $snapshot_type = 'daily'): int {
+  protected ?StateInterface $state = NULL;
+
+  /**
+   * State key holding the timestamp of the last completed full pass.
+   */
+  public const STATE_LAST_COMPLETE = 'makerspace_member_success.snapshot_last_complete';
+
+  /**
+   * State key holding the snapshot date of the last completed full pass.
+   */
+  public const STATE_LAST_COMPLETE_DATE = 'makerspace_member_success.snapshot_last_complete_date';
+
+  /**
+   * Builds daily snapshots for active members.
+   *
+   * Each member costs several queries plus a CiviCRM lookup, so a full pass
+   * over ~870 members does not fit inside Pantheon's 120-second web request
+   * ceiling — and cron runs as a web request. When the pass overran, PHP was
+   * killed mid-loop with no exception to catch, which silently took down every
+   * later stage of hook_cron() with it (the join-form lead scan and the
+   * onboarding nudge stopped running entirely, 2026-08-19 → 2026-08-20).
+   *
+   * Passing a positive $time_budget_seconds switches to resumable slicing:
+   * snapshot as many members as fit in the budget, then return. The next cron
+   * picks up exactly the members that have no row for this date yet, so a full
+   * day completes across a few runs. Work already done is never redone and the
+   * end-of-pass bookkeeping only fires once the whole roster is covered.
+   *
+   * Drush and any caller that passes no budget keep the original run-to-
+   * completion behaviour — the CLI has no request timeout.
+   *
+   * @param \DateTimeInterface|null $date
+   *   Snapshot date; defaults to today.
+   * @param string $snapshot_type
+   *   Snapshot type, e.g. 'daily'.
+   * @param int $time_budget_seconds
+   *   Wall-clock budget for this pass. 0 (default) means no limit.
+   *
+   * @return int
+   *   Number of member snapshots written in THIS pass.
+   */
+  public function buildDailySnapshots(?\DateTimeInterface $date = NULL, string $snapshot_type = 'daily', int $time_budget_seconds = 0): int {
     $date = $date ?: new \DateTimeImmutable('now', new \DateTimeZone(date_default_timezone_get()));
     $snapshot_date = $date->format('Y-m-d');
     $now_ts = (int) $this->time->getRequestTime();
     $uids = $this->loadActiveMemberIds();
     $count = 0;
+    $failed = [];
+    $sliced = $time_budget_seconds > 0;
+    $already_complete = FALSE;
+
+    $todo = $uids;
+    if ($sliced) {
+      // Resume: skip members already snapshotted for this date. Derived from
+      // the snapshot table itself rather than a stored cursor, so it stays
+      // correct even if the roster changes between passes or a pass dies.
+      $done = $this->loadSnapshottedUids($snapshot_date, $snapshot_type);
+      if (!empty($done)) {
+        $todo = array_values(array_diff($uids, $done));
+      }
+      $already_complete = $this->lastCompletedDate() === $snapshot_date;
+      if (empty($todo) && $already_complete) {
+        // Roster fully covered and the end-of-pass bookkeeping already ran for
+        // this date: nothing left to do until tomorrow.
+        return 0;
+      }
+    }
 
     // NOTE: is_latest is reset per-user inside upsertSnapshot() before each
     // merge, so we do NOT do a bulk reset here. A bulk reset before the loop
     // would leave all members with is_latest=0 if the process crashes or times
     // out mid-run, causing queues to appear empty until the next full run.
-    foreach ($uids as $uid) {
-      $row = $this->buildSnapshotForUser($uid, $snapshot_date, $snapshot_type, $now_ts);
-      $row['is_latest'] = 1;
-      $this->upsertSnapshot($row);
-      $count++;
+    $deadline = $sliced ? microtime(TRUE) + $time_budget_seconds : NULL;
+    $remaining = 0;
+    foreach (array_values($todo) as $index => $uid) {
+      if ($deadline !== NULL && microtime(TRUE) >= $deadline) {
+        $remaining = count($todo) - $index;
+        break;
+      }
+      // Contain per-member failures. One member must never be able to end the
+      // pass — and \Error (not just \Exception) has to be caught here, because
+      // core's Cron::invokeCronHandlers() only catches \Exception, so a
+      // TypeError thrown in here escapes as a fatal and kills the whole cron
+      // request along with every later hook_cron() stage.
+      //
+      // That is exactly what happened on 2026-08-19: uid 4706 rejoined the
+      // roster with no is_latest snapshot row, isNewPaymentEpisode() received
+      // FALSE instead of an array, and the pass died at that member on every
+      // run from then on (snapshots stuck at ~420 of 868, no join-form lead
+      // recorded, no onboarding nudge sent, and nothing logged anywhere).
+      try {
+        $row = $this->buildSnapshotForUser($uid, $snapshot_date, $snapshot_type, $now_ts);
+        $row['is_latest'] = 1;
+        $this->upsertSnapshot($row);
+        $count++;
+      }
+      catch (\Throwable $e) {
+        $failed[] = $uid;
+        $this->logger->error('Member success snapshot failed for uid @uid (@type: @msg). Skipping this member and continuing the pass.', [
+          '@uid' => $uid,
+          '@type' => get_class($e),
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    if (!empty($failed)) {
+      $this->logger->warning('Member success snapshots for @date: @count skipped member(s) failed to build (uids: @uids).', [
+        '@date' => $snapshot_date,
+        '@count' => count($failed),
+        '@uids' => implode(', ', array_slice($failed, 0, 25)),
+      ]);
+    }
+
+    if ($remaining > 0) {
+      // Partial pass. Skip the end-of-pass bookkeeping below: clearing
+      // is_latest against a roster we have not finished would blank the queues.
+      $this->logger->info('Member success snapshots for @date: @count written this pass, @remaining still to go (budget @budget s). Resuming next cron.', [
+        '@date' => $snapshot_date,
+        '@count' => $count,
+        '@remaining' => $remaining,
+        '@budget' => $time_budget_seconds,
+      ]);
+      return $count;
+    }
+
+    if ($already_complete) {
+      // A later slice picked up members who joined after the pass completed
+      // (or retried one that failed). Their rows are written, but the
+      // end-of-pass bookkeeping below already ran for this date and must not
+      // run twice — recordDepartedRecoveryCancellations() would double-log
+      // the same departures on every subsequent cron.
+      return $count;
     }
 
     // Members whose latest snapshot says "recovery" but who are no longer
@@ -86,6 +209,14 @@ class MemberSuccessSnapshotBuilder {
     // so a mid-run crash leaves prior is_latest rows intact.
     $cleared = $this->clearStaleLatestFlags($uids, $snapshot_type);
 
+    // Stamp the completed pass so cron can alarm when snapshots go stale. The
+    // 2026-08-19 breakage was invisible for two days precisely because a
+    // half-built roster looks identical to a healthy one from the outside.
+    if ($this->state !== NULL) {
+      $this->state->set(self::STATE_LAST_COMPLETE, $now_ts);
+      $this->state->set(self::STATE_LAST_COMPLETE_DATE, $snapshot_date);
+    }
+
     $this->logger->info('Generated @count member success snapshots for @date (cleared @stale stale is_latest rows).', [
       '@count' => $count,
       '@date' => $snapshot_date,
@@ -93,6 +224,37 @@ class MemberSuccessSnapshotBuilder {
     ]);
 
     return $count;
+  }
+
+  /**
+   * Returns the snapshot date of the last completed full pass, if any.
+   */
+  protected function lastCompletedDate(): ?string {
+    if ($this->state === NULL) {
+      return NULL;
+    }
+    $value = (string) $this->state->get(self::STATE_LAST_COMPLETE_DATE, '');
+    return $value !== '' ? $value : NULL;
+  }
+
+  /**
+   * Loads the uids that already have a snapshot row for a date.
+   *
+   * @param string $snapshot_date
+   *   Snapshot date (Y-m-d).
+   * @param string $snapshot_type
+   *   Snapshot type to scope to.
+   *
+   * @return int[]
+   *   User ids already snapshotted for that date.
+   */
+  protected function loadSnapshottedUids(string $snapshot_date, string $snapshot_type): array {
+    $query = $this->database->select('ms_member_success_snapshot', 'ms');
+    $query->addField('ms', 'uid');
+    $query->condition('ms.snapshot_date', $snapshot_date);
+    $query->condition('ms.snapshot_type', $snapshot_type);
+    $query->distinct();
+    return array_map('intval', $query->execute()->fetchCol());
   }
 
   /**
@@ -736,6 +898,8 @@ class MemberSuccessSnapshotBuilder {
     $query->condition('u.status', 1);
     $query->condition('r.roles_target_id', ['member', 'member_pending_approval'], 'IN');
     $query->distinct();
+    // Deterministic order so sliced passes cover the roster predictably.
+    $query->orderBy('u.uid', 'ASC');
     return array_map('intval', $query->execute()->fetchCol());
   }
 

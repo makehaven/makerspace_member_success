@@ -152,6 +152,15 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (bool) $config->get('lead_followup_enabled'),
     ];
 
+    $form['snapshot_cron_time_budget'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Snapshot build budget per cron run (seconds)'),
+      '#description' => $this->t('Cron runs as a web request and is killed at the host request ceiling (120s on Pantheon). The snapshot build runs last, under this budget, and resumes on the next cron with whichever members it did not reach — so overrunning can no longer silently kill the lead scan and nudge that used to run after it. Default 45.'),
+      '#default_value' => (int) ($config->get('snapshot_cron_time_budget') ?? 45),
+      '#min' => 5,
+      '#max' => 90,
+    ];
+
     $form['lead_followup']['lead_followup_hours'] = [
       '#type' => 'number',
       '#title' => $this->t('Wait before follow-up (hours)'),
@@ -420,6 +429,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('onboarding_auto_nudge_enabled', (bool) $form_state->getValue('onboarding_auto_nudge_enabled'))
       ->set('orientation_quiz_nid', (int) $form_state->getValue('orientation_quiz_nid'))
       ->set('lead_followup_enabled', (bool) $form_state->getValue('lead_followup_enabled'))
+      ->set('snapshot_cron_time_budget', (int) $form_state->getValue('snapshot_cron_time_budget'))
       ->set('lead_followup_hours', (int) $form_state->getValue('lead_followup_hours'))
       ->set('lead_followup_max_per_run', (int) $form_state->getValue('lead_followup_max_per_run'))
       ->set('lead_join_webform_id', trim((string) $form_state->getValue('lead_join_webform_id')))
