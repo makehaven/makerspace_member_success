@@ -139,14 +139,16 @@ class MemberSuccessSnapshotBuilder {
     $first_card_scan_date = $this->loadFirstCardScan($uid);
     $quiz = $this->loadQuizPassed($uid, $orientation_quiz_nid);
 
-    // Load previous snapshot to preserve outreach tracking fields.
+    // Load previous snapshot to preserve outreach tracking fields. Coerce the
+    // no-row FALSE to [] — isNewPaymentEpisode() takes array and a member's
+    // first-ever build would otherwise fatal the whole daily run.
     $previous = $this->database->select('ms_member_success_snapshot', 'ms')
       ->fields('ms', ['stage', 'outreach_status', 'last_contact_date', 'next_followup_date', 'contact_count', 'last_outreach_ts', 'payment_pause', 'pause_start_date', 'payment_failed', 'payment_failed_since'])
       ->condition('uid', $uid)
       ->condition('is_latest', 1)
       ->condition('snapshot_type', 'daily')
       ->execute()
-      ->fetchAssoc();
+      ->fetchAssoc() ?: [];
 
     // Fallback: if CiviCRM doesn't have it, check the Drupal field.
     $member_followup_status = $civi_data['member_followup_status'];
