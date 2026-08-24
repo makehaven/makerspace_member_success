@@ -34,6 +34,7 @@ services:
       - '@config.factory'
       - '@plugin.manager.mail'
       - '@datetime.time'
+      - '@entity_type.manager'
       - '@logger.factory'
 
   makerspace_member_success.civicrm_helper:

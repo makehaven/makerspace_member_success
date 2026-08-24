@@ -51,7 +51,7 @@ class OnboardingLeadTrackerTest extends UnitTestCase {
   }
 
   /**
-   * An earlier submission with a name is not overwritten by a later nameless one.
+   * An earlier name is not overwritten by a later nameless submission.
    */
   public function testNameNotClobberedByLaterBlank(): void {
     $submissions = [
@@ -61,6 +61,32 @@ class OnboardingLeadTrackerTest extends UnitTestCase {
     $result = OnboardingLeadTracker::aggregateByEmail($submissions);
     $this->assertSame('Ada', $result[0]['name']);
     $this->assertSame(2, $result[0]['sid'], 'Latest sid still tracked even when it has no name.');
+  }
+
+  /**
+   * Delayed follow-up contains the personal checkout link and cautious copy.
+   */
+  public function testFollowupBodyWithCheckoutLink(): void {
+    $body = OnboardingLeadTracker::buildFollowupBody(
+      'Ada',
+      'https://makehaven.chargebee.com/hosted_pages/plans/member',
+      'Standard — $60/month'
+    );
+
+    $this->assertStringContainsString('Hi Ada,', $body);
+    $this->assertStringContainsString('personal checkout link', $body);
+    $this->assertStringContainsString('Standard — $60/month', $body);
+    $this->assertStringContainsString('If you already completed payment', $body);
+  }
+
+  /**
+   * A missing checkout link does not send someone through the form again.
+   */
+  public function testFollowupBodyWithoutCheckoutLink(): void {
+    $body = OnboardingLeadTracker::buildFollowupBody('there', NULL);
+
+    $this->assertStringContainsString('could not generate your personal checkout link', $body);
+    $this->assertStringContainsString('do not need to submit the form again', $body);
   }
 
 }

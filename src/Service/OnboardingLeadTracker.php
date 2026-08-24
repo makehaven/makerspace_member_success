@@ -7,8 +7,12 @@ namespace Drupal\makerspace_member_success\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\chargebee_portal\Plugin\WebformHandler\ChargebeeCheckoutEmailHandler;
+use Drupal\chargebee_portal\Plugin\WebformHandler\ChargebeeCheckoutRedirectHandler;
+use Drupal\webform\WebformSubmissionInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -49,6 +53,7 @@ class OnboardingLeadTracker {
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly MailManagerInterface $mailManager,
     protected readonly TimeInterface $time,
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
     LoggerChannelFactoryInterface $loggerFactory,
   ) {
     $this->logger = $loggerFactory->get('makerspace_member_success');
@@ -318,7 +323,7 @@ class OnboardingLeadTracker {
    */
   protected function loadSendableLeads(int $sendable_before_ts, int $limit): array {
     return $this->database->select('ms_onboarding_lead', 'l')
-      ->fields('l', ['id', 'email', 'name', 'submitted_ts'])
+      ->fields('l', ['id', 'email', 'name', 'first_sid', 'submitted_ts'])
       ->condition('status', 'unpaid')
       ->isNull('followup_sent_ts')
       ->condition('submitted_ts', $sendable_before_ts, '<=')
@@ -332,30 +337,14 @@ class OnboardingLeadTracker {
    * Sends the single follow-up email to a lead's submitted address.
    */
   protected function sendFollowup(array $lead, $config): bool {
-    $resume_url = (string) ($config->get('lead_resume_url') ?: '/join-makehaven');
-    // Absolute URL for the email body.
-    $base = rtrim((string) ($config->get('lead_site_base_url') ?: 'https://www.makehaven.org'), '/');
-    $link = str_starts_with($resume_url, 'http') ? $resume_url : $base . '/' . ltrim($resume_url, '/');
-
     $first = trim((string) ($lead['name'] ?? ''));
     $first = $first !== '' ? strtok($first, ' ') : 'there';
-
-    $body = [];
-    $body[] = "Hi $first,";
-    $body[] = '';
-    $body[] = 'It looks like you started signing up for MakeHaven but didn\'t finish. We\'d love to have you!';
-    $body[] = '';
-    $body[] = 'You can pick up where you left off here:';
-    $body[] = $link;
-    $body[] = '';
-    $body[] = 'If you ran into any trouble or have questions, just reply to this email and a real person will help.';
-    $body[] = '';
-    $body[] = 'The MakeHaven Team';
-    $body[] = '770 Chapel St., New Haven, CT 06510';
+    $checkout = $this->checkoutDetails((int) ($lead['first_sid'] ?? 0));
+    $body = static::buildFollowupBody($first, $checkout['url'], $checkout['summary']);
 
     $params = [
       'subject' => 'Finish joining MakeHaven',
-      'body' => implode("\n", $body),
+      'body' => $body,
     ];
 
     $result = $this->mailManager->mail(
@@ -373,6 +362,66 @@ class OnboardingLeadTracker {
       return FALSE;
     }
     return TRUE;
+  }
+
+  /**
+   * Loads the original submission and rebuilds its hosted-checkout details.
+   */
+  protected function checkoutDetails(int $sid): array {
+    if ($sid <= 0) {
+      return ['url' => NULL, 'summary' => ''];
+    }
+
+    $submission = $this->entityTypeManager
+      ->getStorage('webform_submission')
+      ->load($sid);
+    if (!$submission instanceof WebformSubmissionInterface) {
+      return ['url' => NULL, 'summary' => ''];
+    }
+
+    $data = $submission->getData();
+    foreach ($submission->getWebform()->getHandlers() as $handler) {
+      if ($handler instanceof ChargebeeCheckoutRedirectHandler) {
+        return [
+          'url' => $handler->buildCheckoutUrl($data),
+          'summary' => ChargebeeCheckoutEmailHandler::planSummary($data),
+        ];
+      }
+    }
+
+    return ['url' => NULL, 'summary' => ''];
+  }
+
+  /**
+   * Builds cautious recovery copy for an applicant who has no account yet.
+   */
+  public static function buildFollowupBody(string $first, ?string $checkout_url, string $summary = ''): string {
+    $body = [
+      "Hi $first,",
+      '',
+      'It looks like you started signing up for MakeHaven, but we do not see your account yet.',
+      '',
+    ];
+
+    if ($checkout_url !== NULL) {
+      $body[] = 'You can pick up where you left off using your personal checkout link:';
+      $body[] = $checkout_url;
+      if ($summary !== '') {
+        $body[] = '';
+        $body[] = 'What you chose: ' . $summary;
+      }
+    }
+    else {
+      $body[] = 'We could not generate your personal checkout link, but we have your request. You do not need to submit the form again.';
+    }
+
+    $body[] = '';
+    $body[] = 'If you already completed payment, or if anything went wrong, just reply to this email and a real person will help.';
+    $body[] = '';
+    $body[] = 'The MakeHaven Team';
+    $body[] = '770 Chapel St., New Haven, CT 06510';
+
+    return implode("\n", $body);
   }
 
 }
