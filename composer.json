@@ -5,6 +5,7 @@
   "license": "GPL-2.0-or-later",
   "minimum-stability": "dev",
   "require": {
+    "makehaven/chargebee_portal": "dev-main",
     "drupal/core": "^10 || ^11",
     "civicrm/civicrm-drupal-8": "^6.6.3",
     "drupal/civicrm_entity": "*"
