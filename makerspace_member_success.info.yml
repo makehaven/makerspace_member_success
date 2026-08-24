@@ -5,5 +5,6 @@ core_version_requirement: ^10 || ^11
 package: Makerspace
 configure: makerspace_member_success.dashboard
 dependencies:
+  - chargebee_portal:chargebee_portal
   - drupal:civicrm
   - drupal:civicrm_entity
