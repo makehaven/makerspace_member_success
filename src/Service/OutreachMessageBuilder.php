@@ -22,6 +22,7 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     protected ConfigFactoryInterface $configFactory,
     protected EntityTypeManagerInterface $entityTypeManager,
     protected RequestStack $requestStack,
+    protected ?PendingBadgeFinder $pendingBadgeFinder = NULL,
   ) {}
 
   /**
@@ -168,6 +169,33 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
       $base_url = 'https://www.makehaven.org';
     }
     $tokens['domain.base_url'] = $base_url;
+
+    // Badge-nudge tokens. Only resolved for the badge stage: listFor() is a
+    // multi-join query and there is no reason to run it for onboarding or
+    // retention mail. The list comes from PendingBadgeFinder — the same
+    // selection the daily snapshot counts — so the email can never name a
+    // badge the reports say the member does not have.
+    if ($stage === 'badge' && $this->pendingBadgeFinder !== NULL) {
+      $config = $this->configFactory->get('makerspace_member_success.settings');
+      $max = (int) ($config->get('badge_nudge_max_badges_listed') ?? 6);
+      $badges = $this->pendingBadgeFinder->listFor($uid);
+      $names = array_column($badges, 'name');
+      $shown = $max > 0 ? array_slice($names, 0, $max) : $names;
+      $remainder = count($names) - count($shown);
+
+      $lines = array_map(static fn (string $n): string => '  - ' . $n, $shown);
+      if ($remainder > 0) {
+        $lines[] = '  - and ' . $remainder . ' more';
+      }
+
+      $tokens['badge.count'] = (string) count($names);
+      $tokens['badge.list'] = implode("\n", $lines);
+      $tokens['badge.plural'] = count($names) === 1 ? 'badge' : 'badges';
+      $tokens['badge.is_are'] = count($names) === 1 ? 'is' : 'are';
+      $tokens['badge.first'] = $names[0] ?? '';
+      $tokens['badge.complete_url'] = $base_url . '/badges/complete';
+      $tokens['badge.schedules_url'] = $base_url . '/facilitator/schedules';
+    }
 
     // Stage-aware "next step" tokens for onboarding nudges. Derived from the
     // member's stuck-at-step risk reason and the canonical OnboardingFunnel

@@ -32,7 +32,7 @@ class MemberSuccessSnapshotBuilder {
 
   protected Civicrm $civicrm;
 
-  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm, ?FollowupStatusManager $followup_status_manager = NULL, ?StateInterface $state = NULL) {
+  public function __construct(Connection $database, ConfigFactoryInterface $config_factory, TimeInterface $time, EntityTypeManagerInterface $entity_type_manager, LoggerChannelFactoryInterface $logger_factory, Civicrm $civicrm, ?FollowupStatusManager $followup_status_manager = NULL, ?StateInterface $state = NULL, ?PendingBadgeFinder $pending_badge_finder = NULL) {
     $this->database = $database;
     $this->configFactory = $config_factory;
     $this->time = $time;
@@ -41,6 +41,7 @@ class MemberSuccessSnapshotBuilder {
     $this->civicrm = $civicrm;
     $this->followupStatusManager = $followup_status_manager;
     $this->state = $state;
+    $this->pendingBadgeFinder = $pending_badge_finder;
   }
 
   /**
@@ -60,6 +61,15 @@ class MemberSuccessSnapshotBuilder {
    * staleness stamp is skipped.
    */
   protected ?StateInterface $state = NULL;
+
+  /**
+   * Shared pending-badge selection, also used by the badge nudge.
+   *
+   * Optional so callers constructing the builder directly (and existing unit
+   * tests) keep working; without it the snapshot simply records no
+   * pending-badge measurement rather than failing the whole pass.
+   */
+  protected ?PendingBadgeFinder $pendingBadgeFinder = NULL;
 
   /**
    * State key holding the timestamp of the last completed full pass.
@@ -296,6 +306,13 @@ class MemberSuccessSnapshotBuilder {
     $user_flags = $this->loadUserFlags($uid);
     $door_badge = $this->loadDoorBadgeStatus($uid, $door_badge_tid);
     $badge_stats = $this->loadBadgeStats($uid, $door_badge_tid, $badge_four_days, $now_ts);
+    // Pending-badge measurement. The selection rules live in
+    // PendingBadgeFinder because the nudge lists exactly the same badges —
+    // if the two drifted, a member would be emailed about a badge the
+    // reports say they do not have.
+    $pending_badges = $this->pendingBadgeFinder
+      ? $this->pendingBadgeFinder->statsFor($uid)
+      : ['count' => NULL, 'oldest_ts' => NULL];
     $visit_stats = $this->loadVisitStats($uid, $now_ts);
     $civi_data = $this->loadCiviCrmData($uid);
     $first_card_scan_date = $this->loadFirstCardScan($uid);
@@ -555,6 +572,8 @@ class MemberSuccessSnapshotBuilder {
       'serial_number_present' => $serial_present ? 1 : 0,
       'badge_count_total' => $badge_stats['count_total'],
       'badge_count_window' => $badge_stats['count_window'],
+      'badge_pending_count' => $pending_badges['count'],
+      'badge_pending_oldest_ts' => $pending_badges['oldest_ts'],
       'tenure_bucket' => $tenure_bucket,
       'membership_type' => $profile['membership_type'],
       'last_badge_ts' => $badge_stats['last_badge_ts'],
@@ -1170,6 +1189,7 @@ class MemberSuccessSnapshotBuilder {
       'last_badge_ts' => $last_badge_ts ? (int) $last_badge_ts : NULL,
     ];
   }
+
 
   /**
    * Loads visit recency and frequency stats.

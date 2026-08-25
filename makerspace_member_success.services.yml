@@ -1,4 +1,10 @@
 services:
+  makerspace_member_success.pending_badge_finder:
+    class: Drupal\makerspace_member_success\Service\PendingBadgeFinder
+    arguments:
+      - '@database'
+      - '@config.factory'
+
   makerspace_member_success.snapshot_builder:
     class: Drupal\makerspace_member_success\Service\MemberSuccessSnapshotBuilder
     arguments:
@@ -10,6 +16,7 @@ services:
       - '@civicrm'
       - '@makerspace_member_success.followup_status_manager'
       - '@state'
+      - '@makerspace_member_success.pending_badge_finder'
 
   makerspace_member_success.onboarding_quiz_redirect:
     class: Drupal\makerspace_member_success\EventSubscriber\OnboardingQuizRedirectSubscriber
@@ -140,6 +147,7 @@ services:
     class: Drupal\makerspace_member_success\Service\OutreachCandidateGenerator
     arguments:
       - '@database'
+      - '@datetime.time'
 
   makerspace_member_success.outreach_message_builder:
     class: Drupal\makerspace_member_success\Service\OutreachMessageBuilder
@@ -148,6 +156,7 @@ services:
       - '@config.factory'
       - '@entity_type.manager'
       - '@request_stack'
+      - '@makerspace_member_success.pending_badge_finder'
 
   makerspace_member_success.outreach_sender:
     class: Drupal\makerspace_member_success\Service\OutreachSender

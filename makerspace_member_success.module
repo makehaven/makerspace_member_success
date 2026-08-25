@@ -132,6 +132,38 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Onboarding auto-nudge failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // 2b. Badge nudge: members who passed a badge quiz and never completed the
+  // in-person checkout. Ships dark (badge_nudge_enabled defaults to FALSE) and,
+  // even when on, stage_badge_require_manual_approval keeps a human between the
+  // queue and the send until the copy is proven — the onboarding auto-nudge is
+  // the precedent here and 0 of its first 5 sends moved anyone.
+  //
+  // Candidates come from the daily snapshot's badge_pending_count, so this can
+  // never chase someone the reports do not show as waiting. Cooldown,
+  // max-attempts and suppression are all enforced by the outreach queue.
+  try {
+    $badge_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $badge_config->get('badge_nudge_enabled')) {
+      $min_age_days = max(0, (int) ($badge_config->get('badge_nudge_min_age_days') ?? 14));
+
+      $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+      $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      $enqueued = 0;
+      foreach ($generator->generateBadgeCandidates($min_age_days) as $candidate) {
+        $queue->enqueueCandidate((int) $candidate['uid'], 'badge', $candidate);
+        $enqueued++;
+      }
+      $sent = $queue->processApprovedItems(['badge']);
+      \Drupal::logger('makerspace_member_success')->notice(
+        'Badge nudge: @enqueued member(s) with a badge waiting evaluated, @sent nudge(s) sent.',
+        ['@enqueued' => $enqueued, '@sent' => $sent],
+      );
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Badge nudge failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   // 3. Daily member snapshots — the expensive stage, so it runs last and under
   //    a wall-clock budget. It snapshots as many members as fit, then returns;
   //    the next cron resumes with the members that still have no row for

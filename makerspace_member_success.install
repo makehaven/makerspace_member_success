@@ -121,6 +121,16 @@ function makerspace_member_success_schema() {
         'not null' => TRUE,
         'default' => 0,
       ],
+      'badge_pending_count' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Distinct badges the member passed the quiz for but cannot use yet — checkout-required, has an issuer, not already held. See MemberSuccessSnapshotBuilder::loadPendingBadgeStats().',
+      ],
+      'badge_pending_oldest_ts' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'Unix ts the oldest still-pending badge was requested. Anchors stall measurement the way onboarding_step_ts does.',
+      ],
       'tenure_bucket' => [
         'type' => 'varchar',
         'length' => 32,
@@ -1773,4 +1783,84 @@ function makerspace_member_success_update_9033(): string {
     return 'Set snapshot_cron_time_budget to 45 seconds.';
   }
   return 'snapshot_cron_time_budget already set to ' . (int) $existing . ' seconds; left as is.';
+}
+
+/**
+ * Adds pending-badge measurement to the member success snapshot.
+ */
+function makerspace_member_success_update_9034(): string {
+  $schema = \Drupal::database()->schema();
+  $added = [];
+
+  $fields = [
+    'badge_pending_count' => [
+      'type' => 'int',
+      'not null' => FALSE,
+      'description' => 'Distinct badges the member passed the quiz for but cannot use yet.',
+    ],
+    'badge_pending_oldest_ts' => [
+      'type' => 'int',
+      'not null' => FALSE,
+      'description' => 'Unix ts the oldest still-pending badge was requested.',
+    ],
+  ];
+
+  foreach ($fields as $name => $spec) {
+    if (!$schema->fieldExists('ms_member_success_snapshot', $name)) {
+      $schema->addField('ms_member_success_snapshot', $name, $spec);
+      $added[] = $name;
+    }
+  }
+
+  // Deliberately no backfill. These are measured forward from the next
+  // snapshot pass: the value of the field is the daily series it builds, and a
+  // synthesised history would read as measurement that never happened.
+  return $added
+    ? 'Added ' . implode(', ', $added) . ' to ms_member_success_snapshot. Values populate from the next snapshot run.'
+    : 'Pending-badge snapshot fields already present.';
+}
+
+/**
+ * Installs the badge-nudge settings (ships dark).
+ */
+function makerspace_member_success_update_9035(): string {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+
+  // Only seed keys that are absent, so a site that has already tuned any of
+  // these keeps its values.
+  $defaults = [
+    'badge_nudge_enabled' => FALSE,
+    'badge_nudge_min_age_days' => 14,
+    'badge_nudge_max_badges_listed' => 6,
+    'stage_badge_cooldown_days' => 45,
+    'stage_badge_max_attempts' => 2,
+    'stage_badge_min_risk_to_contact' => 0,
+    'stage_badge_require_manual_approval' => TRUE,
+  ];
+
+  $seeded = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $seeded[] = $key;
+    }
+  }
+
+  if ($config->get('template_badge') === NULL) {
+    $install = \Drupal::service('extension.list.module')->getPath('makerspace_member_success')
+      . '/config/install/makerspace_member_success.settings.yml';
+    $shipped = is_readable($install)
+      ? (\Symfony\Component\Yaml\Yaml::parse(file_get_contents($install))['template_badge'] ?? '')
+      : '';
+    if ($shipped !== '') {
+      $config->set('template_badge', $shipped);
+      $seeded[] = 'template_badge';
+    }
+  }
+
+  $config->save();
+
+  return $seeded
+    ? 'Seeded badge-nudge settings: ' . implode(', ', $seeded) . '. Nothing sends until badge_nudge_enabled is TRUE.'
+    : 'Badge-nudge settings already present.';
 }

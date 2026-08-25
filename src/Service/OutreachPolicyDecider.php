@@ -29,6 +29,15 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
 
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $context = [
+      // The stage being decided FOR, which is not always the member's
+      // lifecycle stage in the snapshot. OutreachSuppressionChecker reads
+      // $context['stage'] in preference to the snapshot's own, but nothing
+      // used to supply it — so a campaign-scoped stage silently fell back to
+      // the member's lifecycle stage and was judged against that stage's risk
+      // threshold. Found 2026-08-25 building the badge nudge: healthy members
+      // (risk 0) were suppressed as "below threshold" against the retention
+      // threshold of 20, a stage they were not being contacted under.
+      'stage' => $stage,
       'email' => $snapshot['email'] ?? '',
       'phone' => $snapshot['phone'] ?? '',
       'sms_consent' => $snapshot['sms_consent'] ?? NULL,

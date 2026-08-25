@@ -158,3 +158,48 @@ stage_recovery_min_risk_to_contact: 20
 stage_recovery_cooldown_days: 7
 stage_recovery_max_attempts: 3
 stage_recovery_require_manual_approval: true
+
+# --- Badge nudge -------------------------------------------------------------
+# Members who passed a badge quiz but never completed the in-person checkout.
+# Ships DARK: nothing sends until badge_nudge_enabled is switched on, and even
+# then stage_badge_require_manual_approval keeps a human between the queue and
+# the send until the copy has been proven on a small batch.
+badge_nudge_enabled: false
+# Do not chase someone who passed the quiz this week — they may simply not have
+# been in yet. 14 days is roughly a fortnight of missed opportunities.
+badge_nudge_min_age_days: 14
+# One email per member listing their badges, never one per badge: 60 members
+# hold eight or more, and a mail each would be indefensible.
+badge_nudge_max_badges_listed: 6
+# Deliberately slower and more limited than the onboarding nudge. This is a
+# reminder about something optional, not a stalled signup.
+stage_badge_cooldown_days: 45
+stage_badge_max_attempts: 2
+stage_badge_min_risk_to_contact: 0
+stage_badge_require_manual_approval: true
+template_badge: |
+  Subject: You have {badge.count} {badge.plural} waiting on a short checkout
+
+  Hi {contact.first_name},
+
+  You passed the quiz for {badge.count} {badge.plural}, and you are one step
+  from being able to use the tools: a short in-person checkout with a
+  facilitator. Until that happens the tools stay locked, which is a shame when
+  you have already done the hard part.
+
+  Waiting on a checkout:
+  {badge.list}
+
+  A checkout is usually only a few minutes. You can see who is in the building
+  and when, and book a slot in their shift, here:
+  {badge.schedules_url}
+
+  Or see everything you have waiting in one place:
+  {badge.complete_url}
+
+  If a tool on that list is not something you want any more, just ignore this —
+  nothing expires and there is nothing to cancel.
+
+  Questions? Reply to this email and a person will read it.
+
+  The MakeHaven Team

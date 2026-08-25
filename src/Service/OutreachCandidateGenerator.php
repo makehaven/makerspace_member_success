@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Service;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
 
 /**
@@ -16,7 +17,15 @@ class OutreachCandidateGenerator {
 
   public function __construct(
     protected Connection $database,
+    protected ?TimeInterface $time = NULL,
   ) {}
+
+  /**
+   * Current request time, tolerating a generator built without the time service.
+   */
+  protected function now(): int {
+    return $this->time ? $this->time->getCurrentTime() : time();
+  }
 
   /**
    * Loads outreach candidates from the latest daily snapshots.
@@ -30,6 +39,67 @@ class OutreachCandidateGenerator {
    *   Candidate rows keyed for enqueueCandidate().
    */
   public function generate(array $stages = [], int $minRisk = 1): array {
+    $query = $this->baseQuery();
+    $query->condition('ms.risk_score', max(1, $minRisk), '>=');
+    if (!empty($stages)) {
+      $query->condition('ms.stage', $stages, 'IN');
+    }
+    $query->orderBy('ms.risk_score', 'DESC');
+    $query->range(0, 2000);
+
+    return $this->mapRows($query->execute()->fetchAll());
+  }
+
+  /**
+   * Members with a badge waiting on a facilitator checkout.
+   *
+   * Deliberately NOT risk-filtered. The rest of this generator triages members
+   * who are in trouble; a member with an unfinished badge is usually perfectly
+   * healthy and scores 0, so the risk floor in generate() would return none of
+   * them. What makes them a candidate is the daily badge_pending_count written
+   * by MemberSuccessSnapshotBuilder, so the nudge can never chase someone the
+   * reports do not show as waiting.
+   *
+   * @param int $minAgeDays
+   *   Only include members whose oldest waiting badge is at least this old, so
+   *   someone who passed a quiz this week is not chased for not having been in
+   *   yet.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Enriched candidate rows, oldest wait first.
+   */
+  public function generateBadgeCandidates(int $minAgeDays = 14): array {
+    $cutoff = $this->now() - (max(0, $minAgeDays) * 86400);
+
+    $query = $this->baseQuery();
+    $query->condition('ms.badge_pending_count', 0, '>');
+    $query->condition('ms.badge_pending_oldest_ts', $cutoff, '<=');
+    $query->addField('ms', 'badge_pending_count', 'badge_pending_count');
+    $query->addField('ms', 'badge_pending_oldest_ts', 'badge_pending_oldest_ts');
+    $query->orderBy('ms.badge_pending_oldest_ts', 'ASC');
+    $query->range(0, 2000);
+
+    $rows = $query->execute()->fetchAll();
+    $candidates = $this->mapRows($rows);
+    foreach ($rows as $i => $row) {
+      $candidates[$i]['badge_pending_count'] = (int) $row->badge_pending_count;
+      $candidates[$i]['badge_pending_oldest_ts'] = (int) $row->badge_pending_oldest_ts;
+      // Contacted under the badge campaign, not the member's lifecycle stage:
+      // that is what the queue's stage_badge_* settings and template_badge key
+      // are looked up by.
+      $candidates[$i]['stage'] = 'badge';
+    }
+    return $candidates;
+  }
+
+  /**
+   * The shared, enriched candidate query.
+   *
+   * Carries the joins every campaign needs — email, CiviCRM contact and
+   * opt-out, primary phone, SMS consent — so a new campaign cannot accidentally
+   * skip a consent signal by writing its own query.
+   */
+  protected function baseQuery() {
     $query = $this->database->select('ms_member_success_snapshot', 'ms');
     $query->fields('ms', [
       'uid',
@@ -60,14 +130,14 @@ class OutreachCandidateGenerator {
 
     $query->condition('ms.is_latest', 1);
     $query->condition('ms.snapshot_type', 'daily');
-    $query->condition('ms.risk_score', max(1, $minRisk), '>=');
-    if (!empty($stages)) {
-      $query->condition('ms.stage', $stages, 'IN');
-    }
-    $query->orderBy('ms.risk_score', 'DESC');
-    $query->range(0, 2000);
 
-    $rows = $query->execute()->fetchAll();
+    return $query;
+  }
+
+  /**
+   * Maps raw snapshot rows to candidate arrays.
+   */
+  protected function mapRows(array $rows): array {
     $candidates = [];
     foreach ($rows as $row) {
       $candidates[] = [
