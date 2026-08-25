@@ -145,11 +145,14 @@ function makerspace_member_success_cron(): void {
     $badge_config = \Drupal::config('makerspace_member_success.settings');
     if ((bool) $badge_config->get('badge_nudge_enabled')) {
       $min_age_days = max(0, (int) ($badge_config->get('badge_nudge_min_age_days') ?? 14));
+      // The backlog is held out of automated sends by default — see
+      // badge_nudge_max_age_days in the module's config/install.
+      $max_age_days = max(0, (int) ($badge_config->get('badge_nudge_max_age_days') ?? 90));
 
       $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
       $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
       $enqueued = 0;
-      foreach ($generator->generateBadgeCandidates($min_age_days) as $candidate) {
+      foreach ($generator->generateBadgeCandidates($min_age_days, $max_age_days) as $candidate) {
         $queue->enqueueCandidate((int) $candidate['uid'], 'badge', $candidate);
         $enqueued++;
       }

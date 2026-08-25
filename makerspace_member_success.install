@@ -1831,6 +1831,9 @@ function makerspace_member_success_update_9035(): string {
   $defaults = [
     'badge_nudge_enabled' => FALSE,
     'badge_nudge_min_age_days' => 14,
+    // Holds the ~531-member backlog out of any automated send. See
+    // docs/proposals/BADGE_NUDGE_PLAN.md before raising it.
+    'badge_nudge_max_age_days' => 90,
     'badge_nudge_max_badges_listed' => 6,
     'stage_badge_cooldown_days' => 45,
     'stage_badge_max_attempts' => 2,

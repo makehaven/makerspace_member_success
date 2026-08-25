@@ -64,16 +64,32 @@ class OutreachCandidateGenerator {
    *   Only include members whose oldest waiting badge is at least this old, so
    *   someone who passed a quiz this week is not chased for not having been in
    *   yet.
+   * @param int $maxAgeDays
+   *   Exclude members whose oldest waiting badge is older than this. Holds the
+   *   accumulated backlog out of an automated send: 531 current members are
+   *   past 90 days, and reaching them is a deliberate one-off decision rather
+   *   than something a cron run should do by default. 0 disables the bound.
    *
    * @return array<int, array<string, mixed>>
    *   Enriched candidate rows, oldest wait first.
    */
-  public function generateBadgeCandidates(int $minAgeDays = 14): array {
-    $cutoff = $this->now() - (max(0, $minAgeDays) * 86400);
+  public function generateBadgeCandidates(int $minAgeDays = 14, int $maxAgeDays = 90): array {
+    $now = $this->now();
+    $newest_allowed = $now - (max(0, $minAgeDays) * 86400);
+    $oldest_allowed = $maxAgeDays > 0 ? $now - ($maxAgeDays * 86400) : NULL;
 
     $query = $this->baseQuery();
     $query->condition('ms.badge_pending_count', 0, '>');
-    $query->condition('ms.badge_pending_oldest_ts', $cutoff, '<=');
+    $query->condition('ms.badge_pending_oldest_ts', $newest_allowed, '<=');
+    // Upper bound: the accumulated backlog is deliberately NOT nudged. 531
+    // current members have a badge that has been waiting more than 90 days
+    // (175 between three months and a year, 356 beyond that), and mailing them
+    // is a separate decision about a separate audience — see
+    // docs/proposals/BADGE_NUDGE_PLAN.md. Without this bound, switching the
+    // nudge on would reach all of them on the first cron run.
+    if ($oldest_allowed !== NULL) {
+      $query->condition('ms.badge_pending_oldest_ts', $oldest_allowed, '>=');
+    }
     $query->addField('ms', 'badge_pending_count', 'badge_pending_count');
     $query->addField('ms', 'badge_pending_oldest_ts', 'badge_pending_oldest_ts');
     $query->orderBy('ms.badge_pending_oldest_ts', 'ASC');

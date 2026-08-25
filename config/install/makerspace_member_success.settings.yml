@@ -168,6 +168,15 @@ badge_nudge_enabled: false
 # Do not chase someone who passed the quiz this week — they may simply not have
 # been in yet. 14 days is roughly a fortnight of missed opportunities.
 badge_nudge_min_age_days: 14
+# Upper bound, and the reason it exists: the accumulated backlog is HELD.
+# 531 current members have a badge waiting more than 90 days (175 between three
+# months and a year, 356 beyond that). Mailing them is a separate decision
+# about a different audience — an old badge is as likely to mean "changed my
+# mind" as "still waiting" — and it would also be the single largest send this
+# subject has ever had. Without this bound, switching the nudge on would reach
+# all of them on the first cron run. Raising or zeroing it is the deliberate
+# act that releases the backlog; see docs/proposals/BADGE_NUDGE_PLAN.md.
+badge_nudge_max_age_days: 90
 # One email per member listing their badges, never one per badge: 60 members
 # hold eight or more, and a mail each would be indefensible.
 badge_nudge_max_badges_listed: 6
