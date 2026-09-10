@@ -124,3 +124,14 @@ Production deployment checklist is documented in:
 
 Chargebee followup backfill runbook is documented in:
 - `web/modules/custom/makerspace_member_success/docs/CHARGEBEE_FOLLOWUP_PULL_PLAYBOOK.md`
+
+### Intervention reporting boundaries
+
+Dashboard and CSV reports share validated inclusive calendar dates, defaulting
+from 90 days before the end date through that end date (today if omitted).
+Monthly trends respect the selected range, including partial endpoint months.
+Resolution duration is first contact to first positive outcome **within that
+range**; per-staff rows group by staff and member, the summary by member. Earlier
+unsuccessful contacts count, but this is not a reconstruction of recovery episodes.
+Logged outcomes replace unsupported annual-revenue-saved claims. Outreach
+attribution does not establish causation. Snapshot dates are displayed explicitly.

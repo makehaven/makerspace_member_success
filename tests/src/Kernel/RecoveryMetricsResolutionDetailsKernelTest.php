@@ -112,6 +112,36 @@ class RecoveryMetricsResolutionDetailsKernelTest extends KernelTestBase {
   }
 
   /**
+   * Earlier unsuccessful contacts count; later positives do not extend duration.
+   */
+  public function testTimingAndSelectedRange(): void {
+    $db = \Drupal::database();
+    if ($db->driver() === 'sqlite') {
+      $db->getClientConnection()->sqliteCreateFunction('DATEDIFF', static function ($end, $start) {
+        return (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days;
+      }, 2);
+      $db->getClientConnection()->sqliteCreateFunction('DATE_FORMAT', static fn($date, $format) => substr($date, 0, 7), 2);
+    }
+    $staff = $this->createUser('timing-staff');
+    $member = $this->createUser('timing-member');
+    $outside = $this->createUser('outside-member');
+    $this->insertRow($member, $staff, '2026-05-01', 'no_answer');
+    $this->insertRow($member, $staff, '2026-06-01', 'no_answer');
+    $this->insertRow($member, $staff, '2026-06-05', 'payment_updated');
+    $this->insertRow($member, $staff, '2026-06-10', 'payment_updated');
+    $this->insertRow($outside, $staff, '2026-05-01', 'payment_updated');
+    $metrics = new RecoveryMetrics($db);
+    $this->assertEquals(4, $metrics->getAverageDaysToResolution('2026-06-01', '2026-06-30'));
+    $performance = $metrics->getStaffPerformance('2026-06-01', '2026-06-30');
+    $this->assertEquals(4, reset($performance)['avg_days_to_resolution']);
+    $this->assertEquals(3, $metrics->getAverageAttemptsToSuccess('2026-06-01', '2026-06-30'));
+    $this->assertSame([3 => 1], $metrics->getAttemptsDistribution('2026-06-01', '2026-06-30'));
+    $this->assertSame(0, $metrics->getExhaustionRate('2026-06-01', '2026-06-30')['exhausted']);
+    $this->assertSame(1, $metrics->getResolutionRate('2026-06-01', NULL)['total']);
+    $this->assertCount(1, $metrics->getMonthlyTrends(6, '2026-06-01', '2026-06-30'));
+  }
+
+  /**
    * Creates a bare user and returns its uid.
    */
   protected function createUser(string $name): int {

@@ -2,6 +2,9 @@
 
 namespace Drupal\makerspace_member_success\Controller;
 
+use Drupal\makerspace_member_success\Support\ReportRange;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+
 use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
@@ -76,6 +79,8 @@ class MemberSuccessDashboardController extends ControllerBase {
     $query->condition('snapshot_type', 'daily');
     $query->condition('is_latest', 1);
     $query->addExpression('COUNT(uid)', 'total');
+    $query->addExpression('MIN(snapshot_date)', 'oldest');
+    $query->addExpression('MAX(snapshot_date)', 'newest');
     $query->addExpression('SUM(CASE WHEN risk_score > 0 AND ' . $is_visible . ' THEN 1 ELSE 0 END)', 'at_risk');
     $query->addExpression('SUM(CASE WHEN risk_score >= 20 AND ' . $is_visible . ' THEN 1 ELSE 0 END)', 'actionable');
     $query->addExpression('SUM(CASE WHEN risk_score >= 50 AND ' . $is_visible . ' THEN 1 ELSE 0 END)', 'critical');
@@ -119,8 +124,13 @@ class MemberSuccessDashboardController extends ControllerBase {
     //                ⊇ Actionable (score ≥ 20 AND visible)
     //                ⊇ Critical (score ≥ 50 AND visible)
     // "Visible" = not snoozed (next_followup_date in future) and not suppressed.
-    $summary_html = '<p class="text-muted small mb-2">'
-      . 'Each card below narrows the previous one. <strong>Total Tracked</strong> is everyone in today\'s snapshot (including snoozed and suppressed). '
+    $freshness = $this->t('<p><strong>Snapshot dates:</strong> @oldest to @newest. @notice</p>', [
+      '@oldest' => $summary['oldest'],
+      '@newest' => $summary['newest'],
+      '@notice' => $summary['oldest'] < $today ? 'Some data predates today; check refresh before acting on changed membership or payment status.' : 'Latest daily snapshots are dated today.',
+    ]);
+    $summary_html = $freshness . '<p class="text-muted small mb-2">'
+      . 'Each card below narrows the previous one. <strong>Total Tracked</strong> is everyone in the latest stored snapshot (including snoozed and suppressed). '
       . '<strong>Actionable</strong> is the subset that needs contact today — suppressed and snoozed members are excluded, so Actionable can be <em>0</em> even when Total is positive.'
       . '</p>';
     $summary_html .= '<div class="ms-summary-grid">';
@@ -129,7 +139,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       $summary['total'],
       'ms-total',
       $this->safeRouteUrl('view.member_success_queue.lifecycle'),
-      'All members in today\'s daily snapshot, regardless of risk score or suppression. Includes snoozed and suppressed members.'
+      'All members in the latest stored daily snapshot, regardless of risk score or suppression. Includes snoozed and suppressed members.'
     );
     $summary_html .= $this->renderSummaryCard(
       'At Risk (>0)',
@@ -162,7 +172,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         <div class="d-flex justify-content-between align-items-center">
           <div>
             <strong>📊 Intervention Performance Dashboard</strong>
-            <p class="mb-0 small">View staff effectiveness, ROI calculations, and outreach metrics</p>
+            <p class="mb-0 small">Review logged outcomes, contact timing, and outreach activity</p>
           </div>
           <div class="d-flex gap-2">
             <a href="' . $queue_review_url . '" class="btn btn-outline-primary">Queue Review</a>
@@ -263,6 +273,7 @@ class MemberSuccessDashboardController extends ControllerBase {
 
     return [
       '#type' => 'markup',
+      '#cache' => ['max-age' => 0],
       '#markup' => '<div class="ms-dashboard-wrapper">' . $summary_html . '<h3 class="mb-3">Lifecycle Stages</h3>' . $stages_html . '</div>',
       '#attached' => [
         'library' => [
@@ -345,25 +356,15 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Builds the intervention performance dashboard (staff/volunteer outreach metrics).
    */
   public function contractorPerformance() {
-    $request = \Drupal::request();
-    $start_date = $request->query->get('start_date');
-    $end_date = $request->query->get('end_date');
-
-    // Default to last 90 days when no date range is provided.
-    $using_default = FALSE;
-    if (empty($start_date) && empty($end_date)) {
-      $using_default = TRUE;
-      $start_date = date('Y-m-d', strtotime('-90 days'));
-      $end_date = date('Y-m-d');
-    }
+    [$start_date, $end_date] = $this->reportRange();
 
     $staff_performance = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
-    $retention_value = $this->recoveryMetrics->getRetentionValue($start_date, $end_date);
-    $monthly_trends = $this->recoveryMetrics->getMonthlyTrends(6);
+    $monthly_trends = $this->recoveryMetrics->getMonthlyTrends(6, $start_date, $end_date);
     $all_metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
     $resolution_details = $this->recoveryMetrics->getResolutionDetails($start_date, $end_date);
 
     $build = [
+      '#cache' => ['max-age' => 0],
       '#prefix' => '<div class="ms-performance-dashboard">',
       '#suffix' => '</div>',
     ];
@@ -393,16 +394,16 @@ class MemberSuccessDashboardController extends ControllerBase {
       'content' => [
         '#markup' => $this->t('<strong>How metrics are calculated:</strong><ul class="mb-0 mt-2">
           <li><strong>Members Contacted:</strong> Distinct members with at least one outreach contact logged in this date range</li>
-          <li><strong>Annual Value Saved:</strong> Sum of monthly payments × 12 for members retained after outreach</li>
+          <li><strong>Logged Confirmed Cancellations:</strong> Distinct contacted members with a cancellation outcome recorded in this range. Outcomes do not establish revenue saved or lost.</li>
           <li><strong>Resolution Rate:</strong> % of contacted members with a positive case-closing outcome — <em>payment updated</em>, <em>will return</em>, or <em>no action needed</em>. <em>Confirmed cancellation</em> is case-closing but counted separately as a loss. The individual members behind both counts are listed in the "Who is behind these numbers?" section below.</li>
           <li><strong>Confirmed Cancel:</strong> logged when staff record a cancellation via Log Contact, and (since 2026-08) automatically when a member\'s subscription ends while they are in payment recovery — with credit going to the staff member who last reached out within 30 days. Cancellations handled directly in Chargebee before this automation never reached this log, so older date ranges under-count cancels.</li>
-          <li><strong>Avg Days to Resolution:</strong> Average time from first contact to the resolved outcome across resolved members</li>
-          <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, sms, in-person, other, system). <em>System</em> rows are auto-written when a recovery member quietly pays via Chargebee — these are now back-attributed to the staff member whose recent outreach drove the recovery, so they no longer all collapse into a 100%/system row.</li>
+          <li><strong>Avg Days to Resolution:</strong> Days from first contact in this range to first positive outcome in this range; not a reconstruction of separate recovery episodes</li>
+          <li><strong>Channel Success Rate:</strong> Resolution rate grouped by contact method (phone, email, sms, in-person, other, system). <em>System</em> rows are auto-written when a recovery member quietly pays via Chargebee — these are now back-attributed to the staff member with recent outreach under the attribution rule; this does not establish causation, so they no longer all collapse into a 100%/system row.</li>
           </ul>'),
       ],
     ];
 
-    // ROI Summary Section.
+    // Outcome Summary Section.
     $build['roi_section'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['row', 'mb-4']],
@@ -413,7 +414,7 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#attributes' => ['class' => ['col-md-3']],
       '#markup' => $this->renderMetricCard(
         'Members Contacted',
-        $retention_value['total_members_at_risk'],
+        $all_metrics['resolution_rate']['total'],
         'primary',
         'Distinct members with outreach logged'
       ),
@@ -423,10 +424,10 @@ class MemberSuccessDashboardController extends ControllerBase {
       '#type' => 'container',
       '#attributes' => ['class' => ['col-md-3']],
       '#markup' => $this->renderMetricCard(
-        'Annual Value Saved',
-        '$' . number_format($retention_value['annual_value_saved'], 0),
-        'success',
-        NULL
+        'Logged Confirmed Cancellations',
+        $all_metrics['resolution_rate']['confirmed_cancel'],
+        'secondary',
+        'Recorded outcomes, not inferred revenue lost'
       ),
     ];
 
@@ -517,7 +518,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['channel_table']['description'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('Compares resolution rates by contact method. "Resolved" = payment updated, will return, or no action needed. "Confirmed Cancel" is case-closing but lost. Use this to optimize outreach strategy. The <em>system</em> channel reflects automated Chargebee payment-recovery events; rows are back-attributed to the staff member whose recent outreach drove the recovery (within 30 days).'),
+      '#value' => $this->t('Compares resolution rates by contact method. "Resolved" = payment updated, will return, or no action needed. "Confirmed Cancel" is case-closing but lost. Use this to optimize outreach strategy. The <em>system</em> channel reflects automated Chargebee payment-recovery events; rows are associated with the most recent staff contact within 30 days. This attribution does not establish that outreach caused recovery.'),
       '#attributes' => ['class' => ['text-muted', 'small', 'mb-2']],
     ];
 
@@ -562,7 +563,7 @@ class MemberSuccessDashboardController extends ControllerBase {
     $build['trends_table']['description'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('Track performance over time. Look for improving or declining resolution rates. "Avg Attempts per Member" shows how many contacts it typically takes before resolution.'),
+      '#value' => $this->t('Track performance over time. Look for improving or declining resolution rates. "Avg Attempts per Member" shows how many contacts were logged per member in the selected period.'),
       '#attributes' => ['class' => ['text-muted', 'small', 'mb-2']],
     ];
 
@@ -613,14 +614,14 @@ class MemberSuccessDashboardController extends ControllerBase {
           <dt>Members at Risk</dt>
           <dd>Count of unique members who have been contacted for recovery/retention (distinct UIDs in outreach log).</dd>
 
-          <dt>Annual Value Saved</dt>
-          <dd>For each member with a resolved outcome (payment_updated, will_return, or no_action_needed), we retrieve their monthly payment amount and multiply by 12. These annual values are summed across resolved members.</dd>
+          <dt>Logged Confirmed Cancellations</dt>
+          <dd>Distinct members with a confirmed-cancellation outcome in the selected range. Raw profile dues are not reported as savings: billing periods and causal impact are not verified.</dd>
 
           <dt>Resolution Rate</dt>
           <dd>(Members with positive case-closing outcomes ÷ Total members contacted) × 100. Successful outcomes = <code>payment_updated</code>, <code>will_return</code>, <code>no_action_needed</code>. <code>confirmed_cancel</code> is case-closing but lost — tracked in its own column and excluded from the resolved count.</dd>
 
           <dt>Avg Days to Resolution</dt>
-          <dd>For each retained member, calculate days from their first contact to their successful retention contact. Average these values across retained members.</dd>
+          <dd>Days from the first contact in the selected range to the first positive outcome in that range. The staff table applies the same rule per staff/member pair. These are range-bounded observations, not reconstructed membership or payment episodes.</dd>
 
           <dt>Performance by Person</dt>
           <dd>
@@ -819,6 +820,9 @@ class MemberSuccessDashboardController extends ControllerBase {
       $preset_html .= '<a href="' . $current_path . '?start_date=' . $ps . '&end_date=' . $pe . '" class="btn btn-sm' . $active . ' me-1">' . $label . '</a>';
     }
     $preset_html .= '</div>';
+    $summary_url = Url::fromRoute('makerspace_member_success.export_summary', [], [
+      'query' => ['start_date' => $start_val, 'end_date' => $end_val],
+    ])->toString();
 
     $html = '
       <h5 class="mb-2">Filter by Date Range</h5>
@@ -839,7 +843,7 @@ class MemberSuccessDashboardController extends ControllerBase {
         <div class="col-md-4 text-end">
           <span class="me-2 text-muted small fw-bold">Export:</span>
           <a href="' . Url::fromRoute('makerspace_member_success.export_staff_performance', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-outline-success btn-sm me-1" title="Per-person breakdown: contacts made, resolved, resolution rate">📥 By Person</a>
-          <a href="' . Url::fromRoute('makerspace_member_success.export_summary', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-outline-success btn-sm me-1" title="The summary tables on this page (ROI, per-person, per-channel) as one CSV">📄 Summary</a>
+          <a href="' . $summary_url . '" class="btn btn-outline-success btn-sm me-1" title="The summary tables on this page (outcomes, per-person, per-channel) as one CSV">📄 Summary</a>
           <a href="' . Url::fromRoute('makerspace_member_success.export_all', [], ['query' => ['start_date' => $start_val, 'end_date' => $end_val]])->toString() . '" class="btn btn-success btn-sm" title="Every outreach contact log row: member, staff, channel, outcome, date, notes">📊 Full Contact Log</a>
         </div>
       </form>
@@ -852,8 +856,7 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Export staff performance data as CSV.
    */
   public function exportStaffPerformance() {
-    $start_date = \Drupal::request()->query->get('start_date');
-    $end_date = \Drupal::request()->query->get('end_date');
+    [$start_date, $end_date] = $this->reportRange();
 
     $staff_performance = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
 
@@ -879,8 +882,7 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Export channel effectiveness data as CSV.
    */
   public function exportChannelEffectiveness() {
-    $start_date = \Drupal::request()->query->get('start_date');
-    $end_date = \Drupal::request()->query->get('end_date');
+    [$start_date, $end_date] = $this->reportRange();
 
     $metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
     $channel_data = $metrics['channel_effectiveness'];
@@ -905,9 +907,8 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Export monthly trends data as CSV.
    */
   public function exportMonthlyTrends() {
-    $months = \Drupal::request()->query->get('months', 12);
-
-    $trends = $this->recoveryMetrics->getMonthlyTrends((int) $months);
+    [$start_date, $end_date] = $this->reportRange();
+    $trends = $this->recoveryMetrics->getMonthlyTrends(6, $start_date, $end_date);
 
     $rows = [];
     $rows[] = ['Month', 'Contacted', 'Resolved', 'Resolution Rate (%)', 'Avg Attempts/Member'];
@@ -933,8 +934,7 @@ class MemberSuccessDashboardController extends ControllerBase {
    * and the button already promised them.
    */
   public function exportAll() {
-    $start_date = \Drupal::request()->query->get('start_date');
-    $end_date = \Drupal::request()->query->get('end_date');
+    [$start_date, $end_date] = $this->reportRange();
 
     $log_rows = $this->recoveryMetrics->getContactLogRows($start_date, $end_date);
 
@@ -976,20 +976,19 @@ class MemberSuccessDashboardController extends ControllerBase {
    * Export the dashboard's summary tables as CSV.
    */
   public function exportSummary() {
-    $start_date = \Drupal::request()->query->get('start_date');
-    $end_date = \Drupal::request()->query->get('end_date');
+    [$start_date, $end_date] = $this->reportRange();
 
     $staff_performance = $this->recoveryMetrics->getStaffPerformance($start_date, $end_date);
-    $retention_value = $this->recoveryMetrics->getRetentionValue($start_date, $end_date);
     $metrics = $this->recoveryMetrics->getAllMetrics($start_date, $end_date);
 
     $rows = [];
 
-    // ROI Summary.
-    $rows[] = ['ROI SUMMARY'];
+    // Outcome Summary.
+    $rows[] = ['OUTCOME SUMMARY'];
+    $rows[] = ['Date range', $start_date . ' to ' . $end_date];
     $rows[] = ['Metric', 'Value'];
-    $rows[] = ['Members at Risk', $retention_value['total_members_at_risk']];
-    $rows[] = ['Annual Value Saved', '$' . number_format($retention_value['annual_value_saved'], 0)];
+    $rows[] = ['Members Contacted', $metrics['resolution_rate']['total']];
+    $rows[] = ['Logged Confirmed Cancellations', $metrics['resolution_rate']['confirmed_cancel']];
     $rows[] = ['Resolution Rate', $metrics['resolution_rate']['rate'] . '%'];
     $rows[] = ['Avg Days to Resolution', round($metrics['avg_days_to_resolution'], 1)];
     $rows[] = [];
@@ -1049,6 +1048,21 @@ class MemberSuccessDashboardController extends ControllerBase {
     $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
 
     return $response;
+  }
+
+  /**
+   * Keeps page and export defaults identical and rejects malformed ranges.
+   */
+  private function reportRange(): array {
+    try {
+      return ReportRange::resolve(
+        \Drupal::request()->query->get('start_date'),
+        \Drupal::request()->query->get('end_date'), date('Y-m-d')
+      );
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new BadRequestHttpException($e->getMessage());
+    }
   }
 
 }

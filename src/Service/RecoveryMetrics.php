@@ -92,29 +92,22 @@ class RecoveryMetrics {
   }
 
   /**
-   * Get average attempts to resolution for successful cases.
+   * Get contacts per resolved member within the selected range.
    *
    * @return float
-   *   Average number of attempts before resolution
+   *   Average contacts, including contacts after a positive outcome
    */
-  public function getAverageAttemptsToSuccess() {
+  public function getAverageAttemptsToSuccess($start_date = NULL, $end_date = NULL) {
     [$resolved_in, $params] = $this->resolvedPlaceholders();
-    $query = "
-      SELECT AVG(attempt_count) as avg_attempts
-      FROM (
-        SELECT uid, COUNT(*) as attempt_count
-        FROM {ms_member_outreach_log}
-        WHERE uid IN (
-          SELECT DISTINCT uid
-          FROM {ms_member_outreach_log}
-          WHERE outcome IN ({$resolved_in})
-        )
-        GROUP BY uid
-      ) resolved_members
-    ";
-
-    $result = $this->database->query($query, $params)->fetchField();
-    return round((float) $result, 1);
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    // Count contacts in the selected range for members resolved in that range.
+    $query = "SELECT AVG(attempt_count) FROM (
+      SELECT uid, COUNT(*) attempt_count
+      FROM {ms_member_outreach_log} WHERE 1=1 {$date_where}
+      GROUP BY uid
+      HAVING MAX(CASE WHEN outcome IN ({$resolved_in}) THEN 1 ELSE 0 END) = 1
+    ) resolved_members";
+    return round((float) $this->database->query($query, $params)->fetchField(), 1);
   }
 
   /**
@@ -123,30 +116,15 @@ class RecoveryMetrics {
    * @return array
    *   ['total' => int, 'exhausted' => int, 'rate' => float]
    */
-  public function getExhaustionRate() {
-    // Members with 3+ attempts.
-    $high_attempt_query = "
-      SELECT uid, COUNT(*) as attempts
-      FROM {ms_member_outreach_log}
-      GROUP BY uid
-      HAVING COUNT(*) >= 3
-    ";
-
-    // Of those, how many are unresolved?
+  public function getExhaustionRate($start_date = NULL, $end_date = NULL) {
     [$resolved_in, $params] = $this->resolvedPlaceholders();
-    $query = "
-      SELECT
-        COUNT(*) as total_high_attempts,
-        SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) as exhausted
-      FROM (
-        SELECT
-          l.uid,
-          MAX(CASE WHEN l.outcome IN ({$resolved_in}) THEN 1 ELSE 0 END) as resolved
-        FROM ({$high_attempt_query}) high
-        JOIN {ms_member_outreach_log} l ON high.uid = l.uid
-        GROUP BY l.uid
-      ) subq
-    ";
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
+    $query = "SELECT COUNT(*) total_high_attempts,
+      SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) exhausted FROM (
+      SELECT uid, MAX(CASE WHEN outcome IN ({$resolved_in}) THEN 1 ELSE 0 END) resolved
+      FROM {ms_member_outreach_log} WHERE 1=1 {$date_where}
+      GROUP BY uid HAVING COUNT(*) >= 3
+    ) subq";
 
     $result = $this->database->query($query, $params)->fetchAssoc();
     $total = (int) $result['total_high_attempts'];
@@ -169,31 +147,13 @@ class RecoveryMetrics {
   public function getAverageDaysToResolution($start_date = NULL, $end_date = NULL) {
     $params = [];
     $date_where = $this->buildDateFilter($start_date, $end_date, $params);
-    [$resolved_in_outer, $resolved_params_outer] = $this->resolvedPlaceholders('resolved_outer');
-    [$resolved_in_inner, $resolved_params_inner] = $this->resolvedPlaceholders('resolved_inner');
-    $params += $resolved_params_outer + $resolved_params_inner;
-
-    $query = "
-      SELECT AVG(days_to_resolution) as avg_days
-      FROM (
-        SELECT
-          uid,
-          DATEDIFF(
-            MAX(CASE WHEN outcome IN ({$resolved_in_outer}) THEN contact_date END),
-            MIN(contact_date)
-          ) as days_to_resolution
-        FROM {ms_member_outreach_log}
-        WHERE uid IN (
-          SELECT DISTINCT uid
-          FROM {ms_member_outreach_log}
-          WHERE outcome IN ({$resolved_in_inner})
-        )" . $date_where . "
-        GROUP BY uid
-      ) resolved
-    ";
-
-    $result = $this->database->query($query, $params)->fetchField();
-    return round((float) $result, 1);
+    [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
+    $query = "SELECT AVG(DATEDIFF(first_positive, first_contact)) FROM (
+      SELECT uid, MIN(contact_date) first_contact,
+        MIN(CASE WHEN outcome IN ({$resolved_in}) THEN contact_date END) first_positive
+      FROM {ms_member_outreach_log} WHERE 1=1" . $date_where . "
+      GROUP BY uid HAVING first_positive IS NOT NULL) durations";
+    return round((float) $this->database->query($query, $params + $resolved_params)->fetchField(), 1);
   }
 
   /**
@@ -253,7 +213,9 @@ class RecoveryMetrics {
    * @return array
    *   Array keyed by attempt_count with member counts
    */
-  public function getAttemptsDistribution() {
+  public function getAttemptsDistribution($start_date = NULL, $end_date = NULL) {
+    $params = [];
+    $date_where = $this->buildDateFilter($start_date, $end_date, $params);
     $query = "
       SELECT
         CASE
@@ -263,14 +225,14 @@ class RecoveryMetrics {
         COUNT(*) as member_count
       FROM (
         SELECT uid, COUNT(*) as attempts
-        FROM {ms_member_outreach_log}
+        FROM {ms_member_outreach_log} WHERE 1=1 {$date_where}
         GROUP BY uid
       ) counts
       GROUP BY attempt_bucket
       ORDER BY attempt_bucket
     ";
 
-    $results = $this->database->query($query)->fetchAll(FetchAs::Associative);
+    $results = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
     $distribution = [];
 
     foreach ($results as $row) {
@@ -289,11 +251,11 @@ class RecoveryMetrics {
   public function getAllMetrics($start_date = NULL, $end_date = NULL) {
     return [
       'resolution_rate' => $this->getResolutionRate($start_date, $end_date),
-      'avg_attempts_to_success' => $this->getAverageAttemptsToSuccess(),
-      'exhaustion_rate' => $this->getExhaustionRate(),
+      'avg_attempts_to_success' => $this->getAverageAttemptsToSuccess($start_date, $end_date),
+      'exhaustion_rate' => $this->getExhaustionRate($start_date, $end_date),
       'avg_days_to_resolution' => $this->getAverageDaysToResolution($start_date, $end_date),
       'channel_effectiveness' => $this->getChannelEffectiveness($start_date, $end_date),
-      'attempts_distribution' => $this->getAttemptsDistribution(),
+      'attempts_distribution' => $this->getAttemptsDistribution($start_date, $end_date),
     ];
   }
 
@@ -301,12 +263,16 @@ class RecoveryMetrics {
    * Helper to build date filter clause and parameters.
    */
   private function buildDateFilter($start_date, $end_date, &$params = []) {
-    if ($start_date && $end_date) {
+    $where = '';
+    if ($start_date) {
       $params[':start_date'] = $start_date;
-      $params[':end_date'] = $end_date;
-      return " AND contact_date BETWEEN :start_date AND :end_date";
+      $where .= ' AND contact_date >= :start_date';
     }
-    return '';
+    if ($end_date) {
+      $params[':end_date'] = $end_date;
+      $where .= ' AND contact_date <= :end_date';
+    }
+    return $where;
   }
 
   /**
@@ -316,18 +282,8 @@ class RecoveryMetrics {
    *   Array of staff performance data, keyed by staff_uid
    */
   public function getStaffPerformance($start_date = NULL, $end_date = NULL) {
-    // Build date filter clause.
-    $date_where = '';
-    if ($start_date && $end_date) {
-      $date_where = " AND log.contact_date BETWEEN :start_date AND :end_date";
-    }
-
-    // First get basic stats per staff member.
     $params = [];
-    if ($start_date && $end_date) {
-      $params[':start_date'] = $start_date;
-      $params[':end_date'] = $end_date;
-    }
+    $date_where = str_replace('contact_date', 'log.contact_date', $this->buildDateFilter($start_date, $end_date, $params));
     [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
     $params += $resolved_params;
     $params[':cancel_outcome'] = MemberSuccessLifecycle::OUTCOME_CONFIRMED_CANCEL;
@@ -355,38 +311,16 @@ class RecoveryMetrics {
 
     $results = $this->database->query($query, $params)->fetchAll(FetchAs::Associative);
 
-    // Get average days to resolution per staff member using subquery.
-    // Note: inner subquery uses 'log' alias so $date_where (log.contact_date) works.
-    $days_params = [];
-    if ($start_date && $end_date) {
-      $days_params[':start_date'] = $start_date;
-      $days_params[':end_date'] = $end_date;
-    }
-    [$days_resolved_outer, $days_resolved_outer_params] = $this->resolvedPlaceholders('days_outer');
-    [$days_resolved_inner, $days_resolved_inner_params] = $this->resolvedPlaceholders('days_inner');
-    $days_params += $days_resolved_outer_params + $days_resolved_inner_params;
-
-    $days_query = "
-      SELECT
-        staff_uid,
-        AVG(days_to_resolution) as avg_days
-      FROM (
-        SELECT
-          log.staff_uid,
-          log.uid,
-          DATEDIFF(
-            MAX(CASE WHEN log.outcome IN ({$days_resolved_outer}) THEN log.contact_date END),
-            MIN(log.contact_date)
-          ) as days_to_resolution
-        FROM {ms_member_outreach_log} log
-        WHERE log.staff_uid IS NOT NULL
-          AND log.outcome IN ({$days_resolved_inner})" . $date_where . "
-        GROUP BY log.staff_uid, log.uid
-      ) as member_resolution_times
-      WHERE days_to_resolution IS NOT NULL
-      GROUP BY staff_uid
-    ";
-
+    // Use all contacts in the same range, through the first positive outcome.
+    [$positive_in, $days_params] = $this->resolvedPlaceholders('days');
+    $this->buildDateFilter($start_date, $end_date, $days_params);
+    $days_query = "SELECT staff_uid, AVG(DATEDIFF(first_positive, first_contact)) FROM (
+      SELECT log.staff_uid, log.uid, MIN(log.contact_date) first_contact,
+        MIN(CASE WHEN log.outcome IN ({$positive_in}) THEN log.contact_date END) first_positive
+      FROM {ms_member_outreach_log} log
+      WHERE log.staff_uid IS NOT NULL" . $date_where . "
+      GROUP BY log.staff_uid, log.uid HAVING first_positive IS NOT NULL
+    ) durations GROUP BY staff_uid";
     $days_results = $this->database->query($days_query, $days_params)->fetchAllKeyed();
     $performance = [];
 
@@ -473,7 +407,10 @@ class RecoveryMetrics {
   }
 
   /**
-   * Calculate the monetary value of retention efforts.
+   * Legacy raw-dues estimate; not suitable for savings or revenue reporting.
+   *
+   * No billing-period normalization or causal evidence is available.
+   * Dashboard and exports use logged outcomes instead.
    *
    * @return array
    *   Value metrics including total at risk and value saved
@@ -620,9 +557,16 @@ class RecoveryMetrics {
    * @return array
    *   Monthly metrics for trending
    */
-  public function getMonthlyTrends(int $months = 12) {
+  public function getMonthlyTrends(int $months = 12, ?string $start_date = NULL, ?string $end_date = NULL) {
     [$resolved_in, $resolved_params] = $this->resolvedPlaceholders();
-    $params = [':months' => $months] + $resolved_params;
+    $params = $resolved_params;
+    if ($start_date || $end_date) {
+      $date_where = '1=1' . $this->buildDateFilter($start_date, $end_date, $params);
+    }
+    else {
+      $params[':months'] = $months;
+      $date_where = 'contact_date >= DATE_SUB(CURDATE(), INTERVAL :months MONTH)';
+    }
     $query = "
       SELECT
         DATE_FORMAT(contact_date, '%Y-%m') as month,
@@ -633,7 +577,7 @@ class RecoveryMetrics {
         END) as resolved,
         COUNT(*) as total_attempts
       FROM {ms_member_outreach_log}
-      WHERE contact_date >= DATE_SUB(CURDATE(), INTERVAL :months MONTH)
+      WHERE {$date_where}
       GROUP BY DATE_FORMAT(contact_date, '%Y-%m')
       ORDER BY month ASC
     ";
