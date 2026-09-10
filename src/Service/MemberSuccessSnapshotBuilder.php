@@ -131,8 +131,9 @@ class MemberSuccessSnapshotBuilder {
       }
       $already_complete = $this->lastCompletedDate() === $snapshot_date;
       if (empty($todo) && $already_complete) {
-        // Roster fully covered and the end-of-pass bookkeeping already ran for
-        // this date: nothing left to do until tomorrow.
+        // Role removals can happen after the completed daily pass. Clear only
+        // stale flags; do not repeat cancellation logging or outreach effects.
+        $this->clearStaleLatestFlags($uids, $snapshot_type);
         return 0;
       }
     }

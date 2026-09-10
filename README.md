@@ -135,3 +135,10 @@ range**; per-staff rows group by staff and member, the summary by member. Earlie
 unsuccessful contacts count, but this is not a reconstruction of recovery episodes.
 Logged outcomes replace unsupported annual-revenue-saved claims. Outreach
 attribution does not establish causation. Snapshot dates are displayed explicitly.
+
+
+### Completed daily roster cleanup
+
+A no-work slice still clears `is_latest` for accounts no longer eligible for the
+snapshot roster. Historical rows remain intact, and this cleanup does not repeat
+cancellation or outreach bookkeeping after a daily build has completed.

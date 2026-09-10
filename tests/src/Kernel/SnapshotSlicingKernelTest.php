@@ -162,6 +162,22 @@ class SnapshotSlicingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A role removed after completion cannot leave an ineligible latest row.
+   */
+  public function testRemovedMemberAfterCompletionClearsOnlyLatestFlag(): void {
+    $uids = $this->createMembers(2);
+    $builder = $this->builder();
+    $this->assertSame(2, $builder->buildDailySnapshots(NULL, 'daily', 60));
+    $user = User::load($uids[0]);
+    $user->removeRole('member')->save();
+    $this->assertSame(0, $builder->buildDailySnapshots(NULL, 'daily', 60));
+    $db = $this->container->get('database');
+    $this->assertSame(0, (int) $db->select('ms_member_success_snapshot', 's')
+      ->fields('s', ['is_latest'])->condition('uid', $uids[0])->execute()->fetchField());
+    $this->assertSame(2, $this->snapshotCountForToday(), 'History is retained; only the latest eligibility flag changes.');
+  }
+
+  /**
    * Returns a builder wired from the container with a stubbed row build.
    */
   protected function builder(): MemberSuccessSnapshotBuilder {
