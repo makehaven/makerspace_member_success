@@ -6,6 +6,7 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\makerspace_member_success\Service\CiviCrmHelper;
+use Drupal\makerspace_member_success\Service\OnboardingLeadTracker;
 
 /**
  * Configure Member Success thresholds and mappings.
@@ -195,6 +196,20 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Site base URL for email links'),
       '#description' => $this->t('Used to make the resume link absolute in cron-sent email. Default https://www.makehaven.org.'),
       '#default_value' => $config->get('lead_site_base_url') ?: 'https://www.makehaven.org',
+    ];
+
+    $form['lead_followup']['lead_tour_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Tour sign-up link (path or absolute URL)'),
+      '#description' => $this->t('Offered in the follow-up to anyone who would rather see the space before paying. Leave blank to invite them to a tour without a link. Default /open-tours.'),
+      '#default_value' => $config->get('lead_tour_url') ?? '/open-tours',
+    ];
+
+    $form['lead_followup']['lead_followup_bcc'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Bcc staff on each follow-up'),
+      '#description' => $this->t('Comma-separated addresses that receive a blind copy of every follow-up, so staff know an applicant has already been contacted and do not send a second email by hand. Leave blank for no copy.'),
+      '#default_value' => $config->get('lead_followup_bcc') ?? '',
     ];
 
     $form['thresholds']['outreach_send_hour_local'] = [
@@ -414,6 +429,24 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    // A silently dropped address means a staff member believes they are being
+    // copied on these sends when they are not, which is the exact failure this
+    // setting exists to prevent.
+    $raw = (string) $form_state->getValue('lead_followup_bcc');
+    foreach (preg_split('/[,;\r\n]+/', $raw) ?: [] as $candidate) {
+      $candidate = trim($candidate);
+      if ($candidate !== '' && !filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+        $form_state->setErrorByName('lead_followup_bcc', $this->t('%address is not a valid email address.', ['%address' => $candidate]));
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $retention_values = array_filter(array_map('trim', explode(',', (string) $form_state->getValue('retention_recency_days'))));
     $retention_days = array_values(array_filter(array_map('intval', $retention_values)));
@@ -435,6 +468,8 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('lead_join_webform_id', trim((string) $form_state->getValue('lead_join_webform_id')))
       ->set('lead_resume_url', trim((string) $form_state->getValue('lead_resume_url')))
       ->set('lead_site_base_url', trim((string) $form_state->getValue('lead_site_base_url')))
+      ->set('lead_tour_url', trim((string) $form_state->getValue('lead_tour_url')))
+      ->set('lead_followup_bcc', OnboardingLeadTracker::normalizeBcc((string) $form_state->getValue('lead_followup_bcc')))
       ->set('retention_recency_days', $retention_days)
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))

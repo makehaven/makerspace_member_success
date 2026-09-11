@@ -12,6 +12,10 @@ lead_followup_max_per_run: 25
 lead_join_webform_id: webform_24707
 lead_resume_url: /join-makehaven
 lead_site_base_url: 'https://www.makehaven.org'
+lead_tour_url: /open-tours
+# Staff copy of every unpaid-lead follow-up, so nobody sends a second one by
+# hand (2026-09-11). Blank disables the copy.
+lead_followup_bcc: 'kate.cebik@makehaven.org, crm@makehaven.org'
 retention_recency_days:
   - 30
   - 60

@@ -44,6 +44,12 @@ makerspace_member_success.settings:
     lead_site_base_url:
       type: string
       label: 'Site base URL for unpaid-lead email links'
+    lead_tour_url:
+      type: string
+      label: 'Tour sign-up link offered in the unpaid-lead follow-up'
+    lead_followup_bcc:
+      type: string
+      label: 'Staff addresses bcc''d on every unpaid-lead follow-up'
     retention_recency_days:
       type: sequence
       label: 'Retention recency windows (days)'

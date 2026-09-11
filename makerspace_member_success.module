@@ -32,6 +32,12 @@ function makerspace_member_success_mail(string $key, array &$message, array $par
     $message['subject'] = $params['subject'] ?? '';
     // Body is a plain-text string; wrap it so Drupal's mailer sends it cleanly.
     $message['body'][] = $params['body'] ?? '';
+    // Staff copy, when the caller asked for one. The SMTP plugin lower-cases
+    // header keys and turns this into real Bcc recipients; it is never shown
+    // to the person receiving the email.
+    if (!empty($params['bcc'])) {
+      $message['headers']['Bcc'] = $params['bcc'];
+    }
     return;
   }
 

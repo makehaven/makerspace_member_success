@@ -89,4 +89,53 @@ class OnboardingLeadTrackerTest extends UnitTestCase {
     $this->assertStringContainsString('do not need to submit the form again', $body);
   }
 
+  /**
+   * The offer of help and the tour invitation reach the applicant.
+   *
+   * Staff were sending these two things by hand alongside the automated email
+   * (Kate, 2026-09-11); the automated copy now carries them.
+   */
+  public function testFollowupBodyOffersHelpAndTour(): void {
+    $body = OnboardingLeadTracker::buildFollowupBody(
+      'Ada',
+      'https://makehaven.chargebee.com/hosted_pages/plans/member',
+      '',
+      'https://www.makehaven.org/open-tours'
+    );
+
+    $this->assertStringContainsString('Is there anything I can do to help you along in the process?', $body);
+    $this->assertStringContainsString('sign up for a tour', $body);
+    $this->assertStringContainsString('https://www.makehaven.org/open-tours', $body);
+    // The invitation comes before the sign-off, not after it.
+    $this->assertLessThan(
+      strpos($body, 'The MakeHaven Team'),
+      strpos($body, 'sign up for a tour'),
+    );
+  }
+
+  /**
+   * Without a configured tour link the invitation still reads as a sentence.
+   */
+  public function testFollowupBodyInvitesToTourWithoutLink(): void {
+    $body = OnboardingLeadTracker::buildFollowupBody('Ada', NULL, '', NULL);
+
+    $this->assertStringContainsString('I invite you to sign up for a tour.', $body);
+    $this->assertStringNotContainsString('/open-tours', $body);
+  }
+
+  /**
+   * Bcc parsing keeps valid addresses, drops junk, and de-duplicates.
+   */
+  public function testNormalizeBcc(): void {
+    $this->assertSame(
+      'kate.cebik@makehaven.org, crm@makehaven.org',
+      OnboardingLeadTracker::normalizeBcc(" kate.cebik@makehaven.org ,crm@makehaven.org\n"),
+    );
+    $this->assertSame(
+      'crm@makehaven.org',
+      OnboardingLeadTracker::normalizeBcc('not-an-address; crm@makehaven.org; CRM@makehaven.org'),
+    );
+    $this->assertSame('', OnboardingLeadTracker::normalizeBcc('   '));
+  }
+
 }

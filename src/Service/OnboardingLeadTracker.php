@@ -340,12 +340,26 @@ class OnboardingLeadTracker {
     $first = trim((string) ($lead['name'] ?? ''));
     $first = $first !== '' ? strtok($first, ' ') : 'there';
     $checkout = $this->checkoutDetails((int) ($lead['first_sid'] ?? 0));
-    $body = static::buildFollowupBody($first, $checkout['url'], $checkout['summary']);
+    $body = static::buildFollowupBody(
+      $first,
+      $checkout['url'],
+      $checkout['summary'],
+      $this->tourUrl($config)
+    );
 
     $params = [
       'subject' => 'Finish joining MakeHaven',
       'body' => $body,
     ];
+
+    // Staff copy. Kate and the CRM mailbox were sending their own follow-ups to
+    // the same people for weeks because nothing told them this had already
+    // gone out (2026-09-11). Bcc rather than Cc so the applicant still sees a
+    // one-to-one email.
+    $bcc = static::normalizeBcc((string) ($config->get('lead_followup_bcc') ?? ''));
+    if ($bcc !== '') {
+      $params['bcc'] = $bcc;
+    }
 
     $result = $this->mailManager->mail(
       'makerspace_member_success',
@@ -393,9 +407,44 @@ class OnboardingLeadTracker {
   }
 
   /**
+   * Resolves the absolute tour sign-up link used in the follow-up email.
+   */
+  protected function tourUrl($config): ?string {
+    $path = trim((string) ($config->get('lead_tour_url') ?? '/open-tours'));
+    if ($path === '') {
+      return NULL;
+    }
+    if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+      return $path;
+    }
+    $base = rtrim(trim((string) ($config->get('lead_site_base_url') ?: 'https://www.makehaven.org')), '/');
+    return $base . '/' . ltrim($path, '/');
+  }
+
+  /**
+   * Normalizes a configured Bcc list to a comma-separated header value.
+   *
+   * The SMTP mail plugin splits this header on commas, so anything that is not
+   * a valid address is dropped here rather than handed to the mailer.
+   */
+  public static function normalizeBcc(string $raw): string {
+    $valid = [];
+    foreach (preg_split('/[,;\r\n]+/', $raw) ?: [] as $candidate) {
+      $candidate = trim($candidate);
+      $key = mb_strtolower($candidate);
+      if ($candidate !== '' && !isset($valid[$key]) && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+        // First spelling wins, so a repeat in different case cannot change
+        // which address the header carries.
+        $valid[$key] = $candidate;
+      }
+    }
+    return implode(', ', $valid);
+  }
+
+  /**
    * Builds cautious recovery copy for an applicant who has no account yet.
    */
-  public static function buildFollowupBody(string $first, ?string $checkout_url, string $summary = ''): string {
+  public static function buildFollowupBody(string $first, ?string $checkout_url, string $summary = '', ?string $tour_url = NULL): string {
     $body = [
       "Hi $first,",
       '',
@@ -413,6 +462,19 @@ class OnboardingLeadTracker {
     }
     else {
       $body[] = 'We could not generate your personal checkout link, but we have your request. You do not need to submit the form again.';
+    }
+
+    $body[] = '';
+    $body[] = 'Is there anything I can do to help you along in the process?';
+
+    if ($tour_url !== NULL && $tour_url !== '') {
+      $body[] = '';
+      $body[] = 'If you would like to see the space first, I invite you to sign up for a tour:';
+      $body[] = $tour_url;
+    }
+    else {
+      $body[] = '';
+      $body[] = 'If you would like to see the space first, I invite you to sign up for a tour.';
     }
 
     $body[] = '';

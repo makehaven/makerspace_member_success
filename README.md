@@ -47,6 +47,31 @@ Go to `/admin/config/makerspace/member-success` to configure:
 *   **Email Templates**: Select default CiviCRM message templates for each stage's action button.
 *   **Mappings**: Define which CiviCRM activity types count as outreach.
 
+### Unpaid-lead follow-up ("Finish joining MakeHaven")
+
+Someone who fills the join form but never pays creates no Drupal account, so
+they never appear in the member-success queue. Cron tracks them and sends **one**
+automatic email per address, ever — subject *Finish joining MakeHaven* — roughly
+an hour after the abandoned submission.
+
+This is a **member-facing** email that goes out automatically. Two things follow
+from that:
+
+*   **Staff are bcc'd** on every send (`lead_followup_bcc`, default
+    `kate.cebik@makehaven.org, crm@makehaven.org`). Without the copy, staff had
+    no way to know an applicant had already been contacted and were sending a
+    second follow-up by hand — which is exactly what happened for several weeks
+    up to 2026-09-11. Clearing the setting turns the copy off.
+*   **The copy lives in code**, not in a CiviCRM template:
+    `OnboardingLeadTracker::buildFollowupBody()`. It offers help, links the
+    applicant's personal Chargebee checkout link where one can be rebuilt, and
+    invites them to a tour (`lead_tour_url`, default `/open-tours`). Changing
+    the wording is a code change and should be announced to staff in the
+    release email, because they are answering the replies.
+
+Queue and settings: `/admin/makerspace/member-success/leads` and the *Unpaid lead
+follow-up* section of the settings form.
+
 ## Drush Commands
 
 *   `drush ms-snapshot:build` (alias: `ms-build`): Generates daily snapshots for all active members.
