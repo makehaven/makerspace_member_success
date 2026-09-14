@@ -88,7 +88,34 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
   public function build(): array {
     $uid = (int) $this->currentUser->id();
     $is_authenticated = $uid > 0;
-    $path = $this->requestStack->getCurrentRequest()?->getPathInfo() ?? '/';
+    $request = $this->requestStack->getCurrentRequest();
+    $path = $request?->getPathInfo() ?? '/';
+
+    // /user/register serves everyone who needs a basic account — event
+    // attendees, instructors, people following a program — not only new
+    // members arriving from Chargebee. The bar told all of them they were on
+    // "Member setup, step 3 of 8" (JR, on the GEMS follow link, 2026-09-14).
+    // Only the paid-membership hand-off carries ?profile=main or
+    // ?chargebee-id=; every other signed-out visitor to the register page
+    // gets no bar.
+    if (!$is_authenticated && str_starts_with($path, '/user/register')) {
+      $query = $request?->query;
+      $is_member_handoff = $query
+        && ($query->get('profile') === 'main' || $query->get('chargebee-id') !== NULL);
+      if (!$is_member_handoff) {
+        return [
+          '#cache' => [
+            'contexts' => [
+              'user.roles:anonymous',
+              'url.path',
+              'url.query_args:profile',
+              'url.query_args:chargebee-id',
+            ],
+            'max-age' => 3600,
+          ],
+        ];
+      }
+    }
 
     $signals = $is_authenticated ? $this->snapshotBuilder->loadOnboardingSignals($uid) : [];
     // Completion is judged from real signals only — the page can advance the
@@ -117,7 +144,12 @@ class OnboardingProgressBlock extends BlockBase implements ContainerFactoryPlugi
     $cache = [
       // Per-user; url.path because the current page decides whether the
       // continue link is redundant (and, for anonymous, the step state).
-      'contexts' => ['user', 'url.path'],
+      'contexts' => [
+        'user',
+        'url.path',
+        'url.query_args:profile',
+        'url.query_args:chargebee-id',
+      ],
       // profile_list / quiz_result_list: the profile and quiz-pass signals
       // live on their own entities, whose saves don't touch user:{uid} — a
       // member who saved their profile kept seeing "Complete your member
