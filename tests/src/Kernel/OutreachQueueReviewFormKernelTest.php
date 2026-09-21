@@ -5,6 +5,7 @@ namespace Drupal\Tests\makerspace_member_success\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\makerspace_member_success\Form\OutreachQueueReviewForm;
 use Drupal\makerspace_member_success\Service\FollowupStatusManager;
+use Drupal\makerspace_member_success\Service\OutreachCandidateGenerator;
 use Drupal\makerspace_member_success\Service\OutreachQueueServiceInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -71,7 +72,8 @@ class OutreachQueueReviewFormKernelTest extends KernelTestBase {
     $form = new class(
       $this->container->get('database'),
       $this->createMock(OutreachQueueServiceInterface::class),
-      $this->createMock(FollowupStatusManager::class)
+      $this->createMock(FollowupStatusManager::class),
+      $this->createMock(OutreachCandidateGenerator::class),
     ) extends OutreachQueueReviewForm {
       public function loadRowsForTest(string $status, string $stage = ''): array {
         return $this->loadRows($status, $stage);
