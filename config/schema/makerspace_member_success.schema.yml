@@ -172,6 +172,9 @@ makerspace_member_success.settings:
     onboarding_auto_nudge_enabled:
       type: boolean
       label: 'Automatically email onboarding members stalled at a join-funnel step'
+    recovery_candidates_enabled:
+      type: boolean
+      label: 'Queue payment-failed members for staff approval on every cron'
     onboarding_auto_nudge_steps:
       type: sequence
       label: 'Funnel steps the auto-nudge targets (empty = every onboarding-stalled member)'

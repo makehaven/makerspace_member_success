@@ -137,6 +137,11 @@ email_template_overrides: []
 sms_template_overrides: []
 automation_enabled: false
 onboarding_auto_nudge_enabled: false
+# Queue every payment-failed (recovery-stage) member for staff approval on each
+# cron. Queues only — sending still needs a person to approve the row unless
+# automation_enabled is on. ON by default: a member whose card failed and who
+# nobody contacts is the one case where waiting costs a membership.
+recovery_candidates_enabled: true
 onboarding_auto_nudge_steps:
   - profile
   - video

@@ -173,6 +173,44 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Badge nudge failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // 2c. Recovery candidates: members whose payment has failed. Until
+  // 2026-09-21 the only thing that ever put a recovery-stage member into the
+  // outreach queue was a staff member pressing "Generate candidates" on the
+  // review form — last done in March — so the people the daily snapshot
+  // flagged as payment_failed had no queue row, nothing to approve, and no
+  // line on anyone's list. Six of them sat untouched for weeks.
+  //
+  // This queues them on every cron. It does NOT send: automation_enabled is
+  // off and stage_recovery_require_manual_approval is on, so each row waits
+  // at /admin/makerspace/member-success/outreach-queue for a person to
+  // approve it (or suppress it with a reason). Cooldown, max-attempts and the
+  // risk floor are enforced by enqueueCandidate(), and the open-row dedup
+  // there means re-queueing every hour cannot pile up duplicates. Approved
+  // rows are then sent here, because approve() only marks the row and the
+  // review form has no send button.
+  try {
+    $recovery_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) ($recovery_config->get('recovery_candidates_enabled') ?? TRUE)) {
+      $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+      $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      $enqueued = 0;
+      foreach ($generator->generate(['recovery']) as $candidate) {
+        $queue->enqueueCandidate((int) $candidate['uid'], 'recovery', $candidate);
+        $enqueued++;
+      }
+      $sent = $queue->processApprovedItems(['recovery']);
+      if ($enqueued > 0 || $sent > 0) {
+        \Drupal::logger('makerspace_member_success')->notice(
+          'Recovery queue: @enqueued payment-failed member(s) evaluated, @sent approved message(s) sent.',
+          ['@enqueued' => $enqueued, '@sent' => $sent],
+        );
+      }
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Recovery queue failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   // 3. Daily member snapshots — the expensive stage, so it runs last and under
   //    a wall-clock budget. It snapshots as many members as fit, then returns;
   //    the next cron resumes with the members that still have no row for

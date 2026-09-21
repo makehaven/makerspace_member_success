@@ -26,6 +26,7 @@ Track staff/volunteer effectiveness, ROI, and outreach success rates.
 
 *   **Dashboard**: High-level statistical overview of member lifecycle stages.
 *   **Action Queues**: Targeted lists for Onboarding, Engagement, Retention, and Recovery.
+    *   Recovery-stage members (payment failed) are added to the outreach queue by cron (`recovery_candidates_enabled`, default on) so they sit on the review page waiting for approval. Before 2026-09-21 they only reached the queue when someone pressed **Generate candidates** by hand, last done in March, so payment-failed members went weeks with nobody assigned. Nothing sends without approval unless global automation is on.
 *   **Intervention Performance Metrics**: ROI calculations, staff effectiveness, channel success rates.
 *   **Snapshot System**: Daily snapshots of member data for trend analysis.
 *   **CiviCRM Integration**:

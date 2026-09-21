@@ -139,6 +139,13 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (bool) $config->get('onboarding_auto_nudge_enabled'),
     ];
 
+    $form['thresholds']['recovery_candidates_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Queue payment-failed members for approval automatically'),
+      '#description' => $this->t('When ON, every cron adds recovery-stage members (payment failed) to the outreach queue so they appear on the review page waiting for approval. Nothing is sent without a person approving the row unless global automation is on. When OFF, recovery members only reach the queue if someone presses "Generate candidates" by hand — which is how they went unnoticed until September 2026. Default ON.'),
+      '#default_value' => (bool) ($config->get('recovery_candidates_enabled') ?? TRUE),
+    ];
+
     $form['lead_followup'] = [
       '#type' => 'details',
       '#title' => $this->t('Unpaid lead follow-up'),
@@ -460,6 +467,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('new_member_days', (int) $form_state->getValue('new_member_days'))
       ->set('onboarding_stall_hours', (int) $form_state->getValue('onboarding_stall_hours'))
       ->set('onboarding_auto_nudge_enabled', (bool) $form_state->getValue('onboarding_auto_nudge_enabled'))
+      ->set('recovery_candidates_enabled', (bool) $form_state->getValue('recovery_candidates_enabled'))
       ->set('orientation_quiz_nid', (int) $form_state->getValue('orientation_quiz_nid'))
       ->set('lead_followup_enabled', (bool) $form_state->getValue('lead_followup_enabled'))
       ->set('snapshot_cron_time_budget', (int) $form_state->getValue('snapshot_cron_time_budget'))
