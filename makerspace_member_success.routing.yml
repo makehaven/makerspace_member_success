@@ -31,6 +31,23 @@ makerspace_member_success.lead_dismiss:
     _csrf_token: 'TRUE'
     lead: \d+
 
+makerspace_member_success.billing_queue:
+  path: '/admin/makerspace/member-success/billing'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\BillingMismatchQueueController::build'
+    _title: 'Paying, Not Set Up'
+  requirements:
+    _permission: 'access makerspace member success queues'
+
+makerspace_member_success.billing_dismiss:
+  path: '/admin/makerspace/member-success/billing/{subscription}/dismiss'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\BillingMismatchQueueController::dismiss'
+  requirements:
+    _permission: 'log makerspace member success contacts'
+    _csrf_token: 'TRUE'
+    subscription: '[A-Za-z0-9_-]+'
+
 makerspace_member_success.log_contact:
   path: '/admin/makerspace/member-success/log-contact/{user}'
   defaults:

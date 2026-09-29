@@ -32,6 +32,13 @@ makerspace_member_success.lead_queue:
   parent: makerspace_member_success.overview
   weight: 11
 
+makerspace_member_success.billing_queue:
+  title: 'Paying, Not Set Up'
+  description: 'Paying in Chargebee, but no account, the wrong account link, or no member role.'
+  route_name: makerspace_member_success.billing_queue
+  parent: makerspace_member_success.overview
+  weight: 12
+
 makerspace_member_success.engagement:
   title: '2. Engagement'
   route_name: view.member_success_queue.engagement
@@ -138,6 +145,14 @@ makerspace_member_success.staff_lead_queue:
   menu_name: staff-tools
   parent: makerspace_member_success.staff_tab
   weight: 11
+
+makerspace_member_success.staff_billing_queue:
+  title: 'Paying, Not Set Up'
+  description: 'Paying in Chargebee, but no account, the wrong account link, or no member role.'
+  route_name: makerspace_member_success.billing_queue
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 12
 
 makerspace_member_success.staff_engagement:
   title: '2. Engagement Queue'

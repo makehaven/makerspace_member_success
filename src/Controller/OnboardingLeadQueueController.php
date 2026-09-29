@@ -90,6 +90,13 @@ class OnboardingLeadQueueController extends ControllerBase {
           ':url' => Url::fromRoute('makerspace_member_success.settings')->toString(),
         ]),
     ];
+    $build['paid'] = [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => $this->t('Anyone Chargebee shows as paying is never emailed from here; they move to <a href=":url">Paying, Not Set Up</a>.', [
+        ':url' => Url::fromRoute('makerspace_member_success.billing_queue')->toString(),
+      ]),
+    ];
     $build['table'] = [
       '#type' => 'table',
       '#header' => $header,

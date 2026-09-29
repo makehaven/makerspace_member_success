@@ -50,6 +50,9 @@ makerspace_member_success.settings:
     lead_followup_bcc:
       type: string
       label: 'Staff addresses bcc''d on every unpaid-lead follow-up'
+    billing_mismatch_notify:
+      type: string
+      label: 'Staff addresses told when someone pays in Chargebee but is not set up on the website'
     retention_recency_days:
       type: sequence
       label: 'Retention recency windows (days)'

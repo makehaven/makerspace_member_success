@@ -28,7 +28,7 @@ function makerspace_member_success_help(string $route_name, RouteMatchInterface 
  * Implements hook_mail().
  */
 function makerspace_member_success_mail(string $key, array &$message, array $params): void {
-  if ($key === 'outreach' || $key === 'lead_followup') {
+  if ($key === 'outreach' || $key === 'lead_followup' || $key === 'billing_mismatch') {
     $message['subject'] = $params['subject'] ?? '';
     // Body is a plain-text string; wrap it so Drupal's mailer sends it cleanly.
     $message['body'][] = $params['body'] ?? '';
@@ -93,6 +93,16 @@ function makerspace_member_success_cron(): void {
   }
   catch (\Throwable $e) {
     \Drupal::logger('makerspace_member_success')->error('Onboarding lead scan failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
+  // 1b. People paying in Chargebee whom the website does not treat as members
+  //     (no account, account linked to another customer, no member role). The
+  //     snapshot queues cannot see them. Daily, live only, read-only.
+  try {
+    \Drupal::service('makerspace_member_success.chargebee_account_reconciler')->runFromCron();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Billing reconciliation failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
   // 2. Onboarding auto-nudge: email paid members stalled at a join-funnel step.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\makerspace_member_success\Commands;
 
+use Drupal\makerspace_member_success\Service\ChargebeeAccountReconciler;
 use Drupal\makerspace_member_success\Service\OnboardingLeadTracker;
 use Drush\Commands\DrushCommands;
 
@@ -14,6 +15,7 @@ class OnboardingLeadCommands extends DrushCommands {
 
   public function __construct(
     protected readonly OnboardingLeadTracker $leadTracker,
+    protected readonly ChargebeeAccountReconciler $billingReconciler,
   ) {
     parent::__construct();
   }
@@ -46,6 +48,40 @@ class OnboardingLeadCommands extends DrushCommands {
         '@dry' => $allow_send ? '' : ' (dry run — sending suppressed)',
       ]
     ));
+  }
+
+  /**
+   * Compare paying Chargebee subscriptions with website accounts.
+   *
+   * Reads Chargebee only. Records mismatches in the "Paying, Not Set Up"
+   * queue and lists them. Cron runs this daily on live.
+   *
+   * @param array $options
+   *   Command options.
+   *
+   * @option notify
+   *   Also email staff about rows that are new since the last run.
+   *
+   * @command ms:billing-reconcile
+   * @usage drush ms:billing-reconcile
+   *   Refresh the queue and print the open rows.
+   */
+  public function billingReconcile(array $options = ['notify' => FALSE]): void {
+    $stats = $this->billingReconciler->reconcile(!empty($options['notify']));
+    if ($stats['error'] !== NULL) {
+      $this->logger()->error(dt('Billing reconciliation failed: @e', ['@e' => $stats['error']]));
+      return;
+    }
+    foreach ($this->billingReconciler->getOpen() as $row) {
+      $this->output()->writeln(sprintf('%s | %s | %s | %s | %s',
+        $row['kind'], $row['name'] ?? '-', $row['email'] ?? '-', $row['plan_id'] ?? '-', $row['customer_id']));
+    }
+    $this->logger()->success(dt('@scanned paying subscriptions; @open open, @new new, @resolved resolved.', [
+      '@scanned' => $stats['scanned'],
+      '@open' => $stats['open'],
+      '@new' => $stats['new'],
+      '@resolved' => $stats['resolved'],
+    ]));
   }
 
 }

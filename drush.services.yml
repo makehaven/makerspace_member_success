@@ -24,5 +24,6 @@ services:
     class: Drupal\makerspace_member_success\Commands\OnboardingLeadCommands
     arguments:
       - '@makerspace_member_success.onboarding_lead_tracker'
+      - '@makerspace_member_success.chargebee_account_reconciler'
     tags:
       - { name: drush.command }

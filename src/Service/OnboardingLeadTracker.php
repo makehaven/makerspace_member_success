@@ -55,6 +55,7 @@ class OnboardingLeadTracker {
     protected readonly TimeInterface $time,
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     LoggerChannelFactoryInterface $loggerFactory,
+    protected readonly ChargebeeAccountReconciler $billingReconciler,
   ) {
     $this->logger = $loggerFactory->get('makerspace_member_success');
   }
@@ -74,7 +75,8 @@ class OnboardingLeadTracker {
    *   When FALSE, never sends (e.g. a dry run); only records/marks leads.
    *
    * @return array
-   *   Stats keyed: scanned, new_or_updated, converted, sent, skipped_disabled.
+   *   Stats keyed: scanned, new_or_updated, converted, sent, skipped_disabled,
+   *   paid_no_account.
    */
   public function scan(bool $allow_send = TRUE): array {
     $config = $this->configFactory->get('makerspace_member_success.settings');
@@ -90,6 +92,7 @@ class OnboardingLeadTracker {
       'converted' => 0,
       'sent' => 0,
       'skipped_disabled' => 0,
+      'paid_no_account' => 0,
     ];
 
     foreach ($this->loadRecentSubmissions($webform_id, $now) as $row) {
@@ -119,6 +122,23 @@ class OnboardingLeadTracker {
           $stats['skipped_disabled']++;
           continue;
         }
+        // "No account" is not "never paid": accounts are created after
+        // payment, so a checkout that errored afterwards (Justin Morano,
+        // 2026-09-01) looks identical here. Ask Chargebee before telling
+        // anyone to pay; if it cannot answer, wait for the next run.
+        $paying = $this->billingReconciler->hasPayingSubscription((string) $lead['email']);
+        if ($paying === NULL) {
+          continue;
+        }
+        if ($paying) {
+          $this->database->update('ms_onboarding_lead')
+            ->fields(['status' => 'paid_no_account', 'updated_at' => $now])
+            ->condition('id', $lead['id'])
+            ->execute();
+          $this->logger->warning('@email paid in Chargebee but has no account; follow-up not sent. See the billing queue.', ['@email' => $lead['email']]);
+          $stats['paid_no_account']++;
+          continue;
+        }
         if ($this->sendFollowup($lead, $config)) {
           $this->database->update('ms_onboarding_lead')
             ->fields(['followup_sent_ts' => $now, 'updated_at' => $now])
@@ -144,7 +164,8 @@ class OnboardingLeadTracker {
    * Returns lead rows for the staff queue.
    *
    * @param string|null $status
-   *   Optional status filter ('unpaid', 'converted', 'dismissed').
+   *   Optional status filter ('unpaid', 'converted', 'dismissed',
+   *   'paid_no_account').
    *
    * @return array[]
    *   Lead rows, newest submission first.
@@ -303,7 +324,7 @@ class OnboardingLeadTracker {
   }
 
   /**
-   * Marks an existing unpaid lead as converted. Returns TRUE if one changed.
+   * Marks an unpaid or paid-but-no-account lead as converted. Returns TRUE if one changed.
    */
   protected function markConverted(string $email, int $uid, int $now): bool {
     return (bool) $this->database->update('ms_onboarding_lead')
@@ -314,7 +335,7 @@ class OnboardingLeadTracker {
         'updated_at' => $now,
       ])
       ->condition('email', $email)
-      ->condition('status', 'unpaid')
+      ->condition('status', ['unpaid', 'paid_no_account'], 'IN')
       ->execute();
   }
 

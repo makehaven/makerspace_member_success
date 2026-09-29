@@ -533,8 +533,49 @@ function makerspace_member_success_schema() {
   }
 
   $schema['ms_onboarding_lead'] = _makerspace_member_success_lead_table_schema();
+  $schema['ms_billing_mismatch'] = _makerspace_member_success_billing_mismatch_schema();
 
   return $schema;
+}
+
+/**
+ * Schema for paying Chargebee subscriptions that do not line up with a member.
+ *
+ * One row per subscription, kept by ChargebeeAccountReconciler. A row closes
+ * (resolved_ts) on the first daily run after the account is fixed.
+ *
+ * @return array
+ *   Drupal schema array for ms_billing_mismatch.
+ */
+function _makerspace_member_success_billing_mismatch_schema(): array {
+  return [
+    'description' => 'Paying Chargebee subscriptions with no matching member account.',
+    'fields' => [
+      'subscription_id' => ['type' => 'varchar', 'length' => 64, 'not null' => TRUE],
+      'customer_id' => ['type' => 'varchar', 'length' => 64, 'not null' => TRUE],
+      'email' => ['type' => 'varchar', 'length' => 254, 'not null' => FALSE],
+      'name' => ['type' => 'varchar', 'length' => 255, 'not null' => FALSE],
+      'plan_id' => ['type' => 'varchar', 'length' => 128, 'not null' => FALSE],
+      'sub_status' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE, 'default' => ''],
+      'sub_created' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'kind' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'no_account | relink | no_member_role.',
+      ],
+      'uid' => ['type' => 'int', 'not null' => FALSE, 'description' => 'Matched account, if any.'],
+      'first_seen' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'last_seen' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'resolved_ts' => ['type' => 'int', 'not null' => FALSE, 'description' => 'Set when a run no longer finds the mismatch.'],
+      'dismissed_ts' => ['type' => 'int', 'not null' => FALSE],
+      'dismissed_by' => ['type' => 'int', 'not null' => FALSE],
+    ],
+    'primary key' => ['subscription_id'],
+    'indexes' => [
+      'idx_open' => ['resolved_ts', 'dismissed_ts'],
+    ],
+  ];
 }
 
 /**
@@ -588,7 +629,7 @@ function _makerspace_member_success_lead_table_schema(): array {
         'length' => 16,
         'not null' => TRUE,
         'default' => 'unpaid',
-        'description' => 'unpaid | converted | dismissed.',
+        'description' => 'unpaid | converted | dismissed | paid_no_account.',
       ],
       'followup_sent_ts' => [
         'type' => 'int',
@@ -1866,4 +1907,22 @@ function makerspace_member_success_update_9035(): string {
   return $seeded
     ? 'Seeded badge-nudge settings: ' . implode(', ', $seeded) . '. Nothing sends until badge_nudge_enabled is TRUE.'
     : 'Badge-nudge settings already present.';
+}
+
+/**
+ * Adds the paying-without-an-account queue (ms_billing_mismatch).
+ */
+function makerspace_member_success_update_9036(): string {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ms_billing_mismatch')) {
+    $schema->createTable('ms_billing_mismatch', _makerspace_member_success_billing_mismatch_schema());
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  if ($config->get('billing_mismatch_notify') === NULL) {
+    // Same people who already get a copy of every unpaid-lead follow-up.
+    $config->set('billing_mismatch_notify', (string) ($config->get('lead_followup_bcc') ?? ''))->save();
+  }
+
+  return 'Created ms_billing_mismatch. The first daily run on live fills it.';
 }
