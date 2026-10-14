@@ -23,13 +23,28 @@ final class MemberSuccessRiskScorer {
    *   Inactivity day thresholds for retention tiers.
    * @param int $now_ts
    *   Current Unix timestamp.
+   * @param int|null $badge_watch_days
+   *   Days threshold for the engagement watch tier, or NULL to skip it.
+   * @param array|null $dormancy
+   *   Dormancy (no door visit) settings — see dormancy(). NULL disables the
+   *   factor, which keeps older callers and tests unchanged.
    *
    * @return array{0:int,1:array}
    *   Risk score and array of reason strings.
    */
-  public static function calculate(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts, ?int $badge_watch_days = NULL): array {
+  public static function calculate(array $data, int $badge_one_days, int $badge_four_days, array $recency_days, int $now_ts, ?int $badge_watch_days = NULL, ?array $dormancy = NULL): array {
     $score = 0;
     $reasons = [];
+
+    // Dormancy: no door visit for a long stretch, in any stage where the
+    // member is expected to be coming in. Computed once here; the retention
+    // block below lets it REPLACE the smaller inactivity tier rather than
+    // stack on top of it, so a long-absent retention member is not counted
+    // twice for the same absence.
+    [$dormancy_points, $dormancy_reason] = $dormancy !== NULL
+      ? self::dormancy($data, $now_ts, $dormancy)
+      : [0, NULL];
+    $dormancy_applied = FALSE;
 
     // Payment failed = CRITICAL. Chargebee retries for ~8 days before
     // cancelling; the escalating boost matches that window so staff see the
@@ -218,13 +233,107 @@ final class MemberSuccessRiskScorer {
 
         if ($highest_tier >= 0) {
           // Cap retention inactivity contribution at 40.
-          $score += min(10 * ($highest_tier + 1), 40);
-          $reasons[] = 'inactive_' . $thresholds[$highest_tier];
+          $tier_points = min(10 * ($highest_tier + 1), 40);
+          if ($dormancy_points >= $tier_points) {
+            // Dormancy supersedes the inactivity tier (replace, not add).
+            $score += $dormancy_points;
+            $reasons[] = $dormancy_reason;
+            $dormancy_applied = TRUE;
+          }
+          else {
+            $score += $tier_points;
+            $reasons[] = 'inactive_' . $thresholds[$highest_tier];
+          }
         }
       }
     }
 
+    if ($dormancy_points > 0 && !$dormancy_applied) {
+      $score += $dormancy_points;
+      $reasons[] = $dormancy_reason;
+    }
+
     return [$score, $reasons];
+  }
+
+  /**
+   * Scores dormancy: how long a member has gone without a door visit.
+   *
+   * The clock is the shorter of "days since last visit" and "days since
+   * joining", so a member who joined ten days ago and has not come in yet is
+   * not dormant, while an onboarding member with no first visit 45 days
+   * after joining is. Paused members (an agreed break) and recovery members
+   * (already scored on the dunning window, whose ordering this would flatten)
+   * are excluded.
+   *
+   * @param array $data
+   *   Snapshot data: stage, last_visit_ts, join_date, activation_ts.
+   * @param int $now_ts
+   *   Current Unix timestamp.
+   * @param array $settings
+   *   Keys: enabled, watch_days, watch_points, high_days, high_points.
+   *
+   * @return array{0:int,1:?string}
+   *   Points and reason key (no_visit_<days>), or [0, NULL].
+   */
+  public static function dormancy(array $data, int $now_ts, array $settings): array {
+    if (empty($settings['enabled'])) {
+      return [0, NULL];
+    }
+    $stage = $data['stage'] ?? NULL;
+    if ($stage === MemberSuccessLifecycle::STAGE_PAUSED
+      || $stage === MemberSuccessLifecycle::STAGE_RECOVERY
+      || !empty($data['payment_pause'])) {
+      return [0, NULL];
+    }
+
+    // Tenure anchor: join date, else the lifecycle activation timestamp. With
+    // neither we cannot tell a brand-new member from a long-absent one.
+    $anchor_ts = NULL;
+    if (!empty($data['join_date'])) {
+      $anchor_ts = strtotime($data['join_date'] . ' 00:00:00') ?: NULL;
+    }
+    if ($anchor_ts === NULL && !empty($data['activation_ts'])) {
+      $anchor_ts = (int) $data['activation_ts'];
+    }
+    if ($anchor_ts === NULL) {
+      return [0, NULL];
+    }
+
+    $days_since_join = (int) floor(($now_ts - $anchor_ts) / 86400);
+    $days_without_visit = $days_since_join;
+    if (!empty($data['last_visit_ts'])) {
+      $days_without_visit = min($days_without_visit, (int) floor(($now_ts - (int) $data['last_visit_ts']) / 86400));
+    }
+
+    $tiers = [
+      [(int) ($settings['high_days'] ?? 0), (int) ($settings['high_points'] ?? 0)],
+      [(int) ($settings['watch_days'] ?? 0), (int) ($settings['watch_points'] ?? 0)],
+    ];
+    // Highest day threshold first; tiers replace each other, never add.
+    usort($tiers, static fn($a, $b) => $b[0] <=> $a[0]);
+    foreach ($tiers as [$days, $points]) {
+      if ($days > 0 && $points > 0 && $days_without_visit >= $days) {
+        return [$points, 'no_visit_' . $days];
+      }
+    }
+    return [0, NULL];
+  }
+
+  /**
+   * Builds the dormancy settings array from module config.
+   *
+   * @param object $config
+   *   An ImmutableConfig/Config object (anything with get()).
+   */
+  public static function dormancySettingsFromConfig(object $config): array {
+    return [
+      'enabled' => (bool) ($config->get('dormancy_enabled') ?? FALSE),
+      'watch_days' => (int) ($config->get('dormancy_watch_days') ?? 45),
+      'watch_points' => (int) ($config->get('dormancy_watch_points') ?? 30),
+      'high_days' => (int) ($config->get('dormancy_high_days') ?? 90),
+      'high_points' => (int) ($config->get('dormancy_high_points') ?? 50),
+    ];
   }
 
 }

@@ -58,6 +58,21 @@ makerspace_member_success.settings:
       label: 'Retention recency windows (days)'
       sequence:
         type: integer
+    dormancy_enabled:
+      type: boolean
+      label: 'Score members with no recent door visit'
+    dormancy_watch_days:
+      type: integer
+      label: 'Days without a door visit before the first dormancy tier'
+    dormancy_watch_points:
+      type: integer
+      label: 'Risk points for the first dormancy tier'
+    dormancy_high_days:
+      type: integer
+      label: 'Days without a door visit before the second dormancy tier'
+    dormancy_high_points:
+      type: integer
+      label: 'Risk points for the second dormancy tier'
     outreach_send_hour_local:
       type: integer
       label: 'Default outreach send hour (local time, 0-23)'

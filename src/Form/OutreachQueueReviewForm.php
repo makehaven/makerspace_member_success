@@ -759,6 +759,10 @@ class OutreachQueueReviewForm extends FormBase {
       $days = (int) substr($reason, strlen('inactive_'));
       return (string) $this->t('Inactive @days+ days', ['@days' => $days]);
     }
+    if (str_starts_with($reason, 'no_visit_')) {
+      $days = (int) substr($reason, strlen('no_visit_'));
+      return (string) $this->t('No visit in @days+ days', ['@days' => $days]);
+    }
     return ucwords(str_replace('_', ' ', $reason));
   }
 

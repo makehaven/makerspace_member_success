@@ -114,6 +114,46 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => implode(', ', (array) $config->get('retention_recency_days')),
     ];
 
+    $form['thresholds']['dormancy'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Dormancy (no door visit)'),
+      '#description' => $this->t('Adds risk when a member has not come through the door for a while — in onboarding, engagement and retention; never for paused or payment-failed members. Days are counted from the last visit, or from joining if they have never visited, so a new member is not dormant until the first threshold has passed since they joined. The second tier replaces the first; in retention, dormancy replaces the smaller inactivity tier above.'),
+    ];
+    $form['thresholds']['dormancy']['dormancy_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Score dormancy'),
+      '#default_value' => (bool) ($config->get('dormancy_enabled') ?? FALSE),
+    ];
+    $form['thresholds']['dormancy']['dormancy_watch_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('First tier: days without a visit'),
+      '#default_value' => (int) ($config->get('dormancy_watch_days') ?? 45),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['dormancy']['dormancy_watch_points'] = [
+      '#type' => 'number',
+      '#title' => $this->t('First tier: risk points'),
+      '#default_value' => (int) ($config->get('dormancy_watch_points') ?? 30),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['dormancy']['dormancy_high_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Second tier: days without a visit'),
+      '#default_value' => (int) ($config->get('dormancy_high_days') ?? 90),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['dormancy']['dormancy_high_points'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Second tier: risk points'),
+      '#description' => $this->t('50 or more puts the member in the high-risk band on its own.'),
+      '#default_value' => (int) ($config->get('dormancy_high_points') ?? 50),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+
     $form['thresholds']['onboarding_stall_hours'] = [
       '#type' => 'number',
       '#title' => $this->t('Onboarding step stall threshold (hours)'),
@@ -479,6 +519,11 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('lead_tour_url', trim((string) $form_state->getValue('lead_tour_url')))
       ->set('lead_followup_bcc', OnboardingLeadTracker::normalizeBcc((string) $form_state->getValue('lead_followup_bcc')))
       ->set('retention_recency_days', $retention_days)
+      ->set('dormancy_enabled', (bool) $form_state->getValue('dormancy_enabled'))
+      ->set('dormancy_watch_days', (int) $form_state->getValue('dormancy_watch_days'))
+      ->set('dormancy_watch_points', (int) $form_state->getValue('dormancy_watch_points'))
+      ->set('dormancy_high_days', (int) $form_state->getValue('dormancy_high_days'))
+      ->set('dormancy_high_points', (int) $form_state->getValue('dormancy_high_points'))
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))
       ->set('template_engagement', $form_state->getValue('template_engagement'))

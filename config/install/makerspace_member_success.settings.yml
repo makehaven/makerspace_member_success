@@ -21,6 +21,15 @@ retention_recency_days:
   - 30
   - 60
   - 90
+# Dormancy: no door visit for this long, in any stage except paused/recovery.
+# The clock is the shorter of days-since-last-visit and days-since-joining, so a
+# brand-new member is never dormant. Tiers replace each other (high wins), and
+# in retention the dormancy points replace the smaller inactivity tier.
+dormancy_enabled: true
+dormancy_watch_days: 45
+dormancy_watch_points: 30
+dormancy_high_days: 90
+dormancy_high_points: 50
 outreach_send_hour_local: 10
 payment_risk_fields:
   - field_payment_failed

@@ -148,7 +148,7 @@ class MemberSuccessScenarioSimulator {
     $calc_data['serial_present'] = $row['serial_number_present'] ?? 0;
     $calc_data['activation_ts'] = $row['activation_ts'] ?? NULL;
 
-    [$score, $reasons] = MemberSuccessRiskScorer::calculate($calc_data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($calc_data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days, MemberSuccessRiskScorer::dormancySettingsFromConfig($config));
     $row['risk_score'] = $score;
     $row['risk_reasons'] = serialize($reasons);
 
@@ -232,7 +232,7 @@ class MemberSuccessScenarioSimulator {
     $recency_days = (array) ($config->get('retention_recency_days') ?? [30, 60, 90]);
     $now_ts = $this->time->getRequestTime();
 
-    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days, MemberSuccessRiskScorer::dormancySettingsFromConfig($config));
     $data['risk_score'] = $score;
     $data['risk_reasons'] = serialize($reasons);
     $data['snapshot_date'] = date('Y-m-d', $now_ts);

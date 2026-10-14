@@ -65,6 +65,9 @@ class RiskReasonsField extends FieldPluginBase {
       elseif (strpos($reason, 'inactive_') === 0) {
         $codes[] = 'ABSENT';
       }
+      elseif (strpos($reason, 'no_visit_') === 0) {
+        $codes[] = 'NO-VISIT-' . (int) substr($reason, strlen('no_visit_')) . 'D';
+      }
     }
 
     // Build output with urgency indicator.

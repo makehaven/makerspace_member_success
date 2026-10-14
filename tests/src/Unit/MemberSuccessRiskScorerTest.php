@@ -319,4 +319,182 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     $this->assertContains('missing_serial_stale', $reasons);
   }
 
+  /**
+   * Dormancy settings matching the proposed first cut (45/30, 90/50).
+   */
+  private function dormancyOn(): array {
+    return [
+      'enabled' => TRUE,
+      'watch_days' => 45,
+      'watch_points' => 30,
+      'high_days' => 90,
+      'high_points' => 50,
+    ];
+  }
+
+  /**
+   * Retention member with no other risk factors.
+   */
+  private function retentionBase(int $now_ts, ?int $days_since_visit, int $days_since_join = 800): array {
+    return [
+      'stage' => MemberSuccessLifecycle::STAGE_RETENTION,
+      'payment_failed' => FALSE,
+      'payment_pause' => FALSE,
+      'door_badge_status' => 'active',
+      'serial_present' => TRUE,
+      'activation_ts' => $now_ts - ($days_since_join * 86400),
+      'badge_count_total' => 6,
+      'badge_count_window' => 1,
+      'visit_count_30d' => 0,
+      'last_visit_ts' => $days_since_visit === NULL ? NULL : $now_ts - ($days_since_visit * 86400),
+      'tenure_bucket' => 'sustaining',
+      'join_date' => date('Y-m-d', $now_ts - ($days_since_join * 86400)),
+      'pause_start_date' => NULL,
+    ];
+  }
+
+  /**
+   * Omitting dormancy settings keeps the legacy retention tiers.
+   */
+  public function testDormancyNullKeepsLegacyRetentionTiers(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 100);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30);
+    $this->assertSame(30, $score);
+    $this->assertSame(['inactive_90'], $reasons);
+  }
+
+  /**
+   * Disabled dormancy adds nothing.
+   */
+  public function testDormancyDisabledScoresNothing(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 100);
+    $off = ['enabled' => FALSE] + $this->dormancyOn();
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $off);
+    $this->assertSame(30, $score);
+    $this->assertSame(['inactive_90'], $reasons);
+  }
+
+  /**
+   * Below the first dormancy tier the inactivity tier still applies.
+   */
+  public function testRetentionUnder45DaysKeepsInactivityTier(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 40);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(10, $score);
+    $this->assertSame(['inactive_30'], $reasons);
+  }
+
+  /**
+   * Dormancy replaces, never adds to, the retention inactivity tier.
+   */
+  public function testRetentionDormancyReplacesInactivityTier(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 70);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(30, $score, 'Dormancy 30 replaces inactive_60 (20), not added.');
+    $this->assertSame(['no_visit_45'], $reasons);
+  }
+
+  /**
+   * The second dormancy tier alone reaches the high-risk band.
+   */
+  public function testRetentionHighDormancyIsHighRisk(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 120);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(50, $score, 'The 90-day tier replaces the 45-day tier.');
+    $this->assertSame(['no_visit_90'], $reasons);
+  }
+
+  /**
+   * A long-tenure member with no visit on record is dormant.
+   */
+  public function testRetentionNeverVisitedLongTenureIsHighRisk(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, NULL);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(50, $score);
+    $this->assertSame(['no_visit_90'], $reasons);
+  }
+
+  /**
+   * A ten-day-old member with no visit is not dormant.
+   */
+  public function testNewMemberWithoutVisitIsNotDormant(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->engagementBase($now_ts, 10);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(0, $score);
+    $this->assertSame([], $reasons);
+  }
+
+  /**
+   * With no visit on record, the dormancy clock starts at joining.
+   */
+  public function testEngagementDormancyClockedFromJoinWhenNeverVisited(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    // 50 days in, never visited: watch tier (30) + engagement_drifting (10).
+    $data = $this->engagementBase($now_ts, 50);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(40, $score);
+    $this->assertContains('no_visit_45', $reasons);
+    $this->assertContains('engagement_drifting', $reasons);
+  }
+
+  /**
+   * Onboarding members with no first visit long after joining count.
+   */
+  public function testOnboardingNoFirstVisitAfter45DaysCounts(): void {
+    $now_ts = mktime(0, 0, 0, 6, 1, 2026);
+    // 913-day missing-serial onboarding member: 25 (stale serial) + 50.
+    $data = $this->onboardingMissingSerialBase($now_ts, 913);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts, NULL, $this->dormancyOn());
+    $this->assertSame(75, $score);
+    $this->assertContains('missing_serial_stale', $reasons);
+    $this->assertContains('no_visit_90', $reasons);
+  }
+
+  /**
+   * Paused members are excluded.
+   */
+  public function testPausedMemberIsNeverDormant(): void {
+    $pause_start = mktime(0, 0, 0, 1, 1, 2025);
+    $now_ts = $pause_start + (30 * 86400);
+    $data = $this->pausedBase(date('Y-m-d', $pause_start), $now_ts);
+    $data['join_date'] = '2020-01-01';
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(0, $score);
+    $this->assertSame([], $reasons);
+  }
+
+  /**
+   * Recovery members keep their dunning-window score untouched.
+   */
+  public function testRecoveryMemberIsNeverDormant(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 200);
+    $data['stage'] = MemberSuccessLifecycle::STAGE_RECOVERY;
+    $data['payment_failed'] = TRUE;
+    $data['payment_failed_since'] = date('Y-m-d', $now_ts);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
+    $this->assertSame(55, $score);
+    $this->assertSame(['payment_failed_fresh'], $reasons);
+  }
+
+  /**
+   * Without a join date or activation there is no dormancy clock.
+   */
+  public function testDormancyWithoutAnyTenureAnchorIsSkipped(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, NULL);
+    $data['join_date'] = NULL;
+    $data['activation_ts'] = NULL;
+    [$points, $reason] = MemberSuccessRiskScorer::dormancy($data, $now_ts, $this->dormancyOn());
+    $this->assertSame(0, $points);
+    $this->assertNull($reason);
+  }
+
 }

@@ -444,7 +444,7 @@ class MemberSuccessSnapshotBuilder {
       'onboarding_step' => $onboarding_step,
       'onboarding_step_ts' => $onboarding_step_ts,
       'onboarding_stall_hours' => (int) ($config->get('onboarding_stall_hours') ?? 48),
-    ], $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days);
+    ], $badge_one_days, $badge_four_days, $recency_days, $now_ts, $badge_watch_days, MemberSuccessRiskScorer::dormancySettingsFromConfig($config));
 
     // Detect stage transition - if stage changed, reset outreach tracking
     // This ensures members appear in their new queue immediately.

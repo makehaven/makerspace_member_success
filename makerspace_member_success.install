@@ -1926,3 +1926,29 @@ function makerspace_member_success_update_9036(): string {
 
   return 'Created ms_billing_mismatch. The first daily run on live fills it.';
 }
+
+/**
+ * Seeds the dormancy (no recent door visit) risk-score settings.
+ */
+function makerspace_member_success_update_9037(): string {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'dormancy_enabled' => TRUE,
+    'dormancy_watch_days' => 45,
+    'dormancy_watch_points' => 30,
+    'dormancy_high_days' => 90,
+    'dormancy_high_points' => 50,
+  ];
+  $seeded = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $seeded[] = $key;
+    }
+  }
+  $config->save();
+
+  return $seeded
+    ? 'Seeded dormancy settings: ' . implode(', ', $seeded) . '. Risk scores pick them up on the next daily snapshot build.'
+    : 'Dormancy settings already present.';
+}
