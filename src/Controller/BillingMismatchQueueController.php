@@ -44,6 +44,35 @@ class BillingMismatchQueueController extends ControllerBase {
           ],
         ];
       }
+      $suggested = '—';
+      $suggestions = $this->reconciler->suggestAccounts($row);
+      if ($suggestions !== []) {
+        $suggested = ['data' => []];
+        foreach ($suggestions as $i => $suggestion) {
+          $suggested['data'][$i] = [
+            '#type' => 'container',
+            'account' => [
+              '#type' => 'link',
+              '#title' => $this->t('@name (@mail, account @uid) — @reason', [
+                '@name' => $suggestion['name'] !== '' ? $suggestion['name'] : $this->t('no name'),
+                '@mail' => $suggestion['mail'],
+                '@uid' => $suggestion['uid'],
+                '@reason' => $suggestion['reason'],
+              ]),
+              '#url' => Url::fromRoute('entity.user.canonical', ['user' => $suggestion['uid']]),
+            ],
+            'link' => [
+              '#type' => 'link',
+              '#title' => $this->t('Link to this account'),
+              '#url' => Url::fromRoute('makerspace_member_success.billing_link', [
+                'subscription' => $row['subscription_id'],
+                'user' => $suggestion['uid'],
+              ]),
+              '#attributes' => ['class' => ['button', 'button--small']],
+            ],
+          ];
+        }
+      }
       $rows[] = [
         $row['name'] ?? '—',
         $row['email'] ?? '—',
@@ -51,6 +80,7 @@ class BillingMismatchQueueController extends ControllerBase {
         $row['sub_created'] ? date('Y-m-d', (int) $row['sub_created']) : '—',
         ChargebeeAccountReconciler::describe($row['kind'], $row['plan_id']),
         $account,
+        $suggested,
         [
           'data' => [
             'chargebee' => [
@@ -96,6 +126,7 @@ class BillingMismatchQueueController extends ControllerBase {
         $this->t('Paying since'),
         $this->t('What to do'),
         $this->t('Website account'),
+        $this->t('Possible account'),
         $this->t('Actions'),
       ],
       '#rows' => $rows,

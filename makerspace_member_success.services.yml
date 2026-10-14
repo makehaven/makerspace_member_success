@@ -62,6 +62,7 @@ services:
       - '@state'
       - '@datetime.time'
       - '@logger.factory'
+      - '@entity_type.manager'
 
   makerspace_member_success.duplicate_finder:
     class: Drupal\makerspace_member_success\Service\DuplicateRecordFinder

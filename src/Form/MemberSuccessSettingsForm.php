@@ -134,7 +134,7 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
     $form['thresholds']['dormancy']['dormancy_watch_points'] = [
       '#type' => 'number',
       '#title' => $this->t('First tier: risk points'),
-      '#default_value' => (int) ($config->get('dormancy_watch_points') ?? 30),
+      '#default_value' => (int) ($config->get('dormancy_watch_points') ?? 20),
       '#min' => 0,
       '#required' => TRUE,
     ];
@@ -148,8 +148,8 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
     $form['thresholds']['dormancy']['dormancy_high_points'] = [
       '#type' => 'number',
       '#title' => $this->t('Second tier: risk points'),
-      '#description' => $this->t('50 or more puts the member in the high-risk band on its own.'),
-      '#default_value' => (int) ($config->get('dormancy_high_points') ?? 50),
+      '#description' => $this->t('High risk starts at 50. Below that, dormancy alone keeps a member Actionable and one other signal is needed to reach high risk.'),
+      '#default_value' => (int) ($config->get('dormancy_high_points') ?? 35),
       '#min' => 0,
       '#required' => TRUE,
     ];

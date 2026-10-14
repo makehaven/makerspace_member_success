@@ -7,6 +7,7 @@ namespace Drupal\makerspace_member_success\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\State\StateInterface;
@@ -62,6 +63,16 @@ class ChargebeeAccountReconciler {
   protected const CRON_INTERVAL = 20 * 3600;
 
   /**
+   * Suggested accounts may predate the subscription by this much.
+   */
+  protected const SUGGEST_LOOKBACK_SECONDS = 30 * 86400;
+
+  /**
+   * Shared email local-part prefix that counts as "similar email".
+   */
+  public const SUGGEST_EMAIL_PREFIX = 8;
+
+  /**
    * State key holding the last run summary.
    */
   public const STATE_KEY = 'makerspace_member_success.billing_reconcile';
@@ -79,6 +90,7 @@ class ChargebeeAccountReconciler {
     protected readonly StateInterface $state,
     protected readonly TimeInterface $time,
     LoggerChannelFactoryInterface $loggerFactory,
+    protected readonly ?EntityTypeManagerInterface $entityTypeManager = NULL,
   ) {
     $this->logger = $loggerFactory->get('makerspace_member_success');
   }
@@ -296,6 +308,183 @@ class ChargebeeAccountReconciler {
       ->fields(['dismissed_ts' => (int) $this->time->getRequestTime(), 'dismissed_by' => $actor_uid])
       ->condition('subscription_id', $subscription_id)
       ->execute();
+  }
+
+  /**
+   * Accounts that might belong to a no_account row's payer.
+   *
+   * People often pay first and create their account later under a different
+   * email (Valeria Perez, 2026-10: paid as valeriaperez12344321@, signed up
+   * six days later as valeriaperezlovescats@). Nothing linked the two, so
+   * staff had to ask around. This only SUGGESTS: candidates are accounts
+   * created no earlier than 30 days before the subscription, not linked to
+   * any Chargebee customer, whose name matches the payer's (Drupal user
+   * fields or the CiviCRM contact) or whose email shares a long prefix.
+   * Linking stays a staff action.
+   *
+   * @param array $row
+   *   An ms_billing_mismatch row.
+   * @param int $limit
+   *   Maximum suggestions.
+   *
+   * @return array
+   *   List of ['uid', 'mail', 'name', 'reason'].
+   */
+  public function suggestAccounts(array $row, int $limit = 3): array {
+    if (($row['kind'] ?? '') !== self::KIND_NO_ACCOUNT || !empty($row['uid'])) {
+      return [];
+    }
+    $cutoff = (int) ($row['sub_created'] ?? 0) - self::SUGGEST_LOOKBACK_SECONDS;
+
+    $query = $this->database->select('users_field_data', 'u');
+    $query->fields('u', ['uid', 'mail', 'created']);
+    $query->condition('u.uid', 0, '>');
+    $query->condition('u.created', $cutoff, '>=');
+    $query->leftJoin('user__field_user_chargebee_id', 'cb', 'cb.entity_id = u.uid');
+    $query->where("(cb.field_user_chargebee_id_value IS NULL OR cb.field_user_chargebee_id_value = '')");
+    $schema = $this->database->schema();
+    if ($schema->tableExists('user__field_first_name')) {
+      $query->leftJoin('user__field_first_name', 'fn', 'fn.entity_id = u.uid');
+      $query->addField('fn', 'field_first_name_value', 'first_name');
+    }
+    if ($schema->tableExists('user__field_last_name')) {
+      $query->leftJoin('user__field_last_name', 'ln', 'ln.entity_id = u.uid');
+      $query->addField('ln', 'field_last_name_value', 'last_name');
+    }
+    if ($schema->tableExists('civicrm_uf_match') && $schema->tableExists('civicrm_contact')) {
+      $query->leftJoin('civicrm_uf_match', 'ufm', 'ufm.uf_id = u.uid');
+      $query->leftJoin('civicrm_contact', 'cc', 'cc.id = ufm.contact_id');
+      $query->addField('cc', 'first_name', 'civi_first_name');
+      $query->addField('cc', 'last_name', 'civi_last_name');
+    }
+    $query->orderBy('u.created', 'DESC');
+
+    $suggestions = [];
+    foreach ($query->execute()->fetchAll(\PDO::FETCH_ASSOC) as $candidate) {
+      $uid = (int) $candidate['uid'];
+      if (isset($suggestions[$uid])) {
+        continue;
+      }
+      $reason = static::matchReason((string) ($row['name'] ?? ''), (string) ($row['email'] ?? ''), $candidate);
+      if ($reason === NULL) {
+        continue;
+      }
+      $name = trim(($candidate['first_name'] ?? '') . ' ' . ($candidate['last_name'] ?? ''));
+      if ($name === '') {
+        $name = trim(($candidate['civi_first_name'] ?? '') . ' ' . ($candidate['civi_last_name'] ?? ''));
+      }
+      $suggestions[$uid] = [
+        'uid' => $uid,
+        'mail' => (string) $candidate['mail'],
+        'name' => $name,
+        'reason' => $reason,
+      ];
+      if (count($suggestions) >= $limit) {
+        break;
+      }
+    }
+    return array_values($suggestions);
+  }
+
+  /**
+   * Why a candidate account might be the payer's, or NULL.
+   *
+   * @param string $payer_name
+   *   Chargebee "First Last".
+   * @param string $payer_email
+   *   Chargebee email.
+   * @param array $candidate
+   *   Keys: mail, first_name, last_name, civi_first_name, civi_last_name.
+   */
+  public static function matchReason(string $payer_name, string $payer_email, array $candidate): ?string {
+    $payer = static::normalizeName($payer_name);
+    if ($payer !== '') {
+      foreach ([['first_name', 'last_name'], ['civi_first_name', 'civi_last_name']] as [$first, $last]) {
+        $candidate_name = static::normalizeName(($candidate[$first] ?? '') . ' ' . ($candidate[$last] ?? ''));
+        if ($candidate_name !== '' && $candidate_name === $payer) {
+          return 'same name';
+        }
+      }
+    }
+    $payer_local = mb_strtolower(strstr($payer_email, '@', TRUE) ?: '');
+    $candidate_local = mb_strtolower(strstr((string) ($candidate['mail'] ?? ''), '@', TRUE) ?: '');
+    if ($payer_local !== '' && $candidate_local !== '' && static::commonPrefixLength($payer_local, $candidate_local) >= self::SUGGEST_EMAIL_PREFIX) {
+      return 'similar email';
+    }
+    return NULL;
+  }
+
+  /**
+   * Lower-cases a name and strips whitespace.
+   */
+  public static function normalizeName(string $name): string {
+    return (string) preg_replace('/\s+/u', '', mb_strtolower($name));
+  }
+
+  /**
+   * Length of the shared leading run of two strings.
+   */
+  public static function commonPrefixLength(string $a, string $b): int {
+    $max = min(mb_strlen($a), mb_strlen($b));
+    $i = 0;
+    while ($i < $max && mb_substr($a, $i, 1) === mb_substr($b, $i, 1)) {
+      $i++;
+    }
+    return $i;
+  }
+
+  /**
+   * Links an account to a no_account row's Chargebee customer.
+   *
+   * Re-checks everything at submit time, because the queue page may be stale:
+   * the row must still be an open no_account row, the account must exist and
+   * hold no Chargebee id, and no other account may hold this customer.
+   *
+   * @return string|null
+   *   NULL on success, else a reason the link was refused.
+   */
+  public function linkAccount(string $subscription_id, int $uid, int $actor_uid): ?string {
+    $row = $this->database->select('ms_billing_mismatch', 'm')
+      ->fields('m')
+      ->condition('subscription_id', $subscription_id)
+      ->isNull('resolved_ts')
+      ->execute()
+      ->fetchAssoc();
+    if (!$row || $row['kind'] !== self::KIND_NO_ACCOUNT || !empty($row['uid'])) {
+      return 'This row is no longer an open "no account" row.';
+    }
+    $customer_id = (string) $row['customer_id'];
+    if ($customer_id === '') {
+      return 'This row has no Chargebee customer id.';
+    }
+    $existing = $this->uidForCustomer($customer_id);
+    if ($existing !== NULL) {
+      return sprintf('Account %d is already linked to this Chargebee customer.', $existing);
+    }
+    $user = $this->entityTypeManager?->getStorage('user')->load($uid);
+    if (!$user || !$user->hasField('field_user_chargebee_id')) {
+      return 'That account does not exist.';
+    }
+    if (trim((string) $user->get('field_user_chargebee_id')->value) !== '') {
+      return 'That account is already linked to a different Chargebee customer.';
+    }
+
+    $user->set('field_user_chargebee_id', $customer_id);
+    $user->save();
+    // The next daily check reclassifies the row (resolved, or "missing the
+    // member role"); until then show it against the linked account.
+    $this->database->update('ms_billing_mismatch')
+      ->fields(['uid' => $uid])
+      ->condition('subscription_id', $subscription_id)
+      ->execute();
+    $this->logger->notice('Billing queue: user @actor linked account @uid to Chargebee customer @cid (subscription @sub, payer @email).', [
+      '@actor' => $actor_uid,
+      '@uid' => $uid,
+      '@cid' => $customer_id,
+      '@sub' => $subscription_id,
+      '@email' => (string) ($row['email'] ?? ''),
+    ]);
+    return NULL;
   }
 
   /**

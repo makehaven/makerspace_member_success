@@ -39,6 +39,20 @@ makerspace_member_success.billing_queue:
   requirements:
     _permission: 'access makerspace member success queues'
 
+makerspace_member_success.billing_link:
+  path: '/admin/makerspace/member-success/billing/{subscription}/link/{user}'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\BillingLinkAccountForm'
+    _title: 'Link account to Chargebee customer'
+  requirements:
+    _permission: 'access makerspace member success queues'
+    subscription: '[A-Za-z0-9_-]+'
+    user: '\d+'
+  options:
+    parameters:
+      user:
+        type: entity:user
+
 makerspace_member_success.billing_dismiss:
   path: '/admin/makerspace/member-success/billing/{subscription}/dismiss'
   defaults:

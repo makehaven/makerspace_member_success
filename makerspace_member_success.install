@@ -1935,9 +1935,9 @@ function makerspace_member_success_update_9037(): string {
   $defaults = [
     'dormancy_enabled' => TRUE,
     'dormancy_watch_days' => 45,
-    'dormancy_watch_points' => 30,
+    'dormancy_watch_points' => 20,
     'dormancy_high_days' => 90,
-    'dormancy_high_points' => 50,
+    'dormancy_high_points' => 35,
   ];
   $seeded = [];
   foreach ($defaults as $key => $value) {

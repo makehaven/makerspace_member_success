@@ -497,4 +497,31 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     $this->assertNull($reason);
   }
 
+  /**
+   * At the shipped 20/35 points, dormancy alone stays Actionable.
+   */
+  public function testShippedDefaultsKeepDormancyAloneActionable(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $config = new class() {
+
+      /**
+       * Mimics an empty config object: every key is unset.
+       */
+      public function get(string $key): mixed {
+        return $key === 'dormancy_enabled' ? TRUE : NULL;
+      }
+
+    };
+    $settings = MemberSuccessRiskScorer::dormancySettingsFromConfig($config);
+    $data = $this->retentionBase($now_ts, 200);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $settings);
+    $this->assertSame(35, $score);
+    $this->assertSame(['no_visit_90'], $reasons);
+
+    $data = $this->retentionBase($now_ts, 50);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $settings);
+    $this->assertSame(20, $score);
+    $this->assertSame(['no_visit_45'], $reasons);
+  }
+
 }

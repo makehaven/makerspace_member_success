@@ -1196,9 +1196,14 @@ class MemberSuccessSnapshotBuilder {
    * Loads visit recency and frequency stats.
    */
   protected function loadVisitStats(int $uid, int $now_ts): array {
+    // Only granted swipes are visits: a denied swipe (lapsed member, wrong
+    // door) means the member did NOT get in. Every log row carries a result
+    // (checked on live 2026-10-14), so an inner join drops nothing else.
     $query = $this->database->select('access_control_log_field_data', 'acl');
     $query->addExpression('MAX(acl.created)', 'last_visit_ts');
     $query->condition('acl.type', 'access_control_request');
+    $query->innerJoin('access_control_log__field_access_request_result', 'res', 'res.entity_id = acl.id');
+    $query->condition('res.field_access_request_result_value', 1);
     $query->innerJoin('access_control_log__field_access_request_user', 'user_ref', 'user_ref.entity_id = acl.id');
     $query->condition('user_ref.field_access_request_user_target_id', $uid);
     $last_visit_ts = $query->execute()->fetchField();
@@ -1208,6 +1213,8 @@ class MemberSuccessSnapshotBuilder {
     $count_query->addExpression('COUNT(DISTINCT DATE(FROM_UNIXTIME(acl.created)))', 'visit_days');
     $count_query->condition('acl.type', 'access_control_request');
     $count_query->condition('acl.created', $window_start, '>=');
+    $count_query->innerJoin('access_control_log__field_access_request_result', 'res', 'res.entity_id = acl.id');
+    $count_query->condition('res.field_access_request_result_value', 1);
     $count_query->innerJoin('access_control_log__field_access_request_user', 'user_ref', 'user_ref.entity_id = acl.id');
     $count_query->condition('user_ref.field_access_request_user_target_id', $uid);
     $visit_days = $count_query->execute()->fetchField();

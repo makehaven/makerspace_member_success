@@ -330,9 +330,9 @@ final class MemberSuccessRiskScorer {
     return [
       'enabled' => (bool) ($config->get('dormancy_enabled') ?? FALSE),
       'watch_days' => (int) ($config->get('dormancy_watch_days') ?? 45),
-      'watch_points' => (int) ($config->get('dormancy_watch_points') ?? 30),
+      'watch_points' => (int) ($config->get('dormancy_watch_points') ?? 20),
       'high_days' => (int) ($config->get('dormancy_high_days') ?? 90),
-      'high_points' => (int) ($config->get('dormancy_high_points') ?? 50),
+      'high_points' => (int) ($config->get('dormancy_high_points') ?? 35),
     ];
   }
 

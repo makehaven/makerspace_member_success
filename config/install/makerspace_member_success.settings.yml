@@ -27,9 +27,9 @@ retention_recency_days:
 # in retention the dormancy points replace the smaller inactivity tier.
 dormancy_enabled: true
 dormancy_watch_days: 45
-dormancy_watch_points: 30
+dormancy_watch_points: 20
 dormancy_high_days: 90
-dormancy_high_points: 50
+dormancy_high_points: 35
 outreach_send_hour_local: 10
 payment_risk_fields:
   - field_payment_failed
