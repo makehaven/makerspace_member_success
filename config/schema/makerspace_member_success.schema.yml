@@ -73,6 +73,33 @@ makerspace_member_success.settings:
     dormancy_high_points:
       type: integer
       label: 'Risk points for the second dormancy tier'
+    dormancy_settled_days:
+      type: integer
+      label: 'Days without a door visit after which a member is left alone (0 = never)'
+    reengage_enabled:
+      type: boolean
+      label: 'Queue a weekly re-engagement offer batch for settled-dormant members'
+    reengage_batch_size:
+      type: integer
+      label: 'Members per weekly re-engagement batch'
+    reengage_offer:
+      type: string
+      label: 'Re-engagement offer text'
+    stage_reengage_cooldown_days:
+      type: integer
+      label: 'Days before a member can be offered re-engagement again'
+    stage_reengage_max_attempts:
+      type: integer
+      label: 'Re-engagement max attempts (0 = no cap; cooldown governs)'
+    stage_reengage_min_risk_to_contact:
+      type: integer
+      label: 'Re-engagement minimum risk score'
+    stage_reengage_require_manual_approval:
+      type: boolean
+      label: 'Re-engagement offers need staff approval'
+    template_reengage:
+      type: text
+      label: 'Re-engagement offer email'
     outreach_send_hour_local:
       type: integer
       label: 'Default outreach send hour (local time, 0-23)'

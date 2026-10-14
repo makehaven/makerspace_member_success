@@ -8,6 +8,11 @@ namespace Drupal\makerspace_member_success\Support;
 final class MemberSuccessRiskScorer {
 
   /**
+   * Reason recorded for a member past the settled-dormancy threshold.
+   */
+  public const REASON_SETTLED_DORMANT = 'settled_dormant';
+
+  /**
    * Calculates risk score and reasons for a member.
    *
    * @param array $data
@@ -45,6 +50,17 @@ final class MemberSuccessRiskScorer {
       ? self::dormancy($data, $now_ts, $dormancy)
       : [0, NULL];
     $dormancy_applied = FALSE;
+
+    // Settled dormancy: past the settled threshold the member is left alone.
+    // Staff found (JR 2026-10-14) that calling someone who has quietly stopped
+    // coming for months mostly prompts a cancellation, so these members score
+    // 0 and drop out of every call queue. They are reached instead by the
+    // capped, staff-approved re-engagement offer (stage "reengage"), which
+    // finds them by this reason. Paused and recovery members never get here:
+    // dormancy() excludes them.
+    if ($dormancy_reason === self::REASON_SETTLED_DORMANT) {
+      return [0, [self::REASON_SETTLED_DORMANT]];
+    }
 
     // Payment failed = CRITICAL. Chargebee retries for ~8 days before
     // cancelling; the escalating boost matches that window so staff see the
@@ -271,10 +287,12 @@ final class MemberSuccessRiskScorer {
    * @param int $now_ts
    *   Current Unix timestamp.
    * @param array $settings
-   *   Keys: enabled, watch_days, watch_points, high_days, high_points.
+   *   Keys: enabled, watch_days, watch_points, high_days, high_points,
+   *   settled_days (0 = never settle).
    *
    * @return array{0:int,1:?string}
-   *   Points and reason key (no_visit_<days>), or [0, NULL].
+   *   Points and reason key (no_visit_<days>), [0, settled_dormant] past the
+   *   settled threshold, or [0, NULL].
    */
   public static function dormancy(array $data, int $now_ts, array $settings): array {
     if (empty($settings['enabled'])) {
@@ -306,6 +324,11 @@ final class MemberSuccessRiskScorer {
       $days_without_visit = min($days_without_visit, (int) floor(($now_ts - (int) $data['last_visit_ts']) / 86400));
     }
 
+    $settled_days = (int) ($settings['settled_days'] ?? 0);
+    if ($settled_days > 0 && $days_without_visit >= $settled_days) {
+      return [0, self::REASON_SETTLED_DORMANT];
+    }
+
     $tiers = [
       [(int) ($settings['high_days'] ?? 0), (int) ($settings['high_points'] ?? 0)],
       [(int) ($settings['watch_days'] ?? 0), (int) ($settings['watch_points'] ?? 0)],
@@ -333,6 +356,7 @@ final class MemberSuccessRiskScorer {
       'watch_points' => (int) ($config->get('dormancy_watch_points') ?? 20),
       'high_days' => (int) ($config->get('dormancy_high_days') ?? 90),
       'high_points' => (int) ($config->get('dormancy_high_points') ?? 35),
+      'settled_days' => (int) ($config->get('dormancy_settled_days') ?? 0),
     ];
   }
 

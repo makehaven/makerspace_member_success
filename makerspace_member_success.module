@@ -192,6 +192,47 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Badge nudge failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // 2b'. Re-engagement offer: members past the settled-dormancy threshold.
+  // They score 0 and are deliberately left out of every call queue (calls to
+  // long-absent members mostly produced cancellations — JR 2026-10-14), so
+  // this capped offer is the only outreach they get. Ships dark
+  // (reengage_enabled FALSE); even when on, stage_reengage_require_manual_
+  // approval keeps staff choosing who receives each weekly batch. At most one
+  // batch per 7 days, and reengage_batch_size members per batch: this is a
+  // trickle, never a full send.
+  try {
+    $re_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $re_config->get('reengage_enabled')) {
+      $state = \Drupal::state();
+      $last_batch = (int) $state->get('makerspace_member_success.reengage_last_batch', 0);
+      $now = \Drupal::time()->getRequestTime();
+      $enqueued = 0;
+      if ($now - $last_batch >= 7 * 86400) {
+        $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+        $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+        $batch = $generator->generateReengagementCandidates(
+          max(0, (int) ($re_config->get('reengage_batch_size') ?? 10)),
+          max(0, (int) ($re_config->get('stage_reengage_cooldown_days') ?? 180)),
+        );
+        foreach ($batch as $candidate) {
+          $queue->enqueueCandidate((int) $candidate['uid'], 'reengage', $candidate);
+          $enqueued++;
+        }
+        $state->set('makerspace_member_success.reengage_last_batch', $now);
+      }
+      $sent = \Drupal::service('makerspace_member_success.outreach_queue_service')->processApprovedItems(['reengage']);
+      if ($enqueued || $sent) {
+        \Drupal::logger('makerspace_member_success')->notice(
+          'Re-engagement offer: @enqueued member(s) queued for review, @sent offer(s) sent.',
+          ['@enqueued' => $enqueued, '@sent' => $sent],
+        );
+      }
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Re-engagement offer failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   // 2c. Recovery candidates: members whose payment has failed. Until
   // 2026-09-21 the only thing that ever put a recovery-stage member into the
   // outreach queue was a staff member pressing "Generate candidates" on the

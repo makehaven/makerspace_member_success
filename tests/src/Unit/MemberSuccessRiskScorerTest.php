@@ -524,4 +524,65 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     $this->assertSame(['no_visit_45'], $reasons);
   }
 
+  /**
+   * Dormancy settings with the leave-alone threshold at 120 days.
+   */
+  private function dormancySettled(): array {
+    return ['settled_days' => 120] + $this->dormancyOn();
+  }
+
+  /**
+   * Past the settled threshold a member is left alone: score 0, one reason.
+   */
+  public function testSettledDormantScoresZero(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 200);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancySettled());
+    $this->assertSame(0, $score, 'Neither dormancy nor the inactivity tier scores a settled member.');
+    $this->assertSame([MemberSuccessRiskScorer::REASON_SETTLED_DORMANT], $reasons);
+  }
+
+  /**
+   * Settling also drops engagement-stage badge-progress points.
+   */
+  public function testSettledEngagementMemberDropsBadgePoints(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = ['stage' => MemberSuccessLifecycle::STAGE_ENGAGEMENT, 'badge_count_total' => 0] + $this->retentionBase($now_ts, 150, 170);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancySettled());
+    $this->assertSame(0, $score);
+    $this->assertSame([MemberSuccessRiskScorer::REASON_SETTLED_DORMANT], $reasons);
+  }
+
+  /**
+   * Between the high tier and settling, staff still see the member.
+   */
+  public function testBeforeSettledHighTierStillScores(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 100);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancySettled());
+    $this->assertSame(50, $score);
+    $this->assertSame(['no_visit_90'], $reasons);
+  }
+
+  /**
+   * Paused members are never settled: dormancy does not apply to them.
+   */
+  public function testPausedMemberIsNeverSettled(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = ['stage' => MemberSuccessLifecycle::STAGE_PAUSED, 'payment_pause' => TRUE] + $this->retentionBase($now_ts, 300);
+    [, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancySettled());
+    $this->assertNotContains(MemberSuccessRiskScorer::REASON_SETTLED_DORMANT, $reasons);
+  }
+
+  /**
+   * settled_days 0 never settles.
+   */
+  public function testSettledDaysZeroNeverSettles(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->retentionBase($now_ts, 900);
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, ['settled_days' => 0] + $this->dormancyOn());
+    $this->assertSame(50, $score);
+    $this->assertSame(['no_visit_90'], $reasons);
+  }
+
 }

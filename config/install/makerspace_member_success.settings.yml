@@ -30,6 +30,11 @@ dormancy_watch_days: 45
 dormancy_watch_points: 20
 dormancy_high_days: 90
 dormancy_high_points: 35
+# Settled: past this many days without a visit the member is LEFT ALONE —
+# risk 0, out of every call queue (calling long-absent members mostly prompted
+# cancellations, JR 2026-10-14). They get the re-engagement offer below
+# instead. 0 = never settle.
+dormancy_settled_days: 120
 outreach_send_hour_local: 10
 payment_risk_fields:
   - field_payment_failed
@@ -229,5 +234,35 @@ template_badge: |
   nothing expires and there is nothing to cancel.
 
   Questions? Reply to this email and a person will read it.
+
+  The MakeHaven Team
+
+# --- Re-engagement offer -----------------------------------------------------
+# For settled-dormant members (dormancy_settled_days). Ships DARK. When on, one
+# small batch per week is queued for staff approval — most recently settled
+# first — and nobody is offered twice inside the cooldown. Never a full send.
+reengage_enabled: false
+reengage_batch_size: 10
+# The offer itself, dropped into the email as {reengage.offer}. A real,
+# specific reason to come back beats a "we miss you".
+reengage_offer: 'a free one-on-one session with a staff member: pick a project, get a refresher on the tools you need for it, and book the time that suits you'
+stage_reengage_cooldown_days: 180
+stage_reengage_max_attempts: 0
+stage_reengage_min_risk_to_contact: 0
+stage_reengage_require_manual_approval: true
+template_reengage: |
+  Subject: An offer to get you back to making, {contact.first_name}
+
+  Hi {contact.first_name},
+
+  We have not seen you at MakeHaven for a while, and that is fine — life gets
+  busy. You are still a member, and we would like to make it easy to pick up
+  where you left off.
+
+  So here is an offer: {reengage.offer}.
+
+  If you would like it, just reply to this email and a person will set it up.
+
+  If now is not the time, no need to reply. We will not keep asking.
 
   The MakeHaven Team

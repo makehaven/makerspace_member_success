@@ -1928,7 +1928,7 @@ function makerspace_member_success_update_9036(): string {
 }
 
 /**
- * Seeds the dormancy (no recent door visit) risk-score settings.
+ * Seeds the dormancy (no recent door visit) and re-engagement offer settings.
  */
 function makerspace_member_success_update_9037(): string {
   $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
@@ -1938,7 +1938,20 @@ function makerspace_member_success_update_9037(): string {
     'dormancy_watch_points' => 20,
     'dormancy_high_days' => 90,
     'dormancy_high_points' => 35,
+    'dormancy_settled_days' => 120,
+    'reengage_enabled' => FALSE,
+    'reengage_batch_size' => 10,
+    'stage_reengage_cooldown_days' => 180,
+    'stage_reengage_max_attempts' => 0,
+    'stage_reengage_min_risk_to_contact' => 0,
+    'stage_reengage_require_manual_approval' => TRUE,
   ];
+  // Offer and email copy come from config/install so there is one source.
+  $install = \Drupal::service('extension.list.module')->getPath('makerspace_member_success') . '/config/install/makerspace_member_success.settings.yml';
+  $install_values = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($install));
+  foreach (['reengage_offer', 'template_reengage'] as $key) {
+    $defaults[$key] = $install_values[$key] ?? '';
+  }
   $seeded = [];
   foreach ($defaults as $key => $value) {
     if ($config->get($key) === NULL) {
@@ -1950,5 +1963,5 @@ function makerspace_member_success_update_9037(): string {
 
   return $seeded
     ? 'Seeded dormancy settings: ' . implode(', ', $seeded) . '. Risk scores pick them up on the next daily snapshot build.'
-    : 'Dormancy settings already present.';
+    : 'Dormancy and re-engagement settings already present.';
 }

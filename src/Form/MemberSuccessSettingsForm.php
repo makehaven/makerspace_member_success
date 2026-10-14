@@ -154,6 +154,53 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    $form['thresholds']['dormancy']['dormancy_settled_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Leave alone after: days without a visit'),
+      '#description' => $this->t('Past this point a member scores 0 and leaves every call queue: calling someone who has quietly stopped coming mostly prompts a cancellation. They can receive the re-engagement offer below instead. 0 = never.'),
+      '#default_value' => (int) ($config->get('dormancy_settled_days') ?? 120),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['reengage'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Re-engagement offer (long-absent members)'),
+      '#description' => $this->t('Once a week, queues a small batch of members past the "leave alone" threshold for a re-engagement offer, most recently absent first. Each needs staff approval on the outreach review page before it sends. Nobody is offered twice inside the cooldown, and anyone staff contacted recently is skipped.'),
+    ];
+    $form['thresholds']['reengage']['reengage_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Queue a weekly re-engagement batch'),
+      '#default_value' => (bool) ($config->get('reengage_enabled') ?? FALSE),
+    ];
+    $form['thresholds']['reengage']['reengage_batch_size'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Members per weekly batch'),
+      '#default_value' => (int) ($config->get('reengage_batch_size') ?? 10),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['reengage']['stage_reengage_cooldown_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Days before the same member can be offered again'),
+      '#default_value' => (int) ($config->get('stage_reengage_cooldown_days') ?? 180),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['reengage']['reengage_offer'] = [
+      '#type' => 'textarea',
+      '#rows' => 2,
+      '#title' => $this->t('The offer'),
+      '#description' => $this->t('Inserted into the email as {reengage.offer}. Make it specific and worth coming in for.'),
+      '#default_value' => (string) ($config->get('reengage_offer') ?? ''),
+    ];
+    $form['thresholds']['reengage']['template_reengage'] = [
+      '#type' => 'textarea',
+      '#rows' => 12,
+      '#title' => $this->t('Offer email'),
+      '#description' => $this->t('First line "Subject: …" sets the subject. Tokens: {contact.first_name}, {reengage.offer}, {domain.base_url}.'),
+      '#default_value' => (string) ($config->get('template_reengage') ?? ''),
+    ];
+
     $form['thresholds']['onboarding_stall_hours'] = [
       '#type' => 'number',
       '#title' => $this->t('Onboarding step stall threshold (hours)'),
@@ -524,6 +571,12 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('dormancy_watch_points', (int) $form_state->getValue('dormancy_watch_points'))
       ->set('dormancy_high_days', (int) $form_state->getValue('dormancy_high_days'))
       ->set('dormancy_high_points', (int) $form_state->getValue('dormancy_high_points'))
+      ->set('dormancy_settled_days', (int) $form_state->getValue('dormancy_settled_days'))
+      ->set('reengage_enabled', (bool) $form_state->getValue('reengage_enabled'))
+      ->set('reengage_batch_size', (int) $form_state->getValue('reengage_batch_size'))
+      ->set('stage_reengage_cooldown_days', (int) $form_state->getValue('stage_reengage_cooldown_days'))
+      ->set('reengage_offer', trim((string) $form_state->getValue('reengage_offer')))
+      ->set('template_reengage', (string) $form_state->getValue('template_reengage'))
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))
       ->set('template_engagement', $form_state->getValue('template_engagement'))

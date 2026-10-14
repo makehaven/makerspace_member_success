@@ -197,6 +197,10 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
       $tokens['badge.schedules_url'] = $base_url . '/facilitator/schedules';
     }
 
+    if ($stage === 'reengage') {
+      $tokens['reengage.offer'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('reengage_offer') ?? ''));
+    }
+
     // Stage-aware "next step" tokens for onboarding nudges. Derived from the
     // member's stuck-at-step risk reason and the canonical OnboardingFunnel
     // step (single source of truth for label + URL, so copy never drifts).

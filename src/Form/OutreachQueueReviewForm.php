@@ -60,7 +60,7 @@ class OutreachQueueReviewForm extends FormBase {
     }
 
     $stage_filter = (string) ($this->getRequest()->query->get('stage') ?? '');
-    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused'];
+    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused', 'reengage'];
     if (!in_array($stage_filter, $allowed_stages, TRUE)) {
       $stage_filter = '';
     }
@@ -87,6 +87,7 @@ class OutreachQueueReviewForm extends FormBase {
         'retention' => $this->t('Retention'),
         'recovery' => $this->t('Recovery'),
         'paused' => $this->t('Paused'),
+        'reengage' => $this->t('Re-engagement offer'),
       ],
       '#default_value' => $stage_filter,
     ];
@@ -751,6 +752,7 @@ class OutreachQueueReviewForm extends FormBase {
       'no_badge_1' => (string) $this->t('No first badge in window'),
       'no_badge_4' => (string) $this->t('Low badge count'),
       'pause_ending' => (string) $this->t('Pause ending soon'),
+      'settled_dormant' => (string) $this->t('Long absent — offer only, no calls'),
     ];
     if (isset($map[$reason])) {
       return $map[$reason];

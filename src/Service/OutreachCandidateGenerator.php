@@ -109,6 +109,59 @@ class OutreachCandidateGenerator {
   }
 
   /**
+   * Settled-dormant members due a re-engagement offer, a small batch at a time.
+   *
+   * Members who have not come in for months score 0 (see
+   * MemberSuccessRiskScorer::REASON_SETTLED_DORMANT), so generate() never
+   * returns them and nobody calls them. This is the only way they are
+   * reached: a capped batch of an offer, approved by staff before it sends.
+   *
+   * Recently-settled members come first: someone four months away is far more
+   * likely to come back than someone two years away, and with a small batch
+   * the order decides who hears from us at all.
+   *
+   * @param int $limit
+   *   Most members to return.
+   * @param int $cooldownDays
+   *   Skip anyone with a re-engagement row, or any logged contact, in this
+   *   many days.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Candidate rows with stage "reengage".
+   */
+  public function generateReengagementCandidates(int $limit = 10, int $cooldownDays = 180): array {
+    if ($limit <= 0) {
+      return [];
+    }
+    $since = $this->now() - (max(0, $cooldownDays) * 86400);
+
+    $query = $this->baseQuery();
+    $query->condition('ms.risk_reasons', '%' . $this->database->escapeLike('settled_dormant') . '%', 'LIKE');
+    // Onboarding members never started; "come back" copy would be wrong.
+    $query->condition('ms.stage', ['engagement', 'retention'], 'IN');
+    $recent_contact = $query->orConditionGroup()
+      ->isNull('ms.last_contact_date')
+      ->condition('ms.last_contact_date', date('Y-m-d', $since), '<');
+    $query->condition($recent_contact);
+
+    $recent_offer = $this->database->select('ms_member_outreach_queue', 'rq');
+    $recent_offer->addField('rq', 'uid');
+    $recent_offer->condition('rq.stage', 'reengage');
+    $recent_offer->condition('rq.created_at', $since, '>=');
+    $query->condition('ms.uid', $recent_offer, 'NOT IN');
+
+    $query->addField('ms', 'last_visit_ts', 'last_visit_ts');
+    $query->orderBy('ms.last_visit_ts', 'DESC');
+    $query->range(0, $limit);
+
+    $candidates = $this->mapRows($query->execute()->fetchAll());
+    foreach ($candidates as $i => $candidate) {
+      $candidates[$i]['stage'] = 'reengage';
+    }
+    return $candidates;
+  }
+
+  /**
    * The shared, enriched candidate query.
    *
    * Carries the joins every campaign needs — email, CiviCRM contact and
