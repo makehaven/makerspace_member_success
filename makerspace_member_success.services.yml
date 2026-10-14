@@ -63,6 +63,14 @@ services:
       - '@datetime.time'
       - '@logger.factory'
 
+  makerspace_member_success.duplicate_finder:
+    class: Drupal\makerspace_member_success\Service\DuplicateRecordFinder
+    arguments:
+      - '@database'
+      - '@state'
+      - '@datetime.time'
+      - '@logger.factory'
+
   makerspace_member_success.civicrm_helper:
     class: Drupal\makerspace_member_success\Service\CiviCrmHelper
     arguments:

@@ -48,6 +48,23 @@ makerspace_member_success.billing_dismiss:
     _csrf_token: 'TRUE'
     subscription: '[A-Za-z0-9_-]+'
 
+makerspace_member_success.duplicates:
+  path: '/admin/makerspace/member-success/duplicates'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\DuplicateRecordsController::build'
+    _title: 'Possible Duplicates'
+  requirements:
+    _permission: 'access makerspace member success queues'
+
+makerspace_member_success.duplicates_dismiss:
+  path: '/admin/makerspace/member-success/duplicates/{pair}/dismiss'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\DuplicateRecordsController::dismiss'
+  requirements:
+    _permission: 'log makerspace member success contacts'
+    _csrf_token: 'TRUE'
+    pair: '[cu]-[0-9]+-[0-9]+'
+
 makerspace_member_success.log_contact:
   path: '/admin/makerspace/member-success/log-contact/{user}'
   defaults:

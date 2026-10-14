@@ -84,6 +84,7 @@ follow-up* section of the settings form.
 *   `drush ms:chargebee-push-followup-bulk`: Bulk-pushes Drupal followup statuses to Chargebee.
 *   `drush ms:backfill-civi`: Backfills outreach logs from existing CiviCRM activities (last 90 days).
 *   `drush ms:outreach-process` (alias: `ms-process`): Processes approved outreach queue items (Automated Sends).
+*   `drush ms:duplicates` (alias: `ms-dupes`): Lists likely duplicate CiviCRM contacts and website accounts, with the record to keep. Read-only, never merges. `--type=contacts|accounts`, `--format=csv --fields=*`, `--save` refreshes the staff page (cron does this weekly).
 
 ## Template Variants (Issue-Based)
 
@@ -123,6 +124,7 @@ After installation, access these dashboards:
 - **Engagement Queue**: `/admin/makerspace/member-success/engagement`
 - **Retention Queue**: `/admin/makerspace/member-success/retention`
 - **Recovery Queue**: `/admin/makerspace/member-success/recovery`
+- **Possible Duplicates**: `/admin/makerspace/member-success/duplicates` (weekly duplicate check; staff merge in CiviCRM or mark "Not a duplicate")
 - **Settings**: `/admin/config/makerspace/member-success`
 
 Find these in the admin menu under: **Admin → Member Success**

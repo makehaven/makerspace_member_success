@@ -12,6 +12,7 @@ use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\makerspace_member_success\Service\DuplicateRecordFinder;
 use Drupal\makerspace_member_success\Service\RecoveryMetrics;
 use Drupal\makerspace_member_success\Support\MemberSuccessBuckets;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
@@ -37,6 +38,11 @@ class MemberSuccessDashboardController extends ControllerBase {
   protected $recoveryMetrics;
 
   /**
+   * The weekly duplicate-record check.
+   */
+  protected ?DuplicateRecordFinder $duplicateFinder;
+
+  /**
    * Constructs a new MemberSuccessDashboardController object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -44,9 +50,10 @@ class MemberSuccessDashboardController extends ControllerBase {
    * @param \Drupal\makerspace_member_success\Service\RecoveryMetrics $recovery_metrics
    *   The recovery metrics service.
    */
-  public function __construct(Connection $database, RecoveryMetrics $recovery_metrics) {
+  public function __construct(Connection $database, RecoveryMetrics $recovery_metrics, ?DuplicateRecordFinder $duplicate_finder = NULL) {
     $this->database = $database;
     $this->recoveryMetrics = $recovery_metrics;
+    $this->duplicateFinder = $duplicate_finder;
   }
 
   /**
@@ -55,7 +62,8 @@ class MemberSuccessDashboardController extends ControllerBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('database'),
-      $container->get('makerspace_member_success.recovery_metrics')
+      $container->get('makerspace_member_success.recovery_metrics'),
+      $container->get('makerspace_member_success.duplicate_finder')
     );
   }
 
@@ -129,6 +137,17 @@ class MemberSuccessDashboardController extends ControllerBase {
       '@newest' => $summary['newest'],
       '@notice' => $summary['oldest'] < $today ? 'Some data predates today; check refresh before acting on changed membership or payment status.' : 'Latest daily snapshots are dated today.',
     ]);
+    // Weekly duplicate check: only mentioned when there is something to do.
+    if ($this->duplicateFinder !== NULL) {
+      $open_duplicates = count($this->duplicateFinder->openRows());
+      if ($open_duplicates > 0) {
+        $freshness .= '<p><strong>' . $this->t('Possible duplicate records:') . '</strong> '
+          . $this->t('@n pair(s) that are probably one person. <a href=":url">Review them</a> (checked weekly, never merged automatically).', [
+            '@n' => $open_duplicates,
+            ':url' => Url::fromRoute('makerspace_member_success.duplicates')->toString(),
+          ]) . '</p>';
+      }
+    }
     $summary_html = $freshness . '<p class="text-muted small mb-2">'
       . 'Each card below narrows the previous one. <strong>Total Tracked</strong> is everyone in the latest stored snapshot (including snoozed and suppressed). '
       . '<strong>Actionable</strong> is the subset that needs contact today — suppressed and snoozed members are excluded, so Actionable can be <em>0</em> even when Total is positive.'

@@ -27,3 +27,10 @@ services:
       - '@makerspace_member_success.chargebee_account_reconciler'
     tags:
       - { name: drush.command }
+
+  makerspace_member_success.duplicate_commands:
+    class: Drupal\makerspace_member_success\Commands\DuplicateCheckCommands
+    arguments:
+      - '@makerspace_member_success.duplicate_finder'
+    tags:
+      - { name: drush.command }

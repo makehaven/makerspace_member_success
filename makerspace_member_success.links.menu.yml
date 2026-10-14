@@ -39,6 +39,13 @@ makerspace_member_success.billing_queue:
   parent: makerspace_member_success.overview
   weight: 12
 
+makerspace_member_success.duplicates:
+  title: 'Possible Duplicates'
+  description: 'Two CiviCRM contacts or two website accounts that are probably one person; checked weekly, never merged automatically.'
+  route_name: makerspace_member_success.duplicates
+  parent: makerspace_member_success.overview
+  weight: 13
+
 makerspace_member_success.engagement:
   title: '2. Engagement'
   route_name: view.member_success_queue.engagement
@@ -153,6 +160,14 @@ makerspace_member_success.staff_billing_queue:
   menu_name: staff-tools
   parent: makerspace_member_success.staff_tab
   weight: 12
+
+makerspace_member_success.staff_duplicates:
+  title: 'Possible Duplicates'
+  description: 'Two CiviCRM contacts or two website accounts that are probably one person; checked weekly, never merged automatically.'
+  route_name: makerspace_member_success.duplicates
+  menu_name: staff-tools
+  parent: makerspace_member_success.staff_tab
+  weight: 13
 
 makerspace_member_success.staff_engagement:
   title: '2. Engagement Queue'
