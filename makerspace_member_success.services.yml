@@ -26,6 +26,13 @@ services:
     tags:
       - { name: event_subscriber }
 
+  makerspace_member_success.quiz_resume_on_denied:
+    class: Drupal\makerspace_member_success\EventSubscriber\QuizResumeOnDeniedSubscriber
+    arguments:
+      - '@?quiz.session'
+    tags:
+      - { name: event_subscriber }
+
   makerspace_member_success.onboarding_quiz_pass_redirect:
     class: Drupal\makerspace_member_success\EventSubscriber\OnboardingQuizPassRedirectSubscriber
     arguments:
