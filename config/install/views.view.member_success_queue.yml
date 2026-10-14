@@ -1399,6 +1399,21 @@ display:
           value: ''
           group: 1
           exposed: true
+          expose:
+            operator_id: stage_op
+            label: Stage
+            description: ''
+            use_operator: false
+            operator: stage_op
+            operator_limit_selection: false
+            operator_list: {  }
+            identifier: stage
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            placeholder: ''
           is_grouped: true
           group_info:
             label: Stage
@@ -1427,6 +1442,10 @@ display:
                 title: Recovery
                 operator: '='
                 value: recovery
+              5:
+                title: Paused
+                operator: '='
+                value: paused
         risk_score:
           id: risk_score
           table: ms_member_success_snapshot
@@ -7178,6 +7197,21 @@ display:
           value: ''
           group: 1
           exposed: true
+          expose:
+            operator_id: stage_op
+            label: Stage
+            description: ''
+            use_operator: false
+            operator: stage_op
+            operator_limit_selection: false
+            operator_list: {  }
+            identifier: stage
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            placeholder: ''
           is_grouped: true
           group_info:
             label: Stage
@@ -7206,6 +7240,10 @@ display:
                 title: Recovery
                 operator: '='
                 value: recovery
+              5:
+                title: Paused
+                operator: '='
+                value: paused
         risk_score:
           id: risk_score
           table: ms_member_success_snapshot

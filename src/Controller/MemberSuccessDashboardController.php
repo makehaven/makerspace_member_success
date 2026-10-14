@@ -244,7 +244,9 @@ class MemberSuccessDashboardController extends ControllerBase {
     // Paused stage as a wide card below the 4-stage grid.
     $paused_info = $stage_defs['paused'];
     $paused_stats = $stages['paused'] ?? ['total' => 0, 'risk' => 0];
-    $paused_url = $this->safeRouteUrl('view.member_success_queue.paused');
+    // No queue display of its own: the overview's Stage filter has a Paused
+    // option (group item 5).
+    $paused_url = $this->safeRouteUrl('view.member_success_queue.overview', ['stage' => 5]);
     $paused_percent = $paused_stats['total'] > 0 ? round(($paused_stats['risk'] / $paused_stats['total']) * 100) : 0;
     $stages_html .= '
       <div class="ms-card ms-stage-card" style="margin-top:1rem;">
