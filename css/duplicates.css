@@ -1,0 +1,31 @@
+/* Possible Duplicates: two records side by side, shared values marked. */
+.ms-dup-record {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.ms-dup-record__head {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.ms-dup-record li {
+  margin: 0;
+}
+.ms-dup-record__label {
+  color: var(--mh-color-neutral-600, #616161);
+}
+.ms-dup-match {
+  font-weight: 600;
+  color: var(--mh-color-success, #1e7b34);
+}
+.ms-dup-match::after {
+  content: " \2713";
+}
+.ms-dup-warn {
+  color: var(--mh-color-danger, #a4262c);
+}
+.ms-dup-intro {
+  max-width: 60rem;
+}

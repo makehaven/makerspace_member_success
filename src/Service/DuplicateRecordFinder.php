@@ -141,10 +141,53 @@ class DuplicateRecordFinder {
   public function openRows(?array $run = NULL): array {
     $run ??= $this->lastRun();
     $dismissed = (array) ($this->state->get(self::DISMISSED_KEY) ?? []);
+    $exceptions = $this->civicrmExceptions();
     return array_values(array_filter(
       (array) ($run['rows'] ?? []),
-      static fn(array $row): bool => !isset($dismissed[$row['key']]),
+      static function (array $row) use ($dismissed, $exceptions): bool {
+        if (isset($dismissed[$row['key']])) {
+          return FALSE;
+        }
+        $pair = static::contactPair($row);
+        return $pair === NULL || !isset($exceptions[$pair[0] . '-' . $pair[1]]);
+      },
     ));
+  }
+
+  /**
+   * The two CiviCRM contacts a row is about, lower ID first, if it has two.
+   *
+   * @return int[]|null
+   *   [lower, higher], or NULL when the row does not name two contacts.
+   */
+  public static function contactPair(array $row): ?array {
+    $a = (int) ($row['type'] === 'contact' ? $row['keep_id'] : ($row['keep_cid'] ?? 0));
+    $b = (int) ($row['type'] === 'contact' ? $row['other_id'] : ($row['other_cid'] ?? 0));
+    if ($a <= 0 || $b <= 0 || $a === $b) {
+      return NULL;
+    }
+    return [min($a, $b), max($a, $b)];
+  }
+
+  /**
+   * Pairs marked "not a duplicate" in CiviCRM, keyed "lower-higher".
+   *
+   * Shared with CiviCRM's own Find Duplicates screen, so a pair marked in
+   * either place stays off both.
+   */
+  protected function civicrmExceptions(): array {
+    try {
+      $pairs = [];
+      foreach ($this->database->query('SELECT contact_id1, contact_id2 FROM civicrm_dedupe_exception') as $r) {
+        $a = (int) $r->contact_id1;
+        $b = (int) $r->contact_id2;
+        $pairs[min($a, $b) . '-' . max($a, $b)] = TRUE;
+      }
+      return $pairs;
+    }
+    catch (\Exception $e) {
+      return [];
+    }
   }
 
   /**
@@ -154,6 +197,30 @@ class DuplicateRecordFinder {
     $dismissed = (array) ($this->state->get(self::DISMISSED_KEY) ?? []);
     $dismissed[$key] = ['ts' => (int) $this->time->getRequestTime(), 'uid' => $actor_uid];
     $this->state->set(self::DISMISSED_KEY, $dismissed);
+
+    // Record it in CiviCRM too, so its Find Duplicates screen stops offering
+    // the same two contacts. CiviCRM stores the lower contact ID first.
+    foreach ((array) ($this->lastRun()['rows'] ?? []) as $row) {
+      if ($row['key'] !== $key) {
+        continue;
+      }
+      $pair = static::contactPair($row);
+      if ($pair !== NULL) {
+        try {
+          $this->database->merge('civicrm_dedupe_exception')
+            ->keys(['contact_id1' => $pair[0], 'contact_id2' => $pair[1]])
+            ->execute();
+        }
+        catch (\Exception $e) {
+          $this->logger->warning('Could not record contacts @a and @b as not duplicates in CiviCRM: @msg', [
+            '@a' => $pair[0],
+            '@b' => $pair[1],
+            '@msg' => $e->getMessage(),
+          ]);
+        }
+      }
+      break;
+    }
   }
 
   /**

@@ -29,3 +29,9 @@ onboarding_focus:
       css/onboarding-focus.css: {}
   dependencies:
     - core/drupal
+
+duplicates:
+  version: 1.x
+  css:
+    theme:
+      css/duplicates.css: {}

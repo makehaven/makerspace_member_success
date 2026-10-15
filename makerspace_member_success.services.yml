@@ -71,6 +71,10 @@ services:
       - '@state'
       - '@datetime.time'
       - '@logger.factory'
+  makerspace_member_success.duplicate_evidence:
+    class: Drupal\makerspace_member_success\Service\DuplicateEvidence
+    arguments:
+      - '@database'
 
   makerspace_member_success.civicrm_helper:
     class: Drupal\makerspace_member_success\Service\CiviCrmHelper
