@@ -8,7 +8,6 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Url;
 use Drupal\makerspace_member_success\Service\ChargebeeAccountReconciler;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
  * Staff queue: people paying in Chargebee who are not set up as members.
@@ -105,7 +104,7 @@ class BillingMismatchQueueController extends ControllerBase {
     $build['help'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => $this->t('People with a paying Chargebee subscription whom the website does not treat as members, so they get no door access and never appear in the other queues. Checked once a day. A row disappears on the next check after the account is fixed.'),
+      '#value' => $this->t('People with a paying Chargebee subscription whom the website does not treat as members, so they get no door access and never appear in the other queues. Checked once a day. A row disappears on the next check after the account is fixed. Accounts marked "pending member" are listed only after @days business days without approval. "No action needed" asks for a note, saves it to the person\'s CiviCRM contact, and removes the row unless the problem changes.', ['@days' => ChargebeeAccountReconciler::PENDING_BUSINESS_DAYS]),
     ];
     $build['last'] = [
       '#type' => 'html_tag',
@@ -135,15 +134,6 @@ class BillingMismatchQueueController extends ControllerBase {
     $build['#cache']['max-age'] = 0;
 
     return $build;
-  }
-
-  /**
-   * Dismisses a row and returns to the queue.
-   */
-  public function dismiss(string $subscription): RedirectResponse {
-    $this->reconciler->dismiss($subscription, (int) $this->currentUser()->id());
-    $this->messenger()->addStatus($this->t('Marked as needing no action. It will come back only if the problem changes.'));
-    return new RedirectResponse(Url::fromRoute('makerspace_member_success.billing_queue')->toString());
   }
 
 }

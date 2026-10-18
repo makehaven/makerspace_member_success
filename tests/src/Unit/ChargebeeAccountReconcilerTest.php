@@ -32,6 +32,26 @@ class ChargebeeAccountReconcilerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::addBusinessDays
+   */
+  public function testAddBusinessDaysSkipsWeekends(): void {
+    $previous = date_default_timezone_get();
+    date_default_timezone_set('America/New_York');
+    try {
+      $at = static fn (string $when): int => (new \DateTimeImmutable($when, new \DateTimeZone('America/New_York')))->getTimestamp();
+      // Paid Monday evening: due Wednesday evening.
+      $this->assertSame($at('2026-10-14 19:00'), ChargebeeAccountReconciler::addBusinessDays($at('2026-10-12 19:00'), 2));
+      // Paid Thursday: due Monday.
+      $this->assertSame($at('2026-10-19 09:30'), ChargebeeAccountReconciler::addBusinessDays($at('2026-10-15 09:30'), 2));
+      // Paid Saturday: due Tuesday.
+      $this->assertSame($at('2026-10-20 11:00'), ChargebeeAccountReconciler::addBusinessDays($at('2026-10-17 11:00'), 2));
+    }
+    finally {
+      date_default_timezone_set($previous);
+    }
+  }
+
+  /**
    * @covers ::describe
    */
   public function testDescribeNamesHouseholdAddOns(): void {

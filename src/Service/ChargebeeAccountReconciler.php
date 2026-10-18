@@ -58,6 +58,20 @@ class ChargebeeAccountReconciler {
   protected const GRACE_SECONDS = 6 * 3600;
 
   /**
+   * Role staff review new members under ("pending member").
+   */
+  public const PENDING_ROLE = 'member_pending_approval';
+
+  /**
+   * Business days staff have to approve a pending member before it is a miss.
+   *
+   * Paying, then waiting for staff to check Member, is the normal join flow.
+   * Flagging those after six hours emailed Kate about people already being
+   * handled (Charli Zaretsky, Nate Merrill, Claire Andersen; 2026-10).
+   */
+  public const PENDING_BUSINESS_DAYS = 2;
+
+  /**
    * Minimum gap between cron runs.
    */
   protected const CRON_INTERVAL = 20 * 3600;
@@ -160,6 +174,13 @@ class ChargebeeAccountReconciler {
       if ($kind === NULL) {
         continue;
       }
+      if ($kind === self::KIND_NO_ROLE
+        && $this->hasRole($uid, self::PENDING_ROLE)
+        && $now < static::addBusinessDays((int) ($sub['created_at'] ?? 0), self::PENDING_BUSINESS_DAYS)) {
+        // Awaiting staff approval and still on time: not listed, so an open
+        // row resolves and comes back (with an email) only once it is late.
+        continue;
+      }
 
       $record = [
         'subscription_id' => (string) $sub['id'],
@@ -236,6 +257,22 @@ class ChargebeeAccountReconciler {
   }
 
   /**
+   * Adds weekdays (Monday to Friday) to a timestamp, keeping the clock time.
+   *
+   * Holidays are not skipped.
+   */
+  public static function addBusinessDays(int $timestamp, int $days): int {
+    $date = (new \DateTimeImmutable('@' . $timestamp))->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+    while ($days > 0) {
+      $date = $date->modify('+1 day');
+      if ((int) $date->format('N') <= 5) {
+        $days--;
+      }
+    }
+    return $date->getTimestamp();
+  }
+
+  /**
    * Says what staff should do about a row, in plain words.
    */
   public static function describe(string $kind, ?string $plan_id): string {
@@ -302,10 +339,17 @@ class ChargebeeAccountReconciler {
 
   /**
    * Staff decided a row needs no action (for example a comped test account).
+   *
+   * The note is kept on the row even when it was also logged in CiviCRM, so
+   * people with no CiviCRM contact still leave a record.
    */
-  public function dismiss(string $subscription_id, int $actor_uid): void {
+  public function dismiss(string $subscription_id, int $actor_uid, string $note = ''): void {
     $this->database->update('ms_billing_mismatch')
-      ->fields(['dismissed_ts' => (int) $this->time->getRequestTime(), 'dismissed_by' => $actor_uid])
+      ->fields([
+        'dismissed_ts' => (int) $this->time->getRequestTime(),
+        'dismissed_by' => $actor_uid,
+        'dismiss_note' => $note !== '' ? $note : NULL,
+      ])
       ->condition('subscription_id', $subscription_id)
       ->execute();
   }
@@ -517,6 +561,7 @@ class ChargebeeAccountReconciler {
     if ($changed) {
       $fields['dismissed_ts'] = NULL;
       $fields['dismissed_by'] = NULL;
+      $fields['dismiss_note'] = NULL;
     }
     $this->database->update('ms_billing_mismatch')
       ->fields($fields)
@@ -553,7 +598,7 @@ class ChargebeeAccountReconciler {
     $body[] = '';
     $body[] = 'Queue: ' . $base . '/admin/makerspace/member-success/billing';
     $body[] = '';
-    $body[] = 'This check runs once a day. Each person is reported once; dismiss anyone who needs no action.';
+    $body[] = 'This check runs once a day. Each person is reported once. People marked "pending member" are only reported after ' . self::PENDING_BUSINESS_DAYS . ' business days without approval. Use "No action needed" (with a note) for anyone who needs nothing done.';
 
     $result = $this->mailManager->mail('makerspace_member_success', 'billing_mismatch', $to, 'en', [
       'subject' => count($rows) === 1
@@ -666,10 +711,17 @@ class ChargebeeAccountReconciler {
    * Whether an account has the member role.
    */
   protected function hasMemberRole(int $uid): bool {
+    return $this->hasRole($uid, 'member');
+  }
+
+  /**
+   * Whether an account has a role.
+   */
+  protected function hasRole(int $uid, string $role): bool {
     return (bool) $this->database->select('user__roles', 'r')
       ->fields('r', ['entity_id'])
       ->condition('entity_id', $uid)
-      ->condition('roles_target_id', 'member')
+      ->condition('roles_target_id', $role)
       ->execute()
       ->fetchField();
   }

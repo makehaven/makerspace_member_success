@@ -179,6 +179,71 @@ class CiviCrmActivityLogger {
   }
 
   /**
+   * Finds the one CiviCRM contact with this email.
+   *
+   * @return int|null
+   *   The contact ID, or NULL when no contact or more than one has the email.
+   */
+  public function getContactIdByEmail(string $email): ?int {
+    $email = trim($email);
+    if ($email === '') {
+      return NULL;
+    }
+    try {
+      $this->civicrm->initialize();
+      $result = civicrm_api3('Email', 'get', [
+        'email' => $email,
+        'contact_id.is_deleted' => 0,
+        'return' => ['contact_id'],
+        'options' => ['limit' => 0],
+      ]);
+      $contact_ids = array_unique(array_map('intval', array_column($result['values'] ?? [], 'contact_id')));
+      // Two contacts sharing an email are a duplicate to merge, not a guess.
+      return count($contact_ids) === 1 ? reset($contact_ids) : NULL;
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Failed to find CiviCRM contact for @email: @message', [
+        '@email' => $email,
+        '@message' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
+  }
+
+  /**
+   * Logs a completed staff note as an activity on a contact.
+   *
+   * Uses the "other" activity type configured for contact logs.
+   *
+   * @return int|null
+   *   The created activity ID, or NULL if failed.
+   */
+  public function logNote(int $target_contact_id, string $subject, string $details): ?int {
+    try {
+      $this->civicrm->initialize();
+      $source_contact_id = $this->getContactId((int) $this->currentUser->id()) ?? $target_contact_id;
+      $result = civicrm_api3('Activity', 'create', [
+        'activity_type_id' => $this->getActivityTypeId('other'),
+        'source_contact_id' => $source_contact_id,
+        'target_contact_id' => $target_contact_id,
+        'subject' => $subject,
+        'details' => $details,
+        'activity_date_time' => date('Y-m-d H:i:s'),
+        // Completed.
+        'status_id' => 2,
+      ]);
+      return !empty($result['id']) ? (int) $result['id'] : NULL;
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Failed to create CiviCRM note on contact @cid: @message', [
+        '@cid' => $target_contact_id,
+        '@message' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
+  }
+
+  /**
    * Gets activity type ID based on contact method.
    *
    * @param string $method

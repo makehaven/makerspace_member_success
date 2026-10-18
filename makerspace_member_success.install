@@ -570,6 +570,7 @@ function _makerspace_member_success_billing_mismatch_schema(): array {
       'resolved_ts' => ['type' => 'int', 'not null' => FALSE, 'description' => 'Set when a run no longer finds the mismatch.'],
       'dismissed_ts' => ['type' => 'int', 'not null' => FALSE],
       'dismissed_by' => ['type' => 'int', 'not null' => FALSE],
+      'dismiss_note' => ['type' => 'text', 'size' => 'normal', 'not null' => FALSE, 'description' => 'Why staff marked the row as needing no action.'],
     ],
     'primary key' => ['subscription_id'],
     'indexes' => [
@@ -1964,4 +1965,19 @@ function makerspace_member_success_update_9037(): string {
   return $seeded
     ? 'Seeded dormancy settings: ' . implode(', ', $seeded) . '. Risk scores pick them up on the next daily snapshot build.'
     : 'Dormancy and re-engagement settings already present.';
+}
+
+/**
+ * Adds a note to "No action needed" on the paying-not-set-up queue.
+ */
+function makerspace_member_success_update_9038(): string {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ms_billing_mismatch')) {
+    return 'ms_billing_mismatch does not exist yet; it is created with the note column.';
+  }
+  if ($schema->fieldExists('ms_billing_mismatch', 'dismiss_note')) {
+    return 'ms_billing_mismatch.dismiss_note already exists.';
+  }
+  $schema->addField('ms_billing_mismatch', 'dismiss_note', _makerspace_member_success_billing_mismatch_schema()['fields']['dismiss_note']);
+  return 'Added ms_billing_mismatch.dismiss_note.';
 }

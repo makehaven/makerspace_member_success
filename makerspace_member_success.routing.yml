@@ -56,10 +56,10 @@ makerspace_member_success.billing_link:
 makerspace_member_success.billing_dismiss:
   path: '/admin/makerspace/member-success/billing/{subscription}/dismiss'
   defaults:
-    _controller: '\Drupal\makerspace_member_success\Controller\BillingMismatchQueueController::dismiss'
+    _form: '\Drupal\makerspace_member_success\Form\BillingDismissForm'
+    _title: 'No action needed'
   requirements:
     _permission: 'log makerspace member success contacts'
-    _csrf_token: 'TRUE'
     subscription: '[A-Za-z0-9_-]+'
 
 makerspace_member_success.duplicates:
