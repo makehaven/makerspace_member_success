@@ -25,6 +25,23 @@ function makerspace_member_success_help(string $route_name, RouteMatchInterface 
 }
 
 /**
+ * Implements hook_quiz_feedback_labels_alter().
+ *
+ * The safety quiz (id 1) result lists each question with its "Score: 0 of 1"
+ * so a member can see which ones they missed. Quiz contrib also prints a
+ * per-choice score column under each question, which marks the right choice:
+ * drop that column on quiz 1 only. Badge quizzes show the full answer review
+ * on purpose and are left alone.
+ */
+function makerspace_member_success_quiz_feedback_labels_alter(array &$labels): void {
+  $quiz = \Drupal::routeMatch()->getParameter('quiz');
+  $quiz_id = is_object($quiz) ? (int) $quiz->id() : (int) $quiz;
+  if ($quiz_id === 1) {
+    unset($labels['score']);
+  }
+}
+
+/**
  * Implements hook_mail().
  */
 function makerspace_member_success_mail(string $key, array &$message, array $params): void {
