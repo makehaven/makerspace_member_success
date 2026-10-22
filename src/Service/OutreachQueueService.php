@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\OutreachHoldout;
 
 /**
  * Stores and transitions outreach queue records.
@@ -93,6 +94,25 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       }
     }
 
+    // Silent holdout. Only a member who passed every gate is assigned, so the
+    // two arms are the same population and differ only in being contacted.
+    // A held-out row is never approved or sent, and it still counts as "had
+    // a row" for the per-pause and re-engagement cooldown checks in
+    // OutreachCandidateGenerator, so the member is not re-offered next run.
+    $holdout_arm = NULL;
+    if (in_array($status, ['queued', 'approved'], TRUE)) {
+      $holdout_arm = OutreachHoldout::arm(
+        $uid,
+        $stage,
+        (int) ($config->get('holdout_percent') ?? 0),
+        (array) ($config->get('holdout_stages') ?? []),
+      );
+      if ($holdout_arm === OutreachHoldout::ARM_HOLDOUT) {
+        $status = OutreachHoldout::STATUS_HELD_OUT;
+        $suppression_reason = 'holdout';
+      }
+    }
+
     $scheduled_at = isset($snapshot['scheduled_at'])
       ? (int) $snapshot['scheduled_at']
       : ($status === 'suppressed' ? $now : $this->computeDefaultScheduledAt($now, $config));
@@ -101,20 +121,26 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       $existing_id = (int) $existing['id'];
       $existing_status = (string) ($existing['status'] ?? '');
       if (in_array($existing_status, ['queued', 'suppressed', 'failed', 'cancelled'], TRUE)) {
+        $fields = [
+          'risk_score' => $risk_score,
+          'risk_reasons' => $this->normalizeRiskReasons($snapshot['risk_reasons'] ?? NULL),
+          'recommended_channel' => $decision->channel,
+          'recommended_template_id' => $decision->templateId,
+          'recommended_reason_code' => $decision->reasonCode,
+          'destination_email' => (string) ($snapshot['email'] ?? '') ?: NULL,
+          'destination_phone' => (string) ($snapshot['phone'] ?? '') ?: NULL,
+          'status' => $status,
+          'suppression_reason_code' => $suppression_reason,
+          'scheduled_at' => $scheduled_at,
+          'updated_at' => $now,
+        ];
+        // Keep an earlier assignment when a later run stops at a gate: the
+        // report counts every member assigned to the offer, contacted or not.
+        if ($holdout_arm !== NULL) {
+          $fields['holdout_arm'] = $holdout_arm;
+        }
         $this->database->update('ms_member_outreach_queue')
-          ->fields([
-            'risk_score' => $risk_score,
-            'risk_reasons' => $this->normalizeRiskReasons($snapshot['risk_reasons'] ?? NULL),
-            'recommended_channel' => $decision->channel,
-            'recommended_template_id' => $decision->templateId,
-            'recommended_reason_code' => $decision->reasonCode,
-            'destination_email' => (string) ($snapshot['email'] ?? '') ?: NULL,
-            'destination_phone' => (string) ($snapshot['phone'] ?? '') ?: NULL,
-            'status' => $status,
-            'suppression_reason_code' => $suppression_reason,
-            'scheduled_at' => $scheduled_at,
-            'updated_at' => $now,
-          ])
+          ->fields($fields)
           ->condition('id', $existing_id)
           ->execute();
       }
@@ -144,6 +170,7 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
         'policy_version' => (string) ($snapshot['policy_version'] ?? 'v1'),
         'status' => $status,
         'suppression_reason_code' => $suppression_reason,
+        'holdout_arm' => $holdout_arm,
         'scheduled_at' => $scheduled_at,
         'created_at' => $now,
         'updated_at' => $now,
@@ -178,9 +205,12 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       $fields['override_reason_code'] = $overrideReason;
     }
 
+    // A held-out row stays unsent even under a bulk "approve selected":
+    // sending it would put the member in both arms.
     $this->database->update('ms_member_outreach_queue')
       ->fields($fields)
       ->condition('id', $queueId)
+      ->condition('status', OutreachHoldout::STATUS_HELD_OUT, '<>')
       ->execute();
   }
 

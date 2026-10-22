@@ -472,6 +472,12 @@ function makerspace_member_success_schema() {
           'length' => 64,
           'not null' => FALSE,
         ],
+        'holdout_arm' => [
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => FALSE,
+          'description' => 'offer or holdout when the stage runs a silent holdout; NULL otherwise.',
+        ],
         'failure_code' => [
           'type' => 'varchar',
           'length' => 64,
@@ -2048,4 +2054,37 @@ function makerspace_member_success_update_9040(): string {
     ->condition('updated_at', \Drupal::time()->getRequestTime() - 30 * 86400, '<')
     ->countQuery()->execute()->fetchField();
   return "Seeded queue_stale_days = 30. The next cron cancels $stale queued row(s) untouched for 30+ days (reason expired_stale).";
+}
+
+/**
+ * Adds the silent holdout: queue column holdout_arm and its settings.
+ */
+function makerspace_member_success_update_9041(): string {
+  $schema = \Drupal::database()->schema();
+  $messages = [];
+  if (!$schema->fieldExists('ms_member_outreach_queue', 'holdout_arm')) {
+    $schema->addField('ms_member_outreach_queue', 'holdout_arm', [
+      'type' => 'varchar',
+      'length' => 16,
+      'not null' => FALSE,
+      'description' => 'offer or holdout when the stage runs a silent holdout; NULL otherwise.',
+    ]);
+    $messages[] = 'Added ms_member_outreach_queue.holdout_arm.';
+  }
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'holdout_percent' => 25,
+    'holdout_stages' => ['pause_end', 'reengage'],
+    'holdout_window_days' => 60,
+  ];
+  $seeded = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $seeded[] = $key;
+    }
+  }
+  $config->save();
+  $messages[] = $seeded ? 'Seeded settings: ' . implode(', ', $seeded) . '.' : 'Holdout settings already present.';
+  return implode(' ', $messages);
 }

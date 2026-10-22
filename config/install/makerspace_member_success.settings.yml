@@ -272,6 +272,16 @@ template_reengage: |
 # later. Cron-fed stages refresh their rows every run. 0 = never expire.
 queue_stale_days: 30
 
+# Silent holdout. holdout_percent of eligible members in each holdout_stages
+# campaign are logged as held out (queue status held_out) instead of being
+# offered, chosen by a stable hash of stage and uid. drush ms:holdout-report
+# compares the arms once holdout_window_days have passed. 0 = no holdout.
+holdout_percent: 25
+holdout_stages:
+  - pause_end
+  - reengage
+holdout_window_days: 60
+
 # --- Dunning triage + pause end ----------------------------------------------
 # "Cold" = no door visit in this many days. A payment-failed member who is cold
 # is labelled payment_failed_cold in the recovery queue (a different

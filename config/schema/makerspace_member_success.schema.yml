@@ -103,6 +103,18 @@ makerspace_member_success.settings:
     queue_stale_days:
       type: integer
       label: 'Days a queued outreach row may sit untouched before it is cancelled (0 = never)'
+    holdout_percent:
+      type: integer
+      label: 'Percent of eligible members held out of automated offers (0 = no holdout)'
+    holdout_stages:
+      type: sequence
+      label: 'Offer campaigns that run a silent holdout'
+      sequence:
+        type: string
+        label: 'Queue stage'
+    holdout_window_days:
+      type: integer
+      label: 'Days after assignment before a member counts in the holdout report'
     cold_days:
       type: integer
       label: 'Days without a door visit after which a member counts as cold'

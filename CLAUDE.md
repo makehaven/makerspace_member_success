@@ -105,6 +105,19 @@ All visibility decisions go through `src/Support/MemberSuccessQueueRules.php`. S
 
 Mappings live in `MemberSuccessLifecycle::sleepDaysForOutcome()` and `followupStatusForOutcome()`.
 
+### Silent holdout (automated offers)
+
+Campaigns listed in `holdout_stages` (default `pause_end`, `reengage`) hold out
+`holdout_percent` (25) of eligible members: after every gate passes,
+`OutreachHoldout::arm()` (stable hash of stage + uid) marks the row
+`status = held_out`, `holdout_arm = holdout`; the rest get `holdout_arm =
+offer`. Held-out rows are never approved (`approve()` refuses them) or sent,
+and they still count as "had a row" for the generators' once-per-pause and
+re-engagement cooldown checks. `drush ms:holdout-report` (`HoldoutReport`)
+compares arms intention-to-treat after `holdout_window_days` (60). Do not
+add a campaign to `holdout_stages` without wiring its generator to skip
+members who already have a row, or held-out members get re-evaluated forever.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

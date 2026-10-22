@@ -3,6 +3,7 @@
 namespace Drupal\Tests\makerspace_member_success\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\makerspace_member_success\Service\HoldoutReport;
 use Drupal\makerspace_member_success\Service\OutreachMessageBuilderInterface;
 use Drupal\makerspace_member_success\Service\OutreachPolicyDeciderInterface;
 use Drupal\makerspace_member_success\Service\OutreachQueueService;
@@ -10,6 +11,7 @@ use Drupal\makerspace_member_success\Service\OutreachSenderInterface;
 use Drupal\makerspace_member_success\Service\OutreachService;
 use Drupal\makerspace_member_success\Service\OutreachSuppressionCheckerInterface;
 use Drupal\makerspace_member_success\Support\OutreachDecision;
+use Drupal\makerspace_member_success\Support\OutreachHoldout;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
@@ -229,6 +231,83 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
     $row = $this->databaseRow($first_id);
     $this->assertSame(60, (int) $row['risk_score']);
     $this->assertSame(['payment_failed'], $this->decodeReasons($row['risk_reasons'] ?? NULL));
+  }
+
+  /**
+   * Holdout members are logged held_out, cannot be approved, and are reported.
+   */
+  public function testHoldoutAssignmentAndReport(): void {
+    $this->installSchema('system', ['sequences']);
+    $this->installEntitySchema('user');
+    $this->installSchema('makerspace_member_success', ['ms_member_outreach_queue', 'ms_member_success_snapshot', 'ms_member_outreach_log']);
+    $this->config('makerspace_member_success.settings')
+      ->set('holdout_percent', 25)
+      ->set('holdout_stages', ['reengage'])
+      ->set('holdout_window_days', 60)
+      ->set('stage_reengage_min_risk_to_contact', 0)
+      ->set('stage_reengage_max_attempts', 0)
+      ->set('stage_reengage_cooldown_days', 0)
+      ->save();
+
+    $held_uid = $offer_uid = NULL;
+    for ($uid = 500; $held_uid === NULL || $offer_uid === NULL; $uid++) {
+      $arm = OutreachHoldout::arm($uid, 'reengage', 25, ['reengage']);
+      if ($arm === OutreachHoldout::ARM_HOLDOUT) {
+        $held_uid ??= $uid;
+      }
+      else {
+        $offer_uid ??= $uid;
+      }
+    }
+
+    $service = $this->buildQueueService();
+    $snapshot = [
+      'risk_score' => 0,
+      'email' => 'member@example.com',
+      'is_opt_out' => 0,
+      'do_not_email' => 0,
+      'do_not_sms' => 0,
+    ];
+    $held_id = $service->enqueueCandidate($held_uid, 'reengage', $snapshot);
+    $offer_id = $service->enqueueCandidate($offer_uid, 'reengage', $snapshot);
+    // Recovery runs no holdout: no arm recorded.
+    $recovery_id = $service->enqueueCandidate($held_uid, 'recovery', ['risk_score' => 90] + $snapshot);
+
+    $held = $this->databaseRow($held_id);
+    $this->assertSame('held_out', $held['status']);
+    $this->assertSame('holdout', $held['suppression_reason_code']);
+    $this->assertSame('holdout', $held['holdout_arm']);
+    $offer = $this->databaseRow($offer_id);
+    $this->assertSame('queued', $offer['status']);
+    $this->assertSame('offer', $offer['holdout_arm']);
+    $this->assertNull($this->databaseRow($recovery_id)['holdout_arm']);
+
+    // A bulk approve must not release a held-out row.
+    $service->approve($held_id, 1);
+    $this->assertSame('held_out', $this->databaseRow($held_id)['status']);
+    $service->approve($offer_id, 1);
+    $this->assertSame('approved', $this->databaseRow($offer_id)['status']);
+
+    // Rows only count toward outcomes once past the window.
+    $this->container->get('database')->update('ms_member_outreach_queue')
+      ->fields(['created_at' => time() - 90 * 86400])
+      ->condition('id', [$held_id, $offer_id], 'IN')
+      ->execute();
+    $this->container->get('database')->update('ms_member_outreach_queue')
+      ->fields(['status' => 'sent'])
+      ->condition('id', $offer_id)
+      ->execute();
+    $report = (new HoldoutReport(
+      $this->container->get('database'),
+      $this->container->get('config.factory'),
+      $this->container->get('datetime.time'),
+    ))->build();
+    $this->assertSame(['reengage'], array_keys($report));
+    $this->assertSame(1, $report['reengage']['holdout']['assigned']);
+    $this->assertSame(0, $report['reengage']['holdout']['contacted']);
+    $this->assertSame(1, $report['reengage']['holdout']['matured']);
+    $this->assertSame(1, $report['reengage']['offer']['contacted']);
+    $this->assertSame(0, $report['reengage']['offer']['came_in']);
   }
 
   /**

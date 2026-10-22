@@ -174,6 +174,41 @@ class MemberSuccessCommands extends DrushCommands {
   }
 
   /**
+   * Compares members offered an automated offer with the silent holdout.
+   *
+   * Counts every member assigned to the offer, emailed or not (intention to
+   * treat). Outcome columns cover only rows at least holdout_window_days old.
+   *
+   * @command ms:holdout-report
+   * @aliases ms-holdout-report
+   */
+  public function holdoutReport(): void {
+    $report = \Drupal::service('makerspace_member_success.holdout_report')->build();
+    if (!$report) {
+      $this->logger()->notice(dt('No holdout assignments yet. Assignments start when a holdout campaign (holdout_stages) queues members.'));
+      return;
+    }
+    $window = (int) (\Drupal::config('makerspace_member_success.settings')->get('holdout_window_days') ?? 60);
+    $pct = static fn(int $n, int $of): string => $of > 0 ? round(100 * $n / $of) . '%' : '-';
+    $rows = [];
+    foreach ($report as $stage => $arms) {
+      foreach ($arms as $arm => $c) {
+        $rows[] = [
+          $stage,
+          $arm,
+          $c['assigned'],
+          $c['contacted'],
+          $c['matured'],
+          $c['came_in'] . ' (' . $pct($c['came_in'], $c['matured']) . ')',
+          $c['member_now'] . ' (' . $pct($c['member_now'], $c['matured']) . ')',
+        ];
+      }
+    }
+    $this->io()->table(['Campaign', 'Arm', 'Assigned', 'Emailed', "Past {$window} days", 'Came in since', 'Member now'], $rows);
+    $this->io()->note('Below about 30 members per arm, a difference between the arms is mostly noise.');
+  }
+
+  /**
    * Previews the onboarding auto-nudge: who would be emailed, without sending.
    *
    * Runs the REAL candidate generation + OutreachQueueService::enqueueCandidate

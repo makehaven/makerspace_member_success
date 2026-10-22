@@ -255,6 +255,28 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (string) ($config->get('template_pause_end__pause_gems_fit') ?? ''),
     ];
 
+    $form['thresholds']['holdout'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Comparison group (holdout)'),
+      '#description' => $this->t('A share of the members eligible for the pause-ending message and the re-engagement offer are deliberately not contacted, so the offer can be compared with doing nothing. The same members are always chosen, and they show in the review page as "Held out". Results: drush ms:holdout-report.'),
+    ];
+    $form['thresholds']['holdout']['holdout_percent'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Percent held out'),
+      '#description' => $this->t('0 turns the comparison group off.'),
+      '#default_value' => (int) ($config->get('holdout_percent') ?? 0),
+      '#min' => 0,
+      '#max' => 50,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['holdout']['holdout_window_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Days to wait before counting a result'),
+      '#default_value' => (int) ($config->get('holdout_window_days') ?? 60),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+
     $form['thresholds']['onboarding_stall_hours'] = [
       '#type' => 'number',
       '#title' => $this->t('Onboarding step stall threshold (hours)'),
@@ -638,6 +660,8 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('pause_end_gems_offer', trim((string) $form_state->getValue('pause_end_gems_offer')))
       ->set('template_pause_end', (string) $form_state->getValue('template_pause_end'))
       ->set('template_pause_end__pause_gems_fit', (string) $form_state->getValue('template_pause_end__pause_gems_fit'))
+      ->set('holdout_percent', (int) $form_state->getValue('holdout_percent'))
+      ->set('holdout_window_days', (int) $form_state->getValue('holdout_window_days'))
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))
       ->set('template_engagement', $form_state->getValue('template_engagement'))
