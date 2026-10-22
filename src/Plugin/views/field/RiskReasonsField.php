@@ -56,6 +56,9 @@ class RiskReasonsField extends FieldPluginBase {
       'inactive' => 'ABSENT',
       'pause_ending' => 'PAUSE-END',
       'settled_dormant' => 'SETTLED',
+      'payment_failed_cold' => 'COLD',
+      'pause_cold' => 'COLD',
+      'pause_gems_fit' => 'GEMS-FIT',
     ];
 
     $codes = [];

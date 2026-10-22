@@ -147,6 +147,36 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
         NULL,
         'suppressed_paused',
       ],
+      'reason_variant_config_template_beats_stage_default' => [
+        array_replace($base_config, [
+          'template_retention__pause_gems_fit' => "Subject: GEMS\n\nBody",
+        ]),
+        $base_snapshot + [
+          'preferred_outreach_method' => 'email',
+          'risk_reasons' => ['pause_cold', 'pause_gems_fit'],
+        ],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'email',
+        'template_retention__pause_gems_fit',
+        'pref_email',
+      ],
+      'unconfigured_reason_variant_keeps_stage_default' => [
+        $base_config,
+        $base_snapshot + [
+          'preferred_outreach_method' => 'email',
+          'risk_reasons' => ['pause_gems_fit'],
+        ],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'email',
+        'template_retention',
+        'pref_email',
+      ],
       'exact_stage_reason_override_beats_default' => [
         array_replace($base_config, [
           'email_template_overrides' => ['retention.payment_failed=777'],

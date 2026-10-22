@@ -197,6 +197,21 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
       $tokens['badge.schedules_url'] = $base_url . '/facilitator/schedules';
     }
 
+    if ($stage === 'pause_end') {
+      $resume = $this->database->select('ms_member_success_snapshot', 'ms')
+        ->fields('ms', ['pause_resume_date'])
+        ->condition('ms.uid', $uid)
+        ->condition('ms.is_latest', 1)
+        ->condition('ms.snapshot_type', 'daily')
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+      $resume_ts = $resume ? strtotime($resume . ' 00:00:00') : FALSE;
+      $tokens['pause.resume_date'] = $resume_ts ? date('l, F j', $resume_ts) : 'soon';
+      $tokens['pause_end.gems_offer'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('pause_end_gems_offer') ?? ''));
+      $tokens['gems.url'] = $base_url . '/gems';
+    }
+
     if ($stage === 'reengage') {
       $tokens['reengage.offer'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('reengage_offer') ?? ''));
     }

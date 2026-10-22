@@ -100,6 +100,39 @@ makerspace_member_success.settings:
     template_reengage:
       type: text
       label: 'Re-engagement offer email'
+    cold_days:
+      type: integer
+      label: 'Days without a door visit after which a member counts as cold'
+    pause_end_enabled:
+      type: boolean
+      label: 'Queue pause-end outreach for staff approval'
+    pause_end_lead_days:
+      type: integer
+      label: 'Days before the Chargebee resume date to queue pause-end outreach'
+    pause_gems_tenure_days:
+      type: integer
+      label: 'Cold pausers with less membership than this get the GEMS offer'
+    pause_end_gems_offer:
+      type: string
+      label: 'GEMS offer text in the pause-end email'
+    stage_pause_end_cooldown_days:
+      type: integer
+      label: 'Pause-end cooldown days after any contact'
+    stage_pause_end_max_attempts:
+      type: integer
+      label: 'Pause-end max attempts (0 = no cap; one per pause)'
+    stage_pause_end_min_risk_to_contact:
+      type: integer
+      label: 'Pause-end minimum risk score'
+    stage_pause_end_require_manual_approval:
+      type: boolean
+      label: 'Pause-end messages need staff approval'
+    template_pause_end:
+      type: text
+      label: 'Pause-end email'
+    template_pause_end__pause_gems_fit:
+      type: text
+      label: 'Pause-end email, GEMS offer version'
     outreach_send_hour_local:
       type: integer
       label: 'Default outreach send hour (local time, 0-23)'

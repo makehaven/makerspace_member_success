@@ -18,7 +18,7 @@ class StageContextField extends FieldPluginBase {
    */
   public function query() {
     $this->ensureMyTable();
-    $this->addAdditionalFields(['pause_start_date', 'onboarding_step', 'onboarding_step_ts']);
+    $this->addAdditionalFields(['pause_start_date', 'pause_resume_date', 'onboarding_step', 'onboarding_step_ts']);
   }
 
   /**
@@ -134,8 +134,14 @@ class StageContextField extends FieldPluginBase {
           $pause_start_ts = strtotime($pause_start_date . ' 00:00:00');
           $pause_days = (int) floor(($now - $pause_start_ts) / 86400);
           $days_remaining = max(0, 90 - $pause_days);
+          // Chargebee's resume date, when synced, replaces the 90-day guess.
+          $resume_date = $values->ms_member_success_snapshot_pause_resume_date ?? '';
+          $resume_ts = $resume_date ? strtotime($resume_date . ' 00:00:00') : FALSE;
+          if ($resume_ts) {
+            $days_remaining = max(0, (int) ceil(($resume_ts - $now) / 86400));
+          }
 
-          if ($pause_days >= 61) {
+          if ($resume_ts ? $days_remaining <= 14 : $pause_days >= 61) {
             $color = 'danger';
             $label = 'Ending soon';
           }
@@ -145,7 +151,9 @@ class StageContextField extends FieldPluginBase {
           }
 
           $output .= '<span class="text-' . $color . '">' . $label . ': <strong>' . $pause_days . ' days</strong></span>';
-          $output .= '<br><span class="small text-muted">~' . $days_remaining . ' days remaining</span>';
+          $output .= $resume_ts
+            ? '<br><span class="small text-muted">Resumes ' . date('M j', $resume_ts) . ' (' . $days_remaining . ' days)</span>'
+            : '<br><span class="small text-muted">~' . $days_remaining . ' days remaining</span>';
           $output .= '<br><span class="small text-muted">Since: ' . date('M j', $pause_start_ts) . '</span>';
         }
         else {

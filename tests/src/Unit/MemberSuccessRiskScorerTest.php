@@ -467,7 +467,9 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     $data['join_date'] = '2020-01-01';
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
     $this->assertSame(0, $score);
-    $this->assertSame([], $reasons);
+    // No dormancy reason; the pause_cold label (no visit before the pause)
+    // is not dormancy and carries no points.
+    $this->assertSame([MemberSuccessRiskScorer::REASON_PAUSE_COLD], $reasons);
   }
 
   /**
@@ -481,7 +483,8 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     $data['payment_failed_since'] = date('Y-m-d', $now_ts);
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, $this->dormancyOn());
     $this->assertSame(55, $score);
-    $this->assertSame(['payment_failed_fresh'], $reasons);
+    // 200 days absent: labelled cold for the dunning triage, never dormant.
+    $this->assertSame(['payment_failed_fresh', MemberSuccessRiskScorer::REASON_PAYMENT_FAILED_COLD], $reasons);
   }
 
   /**
@@ -583,6 +586,88 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 60, 180, [30, 60, 90], $now_ts, 30, ['settled_days' => 0] + $this->dormancyOn());
     $this->assertSame(50, $score);
     $this->assertSame(['no_visit_90'], $reasons);
+  }
+
+  /**
+   * A payment-failed member with no visit in 90 days is labelled cold.
+   */
+  public function testPaymentFailedColdLabelAddsNoPoints(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $base = [
+      'stage' => MemberSuccessLifecycle::STAGE_RECOVERY,
+      'payment_failed' => TRUE,
+      'payment_failed_since' => date('Y-m-d', $now_ts - 4 * 86400),
+      'payment_pause' => FALSE,
+      'door_badge_status' => 'active',
+      'serial_present' => TRUE,
+      'activation_ts' => $now_ts - 800 * 86400,
+      'badge_count_total' => 3,
+      'badge_count_window' => 0,
+      'tenure_bucket' => 'sustaining',
+      'join_date' => NULL,
+    ];
+
+    [$cold_score, $cold_reasons] = MemberSuccessRiskScorer::calculate(['last_visit_ts' => $now_ts - 120 * 86400] + $base, 28, 180, [30, 60, 90], $now_ts);
+    [$warm_score, $warm_reasons] = MemberSuccessRiskScorer::calculate(['last_visit_ts' => $now_ts - 5 * 86400] + $base, 28, 180, [30, 60, 90], $now_ts);
+    [, $never_reasons] = MemberSuccessRiskScorer::calculate(['last_visit_ts' => NULL] + $base, 28, 180, [30, 60, 90], $now_ts);
+
+    $this->assertContains(MemberSuccessRiskScorer::REASON_PAYMENT_FAILED_COLD, $cold_reasons);
+    $this->assertContains(MemberSuccessRiskScorer::REASON_PAYMENT_FAILED_COLD, $never_reasons);
+    $this->assertNotContains(MemberSuccessRiskScorer::REASON_PAYMENT_FAILED_COLD, $warm_reasons);
+    $this->assertSame($warm_score, $cold_score, 'The cold label must not reorder the dunning queue.');
+  }
+
+  /**
+   * With a Chargebee resume date, pause_ending follows it, not day 61.
+   */
+  public function testPauseEndingFollowsResumeDate(): void {
+    $pause_start = mktime(0, 0, 0, 1, 1, 2025);
+    // One-month pause: day 25, resumes in 6 days -> ending.
+    $now_ts = $pause_start + 25 * 86400;
+    $data = $this->pausedBase(date('Y-m-d', $pause_start), $now_ts) + [
+      'pause_resume_date' => date('Y-m-d', $pause_start + 31 * 86400),
+      'pause_end_lead_days' => 14,
+    ];
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertContains('pause_ending', $reasons);
+    $this->assertSame(30, $score);
+
+    // Day 65 of a pause that resumes in 25 days -> not yet.
+    $now_ts = $pause_start + 65 * 86400;
+    $data = $this->pausedBase(date('Y-m-d', $pause_start), $now_ts) + [
+      'pause_resume_date' => date('Y-m-d', $pause_start + 90 * 86400),
+      'pause_end_lead_days' => 14,
+    ];
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertNotContains('pause_ending', $reasons);
+    $this->assertSame(0, $score);
+  }
+
+  /**
+   * Cold before the pause, measured at the pause start; short tenure = GEMS fit.
+   */
+  public function testPauseColdAndGemsFit(): void {
+    $pause_start = mktime(0, 0, 0, 3, 1, 2026);
+    $now_ts = $pause_start + 20 * 86400;
+    $base = $this->pausedBase(date('Y-m-d', $pause_start), $now_ts, 'new_member');
+
+    // Last visit 100 days before the pause, joined 200 days before it.
+    $data = ['last_visit_ts' => $pause_start - 100 * 86400, 'activation_ts' => $pause_start - 200 * 86400] + $base;
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertContains(MemberSuccessRiskScorer::REASON_PAUSE_COLD, $reasons);
+    $this->assertContains(MemberSuccessRiskScorer::REASON_PAUSE_GEMS_FIT, $reasons);
+    $this->assertSame(0, $score);
+
+    // Same, but a two-year member: cold, not a GEMS fit.
+    $data = ['last_visit_ts' => $pause_start - 100 * 86400, 'activation_ts' => $pause_start - 730 * 86400] + $base;
+    [, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertContains(MemberSuccessRiskScorer::REASON_PAUSE_COLD, $reasons);
+    $this->assertNotContains(MemberSuccessRiskScorer::REASON_PAUSE_GEMS_FIT, $reasons);
+
+    // Visited a week before pausing: not cold, even 20 days into the pause.
+    $data = ['last_visit_ts' => $pause_start - 7 * 86400, 'activation_ts' => $pause_start - 200 * 86400] + $base;
+    [, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertNotContains(MemberSuccessRiskScorer::REASON_PAUSE_COLD, $reasons);
   }
 
 }

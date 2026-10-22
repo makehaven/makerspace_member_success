@@ -266,3 +266,54 @@ template_reengage: |
   If now is not the time, no need to reply. We will not keep asking.
 
   The MakeHaven Team
+
+# --- Dunning triage + pause end ----------------------------------------------
+# "Cold" = no door visit in this many days. A payment-failed member who is cold
+# is labelled payment_failed_cold in the recovery queue (a different
+# conversation, not a card-fix call); a pauser cold before the pause began is
+# labelled pause_cold. Label only — no risk points.
+cold_days: 90
+# Pause-end outreach. Ships DARK. When on, paused members whose Chargebee
+# resume date falls within pause_end_lead_days are queued for staff approval,
+# once per pause. Cold pausers with under pause_gems_tenure_days of membership
+# get the GEMS-offer version of the email.
+pause_end_enabled: false
+pause_end_lead_days: 14
+pause_gems_tenure_days: 365
+# Dropped into the GEMS version as {pause_end.gems_offer}. Confirm the price
+# with the education lead before switching pause_end_enabled on.
+pause_end_gems_offer: 'a seat in an upcoming GEMS cohort at half price. GEMS is our small-group program that takes you through the core shop tools over a few weeks, and most people come out of it with a stack of new badges'
+stage_pause_end_cooldown_days: 30
+stage_pause_end_max_attempts: 0
+stage_pause_end_min_risk_to_contact: 0
+stage_pause_end_require_manual_approval: true
+template_pause_end: |
+  Subject: Your MakeHaven pause ends {pause.resume_date}
+
+  Hi {contact.first_name},
+
+  A quick note that your membership pause ends on {pause.resume_date}. Your
+  membership, and its billing, pick back up automatically that day.
+
+  If you need more time, or something has changed, just reply to this email
+  and a person will help you sort it out.
+
+  We look forward to seeing you back in the shop.
+
+  The MakeHaven Team
+template_pause_end__pause_gems_fit: |
+  Subject: Your MakeHaven pause ends {pause.resume_date}, and an offer
+
+  Hi {contact.first_name},
+
+  A quick note that your membership pause ends on {pause.resume_date}. Your
+  membership picks back up automatically that day.
+
+  To make coming back easier, we would like to offer you {pause_end.gems_offer}.
+  You can see the upcoming cohorts here: {gems.url}
+
+  If you would like a seat, just reply to this email and a person will set it
+  up. If you need more time on your pause, reply and we will help with that
+  too.
+
+  The MakeHaven Team

@@ -411,6 +411,14 @@ class MemberSuccessSnapshotBuilder {
       }
     }
 
+    // Chargebee's scheduled resume date for a current pause, synced daily by
+    // PauseScheduleSync. NULL when unknown (not synced yet, or a pause with
+    // no end date), and the scorer then falls back to the 90-day assumption.
+    $pause_resume_date = NULL;
+    if ($payment_pause) {
+      $pause_resume_date = PauseScheduleSync::resumeDateFor($this->state, $uid);
+    }
+
     // Compute payment_failed_since: carry forward from previous snapshot if the
     // failure was already in progress yesterday; otherwise stamp today as the
     // first observed day of failure. Clear it when payment is no longer failed.
@@ -440,6 +448,10 @@ class MemberSuccessSnapshotBuilder {
       'tenure_bucket' => $tenure_bucket,
       'join_date' => $profile['join_date'],
       'pause_start_date' => $pause_start_date,
+      'pause_resume_date' => $pause_resume_date,
+      'cold_days' => (int) ($config->get('cold_days') ?? MemberSuccessRiskScorer::DEFAULT_COLD_DAYS),
+      'pause_end_lead_days' => (int) ($config->get('pause_end_lead_days') ?? 14),
+      'pause_gems_tenure_days' => (int) ($config->get('pause_gems_tenure_days') ?? 365),
       'orientation_scheduled' => $civi_data['orientation_scheduled'],
       'onboarding_step' => $onboarding_step,
       'onboarding_step_ts' => $onboarding_step_ts,
@@ -584,6 +596,7 @@ class MemberSuccessSnapshotBuilder {
       'payment_failed_since' => $payment_failed_since,
       'payment_pause' => $payment_pause ? 1 : 0,
       'pause_start_date' => $pause_start_date,
+      'pause_resume_date' => $pause_resume_date,
       'payment_status' => $profile['payment_status'],
       'member_followup_status' => $effective_member_followup_status,
       'civicrm_do_not_phone' => $civi_data['do_not_phone'],

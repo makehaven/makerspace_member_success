@@ -166,6 +166,12 @@ function makerspace_member_success_schema() {
         'not null' => FALSE,
         'description' => 'Date the current payment failure began (YYYY-MM-DD). Tracks dunning window age.',
       ],
+      'pause_resume_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Chargebee scheduled resume date of the current pause (YYYY-MM-DD), NULL when unknown.',
+      ],
       'payment_pause' => [
         'type' => 'int',
         'size' => 'tiny',
@@ -1980,4 +1986,50 @@ function makerspace_member_success_update_9038(): string {
   }
   $schema->addField('ms_billing_mismatch', 'dismiss_note', _makerspace_member_success_billing_mismatch_schema()['fields']['dismiss_note']);
   return 'Added ms_billing_mismatch.dismiss_note.';
+}
+
+/**
+ * Adds the pause resume date and seeds the dunning triage + pause-end settings.
+ */
+function makerspace_member_success_update_9039(): string {
+  $messages = [];
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('ms_member_success_snapshot') && !$schema->fieldExists('ms_member_success_snapshot', 'pause_resume_date')) {
+    $schema->addField('ms_member_success_snapshot', 'pause_resume_date', [
+      'type' => 'varchar',
+      'length' => 10,
+      'not null' => FALSE,
+      'description' => 'Chargebee scheduled resume date of the current pause (YYYY-MM-DD), NULL when unknown.',
+    ]);
+    $messages[] = 'Added ms_member_success_snapshot.pause_resume_date.';
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $defaults = [
+    'cold_days' => 90,
+    'pause_end_enabled' => FALSE,
+    'pause_end_lead_days' => 14,
+    'pause_gems_tenure_days' => 365,
+    'stage_pause_end_cooldown_days' => 30,
+    'stage_pause_end_max_attempts' => 0,
+    'stage_pause_end_min_risk_to_contact' => 0,
+    'stage_pause_end_require_manual_approval' => TRUE,
+  ];
+  // Offer and email copy come from config/install so there is one source.
+  $install = \Drupal::service('extension.list.module')->getPath('makerspace_member_success') . '/config/install/makerspace_member_success.settings.yml';
+  $install_values = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($install));
+  foreach (['pause_end_gems_offer', 'template_pause_end', 'template_pause_end__pause_gems_fit'] as $key) {
+    $defaults[$key] = $install_values[$key] ?? '';
+  }
+  $seeded = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $seeded[] = $key;
+    }
+  }
+  $config->save();
+  $messages[] = $seeded ? 'Seeded settings: ' . implode(', ', $seeded) . '.' : 'Pause-end settings already present.';
+  $messages[] = 'Run drush ms:pause-sync to fetch pause end dates now; cron does it daily on live.';
+  return implode(' ', $messages);
 }

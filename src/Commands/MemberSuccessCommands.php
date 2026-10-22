@@ -150,6 +150,30 @@ class MemberSuccessCommands extends DrushCommands {
   }
 
   /**
+   * Fetches each paused member's pause end date from Chargebee.
+   *
+   * Read-only against Chargebee. Cron does this daily on live; run it by hand
+   * after deploying, or on a non-live copy. Rebuild snapshots afterwards
+   * (ms:build) for the dates to reach the queues before the next daily build.
+   *
+   * @command ms:pause-sync
+   * @aliases ms-pause-sync
+   */
+  public function pauseSync(): void {
+    $stats = \Drupal::service('makerspace_member_success.pause_schedule_sync')->sync();
+    if ($stats['error']) {
+      $this->logger()->error(dt('Pause sync failed: @msg', ['@msg' => $stats['error']]));
+      return;
+    }
+    $this->logger()->success(dt('@paused paused subscription(s): @matched with a resume date, @none with no end date, @unmatched with no website account.', [
+      '@paused' => $stats['paused'],
+      '@matched' => $stats['matched'],
+      '@none' => $stats['no_resume_date'],
+      '@unmatched' => $stats['unmatched'],
+    ]));
+  }
+
+  /**
    * Previews the onboarding auto-nudge: who would be emailed, without sending.
    *
    * Runs the REAL candidate generation + OutreachQueueService::enqueueCandidate

@@ -56,6 +56,22 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     // would be truncated. OutreachMessageBuilder resolves the content at send time.
     $email_key = (string) ($config->get("template_$stage") ?? '') !== '' ? "template_$stage" : '';
     $sms_key = (string) ($config->get("sms_template_$stage") ?? '') !== '' ? "sms_template_$stage" : '';
+    // A reason-specific config template, "template_<stage>__<reason>", wins
+    // over the stage default when it is configured: e.g. the GEMS-offer
+    // version of the pause-end email for template_pause_end__pause_gems_fit.
+    // Numeric CiviCRM overrides below still win over both.
+    foreach ($risk_reasons as $reason) {
+      $reason = strtolower($reason);
+      if (!preg_match('/^[a-z0-9_]+$/', $reason)) {
+        continue;
+      }
+      if ((string) ($config->get("template_{$stage}__{$reason}") ?? '') !== '') {
+        $email_key = "template_{$stage}__{$reason}";
+      }
+      if ((string) ($config->get("sms_template_{$stage}__{$reason}") ?? '') !== '') {
+        $sms_key = "sms_template_{$stage}__{$reason}";
+      }
+    }
 
     $email_template = $this->resolveTemplateForChannel(
       $stage,

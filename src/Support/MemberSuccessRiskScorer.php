@@ -13,13 +13,46 @@ final class MemberSuccessRiskScorer {
   public const REASON_SETTLED_DORMANT = 'settled_dormant';
 
   /**
+   * Payment failed on a member who had already stopped coming in.
+   *
+   * Half of payment failures are churn wearing a payments costume: the lost
+   * half averaged 11 visits in the 90 days before the card failed against 22
+   * for those who recovered, and 54% of them had not been in at all (measured
+   * 2026-09-10, 111 failures). A card-fix call does not reach that half, so
+   * the queue labels them for a different conversation. Label only: it adds
+   * no points, so the dunning-day ordering is unchanged.
+   */
+  public const REASON_PAYMENT_FAILED_COLD = 'payment_failed_cold';
+
+  /**
+   * Paused after not coming in for the cold window before the pause began.
+   */
+  public const REASON_PAUSE_COLD = 'pause_cold';
+
+  /**
+   * Cold before pausing AND short tenure.
+   *
+   * The profile least likely to resume (ended pausers averaged 13.9 months'
+   * tenure and 5 prior visits, against 23.6 months and 10 for those who came
+   * back) and the profile GEMS activates. Selects the GEMS-offer variant of
+   * the pause-end email.
+   */
+  public const REASON_PAUSE_GEMS_FIT = 'pause_gems_fit';
+
+  /**
+   * Default "cold" window: no door visit in this many days.
+   */
+  public const DEFAULT_COLD_DAYS = 90;
+
+  /**
    * Calculates risk score and reasons for a member.
    *
    * @param array $data
    *   Snapshot data array with keys: stage, payment_failed, payment_pause,
    *   door_badge_status, serial_present, activation_ts, badge_count_total,
    *   badge_count_window, visit_count_30d, last_visit_ts, tenure_bucket,
-   *   join_date.
+   *   join_date. Optional: pause_resume_date, cold_days,
+   *   pause_end_lead_days, pause_gems_tenure_days.
    * @param int $badge_one_days
    *   Days threshold for first badge check.
    * @param int $badge_four_days
@@ -93,18 +126,40 @@ final class MemberSuccessRiskScorer {
         $score += 40;
         $reasons[] = 'payment_failed_stale';
       }
+
+      if (self::isCold($data['last_visit_ts'] ?? NULL, $now_ts, (int) ($data['cold_days'] ?? self::DEFAULT_COLD_DAYS))) {
+        $reasons[] = self::REASON_PAYMENT_FAILED_COLD;
+      }
     }
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_PAUSED) {
+      $pause_start_ts = NULL;
       $pause_duration_days = 0;
       if (!empty($data['pause_start_date'])) {
-        $pause_start_ts = strtotime($data['pause_start_date'] . ' 00:00:00');
+        $pause_start_ts = strtotime($data['pause_start_date'] . ' 00:00:00') ?: NULL;
         if ($pause_start_ts) {
           $pause_duration_days = (int) floor(($now_ts - $pause_start_ts) / 86400);
         }
       }
-      // High-risk window: approaching the 3-month Chargebee pause limit (days 61–90).
-      if ($pause_duration_days >= 61) {
+
+      // When does the pause end? Chargebee's own resume date when we have it
+      // (synced daily by PauseScheduleSync): pauses run one, two or three
+      // months, so the old "day 61 of an assumed 90" rule fired a month late
+      // for a one-month pause and a month early for nothing. Without a
+      // resume date, fall back to that rule.
+      $resume_ts = !empty($data['pause_resume_date'])
+        ? (strtotime($data['pause_resume_date'] . ' 00:00:00') ?: NULL)
+        : NULL;
+      $ending = FALSE;
+      if ($resume_ts !== NULL) {
+        $days_left = (int) ceil(($resume_ts - $now_ts) / 86400);
+        $ending = $days_left >= 0 && $days_left <= (int) ($data['pause_end_lead_days'] ?? 14);
+      }
+      else {
+        // Approaching the 3-month Chargebee pause limit (days 61–90).
+        $ending = $pause_duration_days >= 61;
+      }
+      if ($ending) {
         $penalty = 40;
         // Sustaining members are statistically more likely to return.
         if (($data['tenure_bucket'] ?? NULL) === 'sustaining') {
@@ -113,7 +168,20 @@ final class MemberSuccessRiskScorer {
         $score += $penalty;
         $reasons[] = 'pause_ending';
       }
-      // Low-risk window (days 1–60): planned break, no penalty.
+
+      // Cold before the pause: no visit in the cold window ending on the day
+      // the pause began. Measured against the pause start, not today — nobody
+      // comes in while paused.
+      $cold_days = (int) ($data['cold_days'] ?? self::DEFAULT_COLD_DAYS);
+      if ($pause_start_ts !== NULL && self::isCold($data['last_visit_ts'] ?? NULL, $pause_start_ts, $cold_days)) {
+        $reasons[] = self::REASON_PAUSE_COLD;
+        $gems_tenure_days = (int) ($data['pause_gems_tenure_days'] ?? 365);
+        $activation_ts = !empty($data['activation_ts']) ? (int) $data['activation_ts'] : NULL;
+        if ($activation_ts !== NULL && $gems_tenure_days > 0
+          && ($pause_start_ts - $activation_ts) < $gems_tenure_days * 86400) {
+          $reasons[] = self::REASON_PAUSE_GEMS_FIT;
+        }
+      }
     }
 
     if ($data['stage'] === MemberSuccessLifecycle::STAGE_ONBOARDING) {
@@ -341,6 +409,22 @@ final class MemberSuccessRiskScorer {
       }
     }
     return [0, NULL];
+  }
+
+  /**
+   * Whether the member had no door visit in the cold window ending at $as_of.
+   *
+   * A member with no recorded visit at all counts as cold. The door log
+   * starts September 2024 and misses tailgaters, so this is a floor.
+   */
+  public static function isCold(mixed $last_visit_ts, int $as_of, int $cold_days): bool {
+    if ($cold_days <= 0) {
+      return FALSE;
+    }
+    if (empty($last_visit_ts)) {
+      return TRUE;
+    }
+    return ($as_of - (int) $last_visit_ts) >= $cold_days * 86400;
   }
 
   /**

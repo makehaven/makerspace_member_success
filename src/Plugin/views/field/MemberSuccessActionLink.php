@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Url;
 use Drupal\views\Plugin\views\field\FieldPluginBase;
+use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
 use Drupal\views\ResultRow;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -193,8 +194,22 @@ class MemberSuccessActionLink extends FieldPluginBase {
         $failed = $values->ms_member_success_snapshot_payment_failed ?? 0;
         $paused = $values->ms_member_success_snapshot_payment_pause ?? 0;
         if ($failed) {
-          $status_badge = '<span class="badge bg-danger">Payment Failed</span>';
-          $action_text = '<strong>→ Call to update payment method</strong>';
+          // Dunning triage (retention brief 2026-09-10): failures on members
+          // who still come in recover with a card-fix call; failures on
+          // members who had already stopped coming are mostly an exit, and a
+          // "please update your card" call does not reach them.
+          $last_visit_ts = (int) ($values->ms_member_success_snapshot_last_visit_ts ?? 0);
+          $badges = (int) ($values->ms_member_success_snapshot_badge_count_total ?? 0);
+          $cold_days = (int) ($config->get('cold_days') ?? MemberSuccessRiskScorer::DEFAULT_COLD_DAYS);
+          if (MemberSuccessRiskScorer::isCold($last_visit_ts ?: NULL, time(), $cold_days)) {
+            $status_badge = '<span class="badge bg-danger">Payment Failed</span> <span class="badge bg-secondary" title="No door visit in ' . $cold_days . '+ days">Not coming in</span>';
+            $action_text = '<strong>→ Not a card call:</strong> ask what would make membership worth it (pause, a class, a different plan)';
+          }
+          else {
+            $since = $last_visit_ts ? (int) floor((time() - $last_visit_ts) / 86400) : 0;
+            $status_badge = '<span class="badge bg-danger">Payment Failed</span> <span class="badge bg-success" title="Last door visit ' . $since . ' day(s) ago, ' . $badges . ' badges">Still coming in</span>';
+            $action_text = '<strong>→ Card-fix call:</strong> they use the space, so updating the card usually resolves it';
+          }
           $email_label = 'Email';
         }
         elseif ($paused) {
@@ -212,6 +227,22 @@ class MemberSuccessActionLink extends FieldPluginBase {
       case 'paused':
         $status_badge = '<span class="badge bg-warning text-dark">Paused</span>';
         $action_text = '→ Confirm return timeline before pause limit';
+        $uid_for_pause = (int) ($values->ms_member_success_snapshot_uid ?? $values->users_field_data_ms_member_success_snapshot_uid ?? 0);
+        $resume = $uid_for_pause ? $this->database->select('ms_member_success_snapshot', 'ms')
+          ->fields('ms', ['pause_resume_date'])
+          ->condition('ms.uid', $uid_for_pause)
+          ->condition('ms.is_latest', 1)
+          ->condition('ms.snapshot_type', 'daily')
+          ->range(0, 1)
+          ->execute()
+          ->fetchField() : NULL;
+        if ($resume && ($resume_ts = strtotime($resume . ' 00:00:00'))) {
+          $days_left = (int) ceil(($resume_ts - time()) / 86400);
+          $status_badge = '<span class="badge bg-warning text-dark">Paused</span> <span class="badge bg-light text-dark">Resumes ' . date('M j', $resume_ts) . '</span>';
+          $action_text = $days_left <= (int) ($config->get('pause_end_lead_days') ?? 14)
+            ? '→ Pause ends in ' . max(0, $days_left) . ' day(s): welcome them back'
+            : '→ On a planned break, no action yet';
+        }
         $email_label = 'Email';
         break;
     }

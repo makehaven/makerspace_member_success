@@ -162,6 +162,58 @@ class OutreachCandidateGenerator {
   }
 
   /**
+   * Paused members whose pause ends within the next $leadDays days.
+   *
+   * Driven by the Chargebee resume date (pause_resume_date), never by an
+   * assumed pause length: a member with no known end date is not a candidate.
+   * One message per pause — anyone with a pause_end queue row created since
+   * this pause began is skipped, whatever its status.
+   *
+   * Risk-floor free, like the badge nudge: what makes someone a candidate is
+   * the date, not a score.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Candidate rows with stage "pause_end", soonest end first.
+   */
+  public function generatePauseEndCandidates(int $leadDays = 14): array {
+    if ($leadDays <= 0) {
+      return [];
+    }
+    $now = $this->now();
+    $today = date('Y-m-d', $now);
+    $horizon = date('Y-m-d', $now + $leadDays * 86400);
+
+    $query = $this->baseQuery();
+    $query->condition('ms.stage', 'paused');
+    $query->condition('ms.pause_resume_date', $today, '>=');
+    $query->condition('ms.pause_resume_date', $horizon, '<=');
+    $query->addField('ms', 'pause_resume_date', 'pause_resume_date');
+    $query->addField('ms', 'pause_start_date', 'pause_start_date');
+    $query->orderBy('ms.pause_resume_date', 'ASC');
+    $query->range(0, 500);
+    $rows = $query->execute()->fetchAll();
+
+    $candidates = [];
+    foreach ($this->mapRows($rows) as $i => $candidate) {
+      $pause_start_ts = strtotime(((string) ($rows[$i]->pause_start_date ?? '')) . ' 00:00:00') ?: 0;
+      $already = $this->database->select('ms_member_outreach_queue', 'pq')
+        ->condition('pq.uid', $candidate['uid'])
+        ->condition('pq.stage', 'pause_end')
+        ->condition('pq.created_at', $pause_start_ts, '>=')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      if ((int) $already > 0) {
+        continue;
+      }
+      $candidate['stage'] = 'pause_end';
+      $candidate['pause_resume_date'] = (string) $rows[$i]->pause_resume_date;
+      $candidates[] = $candidate;
+    }
+    return $candidates;
+  }
+
+  /**
    * The shared, enriched candidate query.
    *
    * Carries the joins every campaign needs — email, CiviCRM contact and

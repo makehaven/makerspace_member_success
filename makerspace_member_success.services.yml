@@ -64,6 +64,15 @@ services:
       - '@logger.factory'
       - '@entity_type.manager'
 
+  makerspace_member_success.pause_schedule_sync:
+    class: Drupal\makerspace_member_success\Service\PauseScheduleSync
+    arguments:
+      - '@makerspace_member_success.chargebee_account_reconciler'
+      - '@database'
+      - '@state'
+      - '@datetime.time'
+      - '@logger.factory'
+
   makerspace_member_success.duplicate_finder:
     class: Drupal\makerspace_member_success\Service\DuplicateRecordFinder
     arguments:

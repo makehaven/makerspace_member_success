@@ -615,12 +615,25 @@ class ChargebeeAccountReconciler {
    * Lists every paying subscription with its customer.
    */
   protected function fetchPayingSubscriptions(): array {
+    return $this->fetchSubscriptions(self::PAYING_STATUSES);
+  }
+
+  /**
+   * Lists every subscription in the given Chargebee statuses.
+   *
+   * Read-only. Throws on any failed page, so a caller never acts on a
+   * partial listing. Also used by PauseScheduleSync for paused subscriptions.
+   *
+   * @param string[] $statuses
+   *   Chargebee subscription statuses, e.g. ['paused'].
+   */
+  public function fetchSubscriptions(array $statuses): array {
     [$base, $auth] = $this->authContext();
     $rows = [];
     $offset = NULL;
     $pages = 0;
     do {
-      $query = ['limit' => 100, 'status[in]' => json_encode(self::PAYING_STATUSES)];
+      $query = ['limit' => 100, 'status[in]' => json_encode(array_values($statuses))];
       if ($offset !== NULL) {
         $query['offset'] = $offset;
       }

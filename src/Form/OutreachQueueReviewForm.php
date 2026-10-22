@@ -60,7 +60,7 @@ class OutreachQueueReviewForm extends FormBase {
     }
 
     $stage_filter = (string) ($this->getRequest()->query->get('stage') ?? '');
-    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused', 'reengage'];
+    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused', 'pause_end', 'reengage'];
     if (!in_array($stage_filter, $allowed_stages, TRUE)) {
       $stage_filter = '';
     }
@@ -87,6 +87,7 @@ class OutreachQueueReviewForm extends FormBase {
         'retention' => $this->t('Retention'),
         'recovery' => $this->t('Recovery'),
         'paused' => $this->t('Paused'),
+        'pause_end' => $this->t('Pause ending'),
         'reengage' => $this->t('Re-engagement offer'),
       ],
       '#default_value' => $stage_filter,
@@ -337,7 +338,7 @@ class OutreachQueueReviewForm extends FormBase {
       $status = 'queued';
     }
     $stage = (string) ($this->getRequest()->query->get('stage') ?? '');
-    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused'];
+    $allowed_stages = ['', 'onboarding', 'engagement', 'retention', 'recovery', 'paused', 'pause_end', 'reengage'];
     if (!in_array($stage, $allowed_stages, TRUE)) {
       $stage = '';
     }
@@ -753,6 +754,9 @@ class OutreachQueueReviewForm extends FormBase {
       'no_badge_4' => (string) $this->t('Low badge count'),
       'pause_ending' => (string) $this->t('Pause ending soon'),
       'settled_dormant' => (string) $this->t('Long absent — offer only, no calls'),
+      'payment_failed_cold' => (string) $this->t('Not coming in — ask what would make it worth it, not a card call'),
+      'pause_cold' => (string) $this->t('Had stopped coming in before pausing'),
+      'pause_gems_fit' => (string) $this->t('Newer member, cold before pausing — GEMS offer'),
     ];
     if (isset($map[$reason])) {
       return $map[$reason];

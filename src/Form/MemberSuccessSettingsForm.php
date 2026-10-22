@@ -201,6 +201,60 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (string) ($config->get('template_reengage') ?? ''),
     ];
 
+    $form['thresholds']['cold_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('"Not coming in" threshold (days without a door visit)'),
+      '#description' => $this->t('Labels payment-failed members in the recovery queue as "Not coming in" (a different conversation, not a card-fix call), and pausers who had stopped coming before their pause. A label only; it does not change the risk score.'),
+      '#default_value' => (int) ($config->get('cold_days') ?? 90),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['pause_end'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Pause ending'),
+      '#description' => $this->t('Queues a message to paused members shortly before their pause ends, using the resume date from Chargebee (synced daily). Once per pause, and each needs staff approval on the outreach review page before it sends. Newer members who had stopped coming in before pausing get the GEMS-offer version.'),
+    ];
+    $form['thresholds']['pause_end']['pause_end_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Queue pause-ending messages'),
+      '#default_value' => (bool) ($config->get('pause_end_enabled') ?? FALSE),
+    ];
+    $form['thresholds']['pause_end']['pause_end_lead_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Days before the pause ends'),
+      '#default_value' => (int) ($config->get('pause_end_lead_days') ?? 14),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['pause_end']['pause_gems_tenure_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('GEMS offer for members with less than this many days of membership'),
+      '#default_value' => (int) ($config->get('pause_gems_tenure_days') ?? 365),
+      '#min' => 0,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['pause_end']['pause_end_gems_offer'] = [
+      '#type' => 'textarea',
+      '#rows' => 2,
+      '#title' => $this->t('The GEMS offer'),
+      '#description' => $this->t('Inserted into the GEMS version as {pause_end.gems_offer}.'),
+      '#default_value' => (string) ($config->get('pause_end_gems_offer') ?? ''),
+    ];
+    $form['thresholds']['pause_end']['template_pause_end'] = [
+      '#type' => 'textarea',
+      '#rows' => 12,
+      '#title' => $this->t('Pause-ending email'),
+      '#description' => $this->t('First line "Subject: …" sets the subject. Tokens: {contact.first_name}, {pause.resume_date}, {domain.base_url}.'),
+      '#default_value' => (string) ($config->get('template_pause_end') ?? ''),
+    ];
+    $form['thresholds']['pause_end']['template_pause_end__pause_gems_fit'] = [
+      '#type' => 'textarea',
+      '#rows' => 12,
+      '#title' => $this->t('Pause-ending email, GEMS offer version'),
+      '#description' => $this->t('Tokens: {contact.first_name}, {pause.resume_date}, {pause_end.gems_offer}, {gems.url}. Leave empty to send everyone the standard email.'),
+      '#default_value' => (string) ($config->get('template_pause_end__pause_gems_fit') ?? ''),
+    ];
+
     $form['thresholds']['onboarding_stall_hours'] = [
       '#type' => 'number',
       '#title' => $this->t('Onboarding step stall threshold (hours)'),
@@ -577,6 +631,13 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('stage_reengage_cooldown_days', (int) $form_state->getValue('stage_reengage_cooldown_days'))
       ->set('reengage_offer', trim((string) $form_state->getValue('reengage_offer')))
       ->set('template_reengage', (string) $form_state->getValue('template_reengage'))
+      ->set('cold_days', (int) $form_state->getValue('cold_days'))
+      ->set('pause_end_enabled', (bool) $form_state->getValue('pause_end_enabled'))
+      ->set('pause_end_lead_days', (int) $form_state->getValue('pause_end_lead_days'))
+      ->set('pause_gems_tenure_days', (int) $form_state->getValue('pause_gems_tenure_days'))
+      ->set('pause_end_gems_offer', trim((string) $form_state->getValue('pause_end_gems_offer')))
+      ->set('template_pause_end', (string) $form_state->getValue('template_pause_end'))
+      ->set('template_pause_end__pause_gems_fit', (string) $form_state->getValue('template_pause_end__pause_gems_fit'))
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))
       ->set('template_onboarding', $form_state->getValue('template_onboarding'))
       ->set('template_engagement', $form_state->getValue('template_engagement'))
