@@ -201,7 +201,17 @@ class MemberSuccessActionLink extends FieldPluginBase {
           $last_visit_ts = (int) ($values->ms_member_success_snapshot_last_visit_ts ?? 0);
           $badges = (int) ($values->ms_member_success_snapshot_badge_count_total ?? 0);
           $cold_days = (int) ($config->get('cold_days') ?? MemberSuccessRiskScorer::DEFAULT_COLD_DAYS);
-          if (MemberSuccessRiskScorer::isCold($last_visit_ts ?: NULL, time(), $cold_days)) {
+          $is_cold = MemberSuccessRiskScorer::isCold($last_visit_ts ?: NULL, time(), $cold_days);
+          // The Email button opens the recovery email that fits this member
+          // (signed off by Kate 2026-10-22). Template 167 says the membership
+          // "recently ended", which is wrong while Chargebee is still
+          // retrying. Falls back to the configured template until the
+          // 2026-10-22-recovery-emails content script has run.
+          $recovery_template = $this->recoveryTemplateId($values, $is_cold);
+          if ($recovery_template) {
+            $query['template'] = $query['template_id'] = $query['msg_template_id'] = $recovery_template;
+          }
+          if ($is_cold) {
             $status_badge = '<span class="badge bg-danger">Payment Failed</span> <span class="badge bg-secondary" title="No door visit in ' . $cold_days . '+ days">Not coming in</span>';
             $action_text = '<strong>→ Not a card call:</strong> ask what would make membership worth it (pause, a class, a different plan)';
           }
@@ -483,6 +493,61 @@ class MemberSuccessActionLink extends FieldPluginBase {
     }
 
     return $this->smsConsentTable !== NULL && $this->smsConsentColumn !== NULL;
+  }
+
+  /**
+   * Titles of the recovery email templates, by situation.
+   */
+  public const RECOVERY_TEMPLATE_TITLES = [
+    'warm' => 'Recovery: payment failed - still coming in',
+    'cold_standard' => 'Recovery: payment failed - not coming in (Standard plan)',
+    'cold' => 'Recovery: payment failed - not coming in',
+  ];
+
+  /**
+   * The CiviCRM template id for a payment-failed member's recovery email.
+   *
+   * Still coming in: the card-fix email. Not coming in: the options email,
+   * with the reduced-rate line only for members on a Standard plan (the
+   * snapshot's membership_type). NULL when the template does not exist.
+   */
+  protected function recoveryTemplateId(ResultRow $values, bool $is_cold): ?int {
+    $key = 'warm';
+    if ($is_cold) {
+      $uid = (int) ($values->ms_member_success_snapshot_uid ?? $values->users_field_data_ms_member_success_snapshot_uid ?? 0);
+      $type = $uid ? $this->database->select('ms_member_success_snapshot', 'ms')
+        ->fields('ms', ['membership_type'])
+        ->condition('ms.uid', $uid)
+        ->condition('ms.is_latest', 1)
+        ->condition('ms.snapshot_type', 'daily')
+        ->range(0, 1)
+        ->execute()
+        ->fetchField() : NULL;
+      $key = $type === 'Standard' ? 'cold_standard' : 'cold';
+    }
+
+    static $ids = NULL;
+    if ($ids === NULL) {
+      $ids = [];
+      try {
+        $rows = $this->database->select('civicrm_msg_template', 't')
+          ->fields('t', ['id', 'msg_title'])
+          ->condition('t.msg_title', array_values(self::RECOVERY_TEMPLATE_TITLES), 'IN')
+          ->condition('t.is_active', 1)
+          ->isNull('t.workflow_id')
+          ->execute()
+          ->fetchAllKeyed(1, 0);
+        foreach (self::RECOVERY_TEMPLATE_TITLES as $k => $title) {
+          if (isset($rows[$title])) {
+            $ids[$k] = (int) $rows[$title];
+          }
+        }
+      }
+      catch (\Throwable $e) {
+        // CiviCRM tables unavailable: keep the configured template.
+      }
+    }
+    return $ids[$key] ?? NULL;
   }
 
 }
