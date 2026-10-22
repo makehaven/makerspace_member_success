@@ -135,6 +135,50 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
   }
 
   /**
+   * Stale queued rows expire; fresh, approved and sent rows are untouched.
+   */
+  public function testExpireStaleQueued(): void {
+    $this->installSchema('system', ['sequences']);
+    $this->installSchema('makerspace_member_success', ['ms_member_outreach_queue', 'ms_member_success_snapshot', 'ms_member_outreach_log']);
+
+    $service = $this->buildQueueService();
+    $snapshot = static fn(int $uid): array => [
+      'stage' => 'retention',
+      'risk_score' => 45,
+      'risk_reasons' => ['inactive_60'],
+      'contact_count' => 0,
+      'last_contact_date' => '',
+      'email' => "member$uid@example.com",
+      'phone' => '',
+      'is_opt_out' => 0,
+      'do_not_email' => 0,
+      'do_not_sms' => 0,
+    ];
+    $stale = $service->enqueueCandidate(201, 'retention', $snapshot(201));
+    $fresh = $service->enqueueCandidate(202, 'retention', $snapshot(202));
+    $sent = $service->enqueueCandidate(203, 'retention', $snapshot(203));
+    $service->markSent($sent, ['provider_message_id' => 'manual']);
+
+    $old = \Drupal::time()->getCurrentTime() - 200 * 86400;
+    $this->container->get('database')->update('ms_member_outreach_queue')
+      ->fields(['updated_at' => $old])
+      ->condition('id', [$stale, $sent], 'IN')
+      ->execute();
+
+    $this->assertSame(1, $service->expireStaleQueued(30));
+    $this->assertSame('cancelled', (string) $this->databaseRow($stale)['status']);
+    $this->assertSame('expired_stale', (string) $this->databaseRow($stale)['suppression_reason_code']);
+    $this->assertSame('queued', (string) $this->databaseRow($fresh)['status']);
+    $this->assertSame('sent', (string) $this->databaseRow($sent)['status']);
+    $this->assertSame(0, $service->expireStaleQueued(0), '0 disables expiry.');
+
+    // The member qualifying again reopens the same row.
+    $reopened = $service->enqueueCandidate(201, 'retention', $snapshot(201));
+    $this->assertSame($stale, $reopened);
+    $this->assertSame('queued', (string) $this->databaseRow($stale)['status']);
+  }
+
+  /**
    * Tests enqueue is idempotent for same user/stage open queue rows.
    */
   public function testEnqueueCandidateIdempotentForOpenRows(): void {

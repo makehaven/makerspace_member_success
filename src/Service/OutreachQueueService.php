@@ -199,6 +199,41 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
   }
 
   /**
+   * Cancels queued rows nobody has acted on or refreshed in $days days.
+   *
+   * A queued row waits for a person to approve it. Rows that cron keeps
+   * re-evaluating (recovery, onboarding, badge, pause-end) are refreshed on
+   * every run, so their updated_at stays current; what goes stale is a row
+   * from a one-off "Generate candidates" press that nobody ever worked. On
+   * 2026-10-22 that was 198 retention rows queued in March — before the
+   * 10-14 change that stopped calling long-absent members, so many of them
+   * now point at exactly the people we decided to leave alone, and one bulk
+   * approve would have contacted all of them.
+   *
+   * Cancelled rows are not lost: they stay in the table with reason
+   * expired_stale, and enqueueCandidate() reopens one if the member qualifies
+   * again.
+   *
+   * @return int
+   *   Rows cancelled.
+   */
+  public function expireStaleQueued(int $days): int {
+    if ($days <= 0) {
+      return 0;
+    }
+    $now = $this->time->getCurrentTime();
+    return (int) $this->database->update('ms_member_outreach_queue')
+      ->fields([
+        'status' => 'cancelled',
+        'suppression_reason_code' => 'expired_stale',
+        'updated_at' => $now,
+      ])
+      ->condition('status', 'queued')
+      ->condition('updated_at', $now - $days * 86400, '<')
+      ->execute();
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function markSent(int $queueId, array $providerMeta = []): void {

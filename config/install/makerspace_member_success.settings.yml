@@ -267,6 +267,11 @@ template_reengage: |
 
   The MakeHaven Team
 
+# Queued outreach rows untouched for this many days are cancelled
+# (expired_stale) by cron, so a forgotten batch cannot be bulk-approved months
+# later. Cron-fed stages refresh their rows every run. 0 = never expire.
+queue_stale_days: 30
+
 # --- Dunning triage + pause end ----------------------------------------------
 # "Cold" = no door visit in this many days. A payment-failed member who is cold
 # is labelled payment_failed_cold in the recovery queue (a different

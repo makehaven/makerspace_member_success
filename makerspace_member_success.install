@@ -2033,3 +2033,19 @@ function makerspace_member_success_update_9039(): string {
   $messages[] = 'Run drush ms:pause-sync to fetch pause end dates now; cron does it daily on live.';
   return implode(' ', $messages);
 }
+
+/**
+ * Seeds queue_stale_days: queued outreach rows untouched 30 days expire.
+ */
+function makerspace_member_success_update_9040(): string {
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  if ($config->get('queue_stale_days') !== NULL) {
+    return 'queue_stale_days already set.';
+  }
+  $config->set('queue_stale_days', 30)->save();
+  $stale = (int) \Drupal::database()->select('ms_member_outreach_queue', 'q')
+    ->condition('status', 'queued')
+    ->condition('updated_at', \Drupal::time()->getRequestTime() - 30 * 86400, '<')
+    ->countQuery()->execute()->fetchField();
+  return "Seeded queue_stale_days = 30. The next cron cancels $stale queued row(s) untouched for 30+ days (reason expired_stale).";
+}

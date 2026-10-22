@@ -100,6 +100,9 @@ makerspace_member_success.settings:
     template_reengage:
       type: text
       label: 'Re-engagement offer email'
+    queue_stale_days:
+      type: integer
+      label: 'Days a queued outreach row may sit untouched before it is cancelled (0 = never)'
     cold_days:
       type: integer
       label: 'Days without a door visit after which a member counts as cold'

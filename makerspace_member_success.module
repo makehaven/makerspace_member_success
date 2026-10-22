@@ -292,6 +292,20 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Pause-end outreach failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
+  // 2b'''. Expire queued rows nobody has worked or refreshed in
+  // queue_stale_days (30). Cron-fed stages refresh their rows on every run,
+  // so this only touches rows nobody is working (0 = never expire).
+  try {
+    $stale_days = (int) (\Drupal::config('makerspace_member_success.settings')->get('queue_stale_days') ?? 30);
+    $expired = \Drupal::service('makerspace_member_success.outreach_queue_service')->expireStaleQueued($stale_days);
+    if ($expired > 0) {
+      \Drupal::logger('makerspace_member_success')->notice('Outreach queue: @n row(s) queued @days+ days with no action were cancelled (expired_stale).', ['@n' => $expired, '@days' => $stale_days]);
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Outreach queue expiry failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
   // 2c. Recovery candidates: members whose payment has failed. Until
   // 2026-09-21 the only thing that ever put a recovery-stage member into the
   // outreach queue was a staff member pressing "Generate candidates" on the

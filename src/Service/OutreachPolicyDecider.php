@@ -54,8 +54,15 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
     // Pass the config key name (e.g. "template_onboarding") as the default,
     // not the full template text. The column is varchar(64) and the full text
     // would be truncated. OutreachMessageBuilder resolves the content at send time.
-    $email_key = (string) ($config->get("template_$stage") ?? '') !== '' ? "template_$stage" : '';
-    $sms_key = (string) ($config->get("sms_template_$stage") ?? '') !== '' ? "sms_template_$stage" : '';
+    // Only TEXT templates can be sent automatically. Several stages hold a
+    // CiviCRM message-template id instead ('165', '166', '167'): that id is
+    // for the staff Email button, which opens CiviCRM's compose form with it.
+    // The automated sender used to read it as the email itself, so approving
+    // such a row would have mailed the member a bare "166" with no subject
+    // (found 2026-10-22, with 198 retention rows queued since March).
+    $email_key = self::isTextTemplate($config->get("template_$stage")) ? "template_$stage" : '';
+    $sms_key = self::isTextTemplate($config->get("sms_template_$stage")) ? "sms_template_$stage" : '';
+    $civicrm_only = $email_key === '' && self::isCiviCrmTemplateId($config->get("template_$stage"));
     // A reason-specific config template, "template_<stage>__<reason>", wins
     // over the stage default when it is configured: e.g. the GEMS-offer
     // version of the pause-end email for template_pause_end__pause_gems_fit.
@@ -65,10 +72,11 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
       if (!preg_match('/^[a-z0-9_]+$/', $reason)) {
         continue;
       }
-      if ((string) ($config->get("template_{$stage}__{$reason}") ?? '') !== '') {
+      if (self::isTextTemplate($config->get("template_{$stage}__{$reason}"))) {
         $email_key = "template_{$stage}__{$reason}";
+        $civicrm_only = FALSE;
       }
-      if ((string) ($config->get("sms_template_{$stage}__{$reason}") ?? '') !== '') {
+      if (self::isTextTemplate($config->get("sms_template_{$stage}__{$reason}"))) {
         $sms_key = "sms_template_{$stage}__{$reason}";
       }
     }
@@ -85,7 +93,7 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
       $sms_key,
       (array) ($config->get('sms_template_overrides') ?? [])
     );
-    $template_reason = NULL;
+    $template_reason = $civicrm_only ? 'suppressed_civicrm_template_manual' : NULL;
 
     if (str_contains($preferred, 'sms')) {
       $sms_check = $this->suppressionChecker->check($uid, 'sms', $context);
@@ -128,6 +136,21 @@ class OutreachPolicyDecider implements OutreachPolicyDeciderInterface {
 
     $reason = $template_reason ?? $email_check->reasonCode ?? $sms_check->reasonCode ?? 'suppressed_no_allowed_channel';
     return new OutreachDecision('manual_only', NULL, $reason, $priority);
+  }
+
+  /**
+   * Whether a configured template value is email text the sender can use.
+   */
+  public static function isTextTemplate(mixed $value): bool {
+    $value = trim((string) ($value ?? ''));
+    return $value !== '' && !self::isCiviCrmTemplateId($value);
+  }
+
+  /**
+   * Whether a configured template value is a bare CiviCRM template id.
+   */
+  public static function isCiviCrmTemplateId(mixed $value): bool {
+    return (bool) preg_match('/^\d+$/', trim((string) ($value ?? '')));
   }
 
   /**

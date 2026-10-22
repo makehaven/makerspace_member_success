@@ -177,6 +177,20 @@ class OutreachPolicyDeciderTest extends UnitTestCase {
         'template_retention',
         'pref_email',
       ],
+      'civicrm_template_id_is_never_sent_automatically' => [
+        array_replace($base_config, [
+          'template_retention' => '166',
+          'sms_template_retention' => '170',
+        ]),
+        $base_snapshot + ['preferred_outreach_method' => 'email'],
+        [
+          'sms' => new SuppressionResult(TRUE),
+          'email' => new SuppressionResult(TRUE),
+        ],
+        'manual_only',
+        NULL,
+        'suppressed_civicrm_template_manual',
+      ],
       'exact_stage_reason_override_beats_default' => [
         array_replace($base_config, [
           'email_template_overrides' => ['retention.payment_failed=777'],

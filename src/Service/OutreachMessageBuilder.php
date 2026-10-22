@@ -91,7 +91,10 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     // Config-based template key (e.g. "template_onboarding", "sms_template_retention").
     if (preg_match('/^(sms_)?template_/', $templateId)) {
       $config = $this->configFactory->get('makerspace_member_success.settings');
-      return (string) ($config->get($templateId) ?? '');
+      $content = (string) ($config->get($templateId) ?? '');
+      // A bare number is a CiviCRM template id for the staff Email button,
+      // never email text. Empty content makes the sender refuse the row.
+      return OutreachPolicyDecider::isTextTemplate($content) ? $content : '';
     }
 
     // CiviCRM numeric template ID — not yet implemented; return empty.

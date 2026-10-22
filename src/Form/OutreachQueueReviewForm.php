@@ -552,6 +552,8 @@ class OutreachQueueReviewForm extends FormBase {
       'suppressed_no_sms_consent' => (string) $this->t('No SMS consent'),
       'suppressed_missing_template_sms' => (string) $this->t('Missing SMS template'),
       'suppressed_missing_template_email' => (string) $this->t('Missing email template'),
+      'suppressed_civicrm_template_manual' => (string) $this->t('CiviCRM template — send by hand with the Email button'),
+      'expired_stale' => (string) $this->t('Expired: queued 30+ days with no action'),
       'suppressed_no_allowed_channel' => (string) $this->t('No allowed contact channel'),
       'manual_suppressed' => (string) $this->t('Manually suppressed'),
       'handled_offline' => (string) $this->t('Handled offline'),
