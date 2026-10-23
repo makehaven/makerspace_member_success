@@ -115,6 +115,24 @@ makerspace_member_success.settings:
     holdout_window_days:
       type: integer
       label: 'Days after assignment before a member counts in the holdout report'
+    pause_reason_enabled:
+      type: boolean
+      label: 'Email new pausers one question: why are you pausing?'
+    pause_reason_window_days:
+      type: integer
+      label: 'Ask only members whose pause began within this many days'
+    stage_pause_reason_cooldown_days:
+      type: integer
+      label: 'Pause-reason cooldown days after any contact'
+    stage_pause_reason_max_attempts:
+      type: integer
+      label: 'Pause-reason max attempts (0 = no cap; one per pause)'
+    stage_pause_reason_min_risk_to_contact:
+      type: integer
+      label: 'Pause-reason minimum risk score'
+    template_pause_reason:
+      type: text
+      label: 'Pause-reason email'
     cold_days:
       type: integer
       label: 'Days without a door visit after which a member counts as cold'

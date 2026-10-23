@@ -10,6 +10,7 @@ use Drupal\makerspace_member_success\Service\OutreachQueueService;
 use Drupal\makerspace_member_success\Service\OutreachSenderInterface;
 use Drupal\makerspace_member_success\Service\OutreachService;
 use Drupal\makerspace_member_success\Service\OutreachSuppressionCheckerInterface;
+use Drupal\makerspace_member_success\Service\PauseReasonStore;
 use Drupal\makerspace_member_success\Support\OutreachDecision;
 use Drupal\makerspace_member_success\Support\OutreachHoldout;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -308,6 +309,43 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
     $this->assertSame(1, $report['reengage']['holdout']['matured']);
     $this->assertSame(1, $report['reengage']['offer']['contacted']);
     $this->assertSame(0, $report['reengage']['offer']['came_in']);
+  }
+
+  /**
+   * The pause-reason question auto-sends on its own switch; answers store per pause.
+   */
+  public function testPauseReasonAutoApproveAndStore(): void {
+    $this->installSchema('system', ['sequences']);
+    $this->installSchema('makerspace_member_success', ['ms_member_outreach_queue', 'ms_pause_reason', 'ms_member_success_snapshot', 'ms_member_outreach_log']);
+    $this->config('makerspace_member_success.settings')
+      ->set('stage_pause_reason_min_risk_to_contact', 0)
+      ->set('stage_pause_reason_max_attempts', 0)
+      ->set('stage_pause_reason_cooldown_days', 0)
+      ->set('pause_reason_enabled', FALSE)
+      ->save();
+    $service = $this->buildQueueService();
+    $snapshot = ['risk_score' => 0, 'email' => 'p@example.com', 'is_opt_out' => 0, 'do_not_email' => 0, 'do_not_sms' => 0];
+
+    $off_id = $service->enqueueCandidate(601, 'pause_reason', $snapshot);
+    $this->assertSame('queued', $this->databaseRow($off_id)['status']);
+
+    $this->config('makerspace_member_success.settings')->set('pause_reason_enabled', TRUE)->save();
+    $on_id = $service->enqueueCandidate(602, 'pause_reason', $snapshot);
+    $this->assertSame('approved', $this->databaseRow($on_id)['status']);
+
+    $store = new PauseReasonStore($this->container->get('database'), $this->container->get('datetime.time'));
+    $this->assertFalse($store->record(602, '2026-10-20', 'bogus'));
+    $this->assertFalse($store->record(602, 'not-a-date', 'cost'));
+    $this->assertNull($store->get(602, '2026-10-20'));
+    $this->assertTrue($store->record(602, '2026-10-20', 'away'));
+    // Changing the answer replaces it; a later pause gets its own row.
+    $this->assertTrue($store->record(602, '2026-10-20', 'not_using', '  More classes on weekends  '));
+    $this->assertTrue($store->record(602, '2027-02-01', 'school'));
+    $this->assertSame('not_using', $store->get(602, '2026-10-20')['reason']);
+    $this->assertSame('More classes on weekends', $store->get(602, '2026-10-20')['note']);
+    $counts = $store->counts();
+    ksort($counts);
+    $this->assertSame(['not_using' => 1, 'school' => 1], $counts);
   }
 
   /**

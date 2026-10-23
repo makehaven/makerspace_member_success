@@ -246,3 +246,8 @@ services:
       - '@database'
       - '@config.factory'
       - '@datetime.time'
+  makerspace_member_success.pause_reason_store:
+    class: Drupal\makerspace_member_success\Service\PauseReasonStore
+    arguments:
+      - '@database'
+      - '@datetime.time'

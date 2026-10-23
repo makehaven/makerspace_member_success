@@ -202,3 +202,18 @@ makerspace_member_success.continue_setup:
     _access: 'TRUE'
   options:
     no_cache: TRUE
+
+# Signed link from the pause-reason email. No login: the token is the access
+# check (PauseReason::validToken). A form, not a one-click GET — mail scanners
+# follow every link.
+makerspace_member_success.pause_reason:
+  path: '/membership/pause-reason/{uid}/{pause}/{token}'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\PauseReasonForm'
+    _title: 'Your membership pause'
+  requirements:
+    _access: 'TRUE'
+    uid: \d+
+    pause: \d{4}-\d{2}-\d{2}
+  options:
+    no_cache: TRUE

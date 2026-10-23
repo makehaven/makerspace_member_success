@@ -214,6 +214,61 @@ class OutreachCandidateGenerator {
   }
 
   /**
+   * Members whose pause began in the last $windowDays days, not yet asked why.
+   *
+   * The window keeps switching this on from emailing every current pauser:
+   * the question only makes sense near the moment of pausing. One question
+   * per pause: anyone with a pause_reason queue row created since this pause
+   * began, or an answer already stored for it, is skipped.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Candidate rows with stage "pause_reason", newest pause first.
+   */
+  public function generatePauseReasonCandidates(int $windowDays = 7): array {
+    if ($windowDays <= 0) {
+      return [];
+    }
+    $earliest = date('Y-m-d', $this->now() - $windowDays * 86400);
+
+    $query = $this->baseQuery();
+    $query->condition('ms.stage', 'paused');
+    $query->condition('ms.pause_start_date', $earliest, '>=');
+    // pause_start_date is the day the snapshot first saw the pause, not
+    // Chargebee's date. Pauses here run 30-90 days, so a pause that truly
+    // began this week ends at least three weeks out; one ending sooner is an
+    // old pause whose start was re-recorded, and is about to get the
+    // pause-end message instead.
+    $not_ending_soon = $query->orConditionGroup()
+      ->isNull('ms.pause_resume_date')
+      ->condition('ms.pause_resume_date', date('Y-m-d', $this->now() + 21 * 86400), '>');
+    $query->condition($not_ending_soon);
+    $query->addField('ms', 'pause_start_date', 'pause_start_date');
+    $query->leftJoin('ms_pause_reason', 'pr', 'pr.uid = ms.uid AND pr.pause_start_date = ms.pause_start_date');
+    $query->isNull('pr.uid');
+    $query->orderBy('ms.pause_start_date', 'DESC');
+    $query->range(0, 200);
+    $rows = $query->execute()->fetchAll();
+
+    $candidates = [];
+    foreach ($this->mapRows($rows) as $i => $candidate) {
+      $pause_start_ts = strtotime(((string) $rows[$i]->pause_start_date) . ' 00:00:00') ?: 0;
+      $already = $this->database->select('ms_member_outreach_queue', 'pq')
+        ->condition('pq.uid', $candidate['uid'])
+        ->condition('pq.stage', 'pause_reason')
+        ->condition('pq.created_at', $pause_start_ts, '>=')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      if ((int) $already > 0) {
+        continue;
+      }
+      $candidate['stage'] = 'pause_reason';
+      $candidates[] = $candidate;
+    }
+    return $candidates;
+  }
+
+  /**
    * The shared, enriched candidate query.
    *
    * Carries the joins every campaign needs — email, CiviCRM contact and

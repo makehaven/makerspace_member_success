@@ -35,6 +35,12 @@ final class OutreachHoldout {
   /**
    * The arm a member falls in, or NULL when the stage runs no holdout.
    *
+   * @param int $uid
+   *   Member user id.
+   * @param string $stage
+   *   Queue stage (campaign) the member is being considered for.
+   * @param int $percent
+   *   Share of members held out, 0-100.
    * @param string[] $stages
    *   Stages (campaigns) that run a holdout.
    */

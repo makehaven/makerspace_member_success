@@ -282,6 +282,32 @@ holdout_stages:
   - reengage
 holdout_window_days: 60
 
+# Pause reason. Ships DARK. When on, a member whose pause began in the last
+# pause_reason_window_days gets one email asking why (seven answers, one link
+# each); the answer page saves nothing until they press Send, because mail
+# scanners follow every link. Sends without staff approval: it is a question,
+# not an offer. Answers: ms_pause_reason, shown in the paused queue.
+pause_reason_enabled: false
+pause_reason_window_days: 7
+stage_pause_reason_cooldown_days: 0
+stage_pause_reason_max_attempts: 0
+stage_pause_reason_min_risk_to_contact: 0
+template_pause_reason: |
+  Subject: A quick question about your pause
+
+  Hi {contact.first_name},
+
+  Your MakeHaven membership is now paused{pause.until}.
+
+  One quick question so we can plan: what is the main reason for the pause?
+  Pick the one that fits, then press Send on the page that opens.
+
+  {pause_reason.links}
+
+  If you would rather tell us in your own words, just reply to this email.
+
+  The MakeHaven Team
+
 # --- Dunning triage + pause end ----------------------------------------------
 # "Cold" = no door visit in this many days. A payment-failed member who is cold
 # is labelled payment_failed_cold in the recovery queue (a different

@@ -255,6 +255,31 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       '#default_value' => (string) ($config->get('template_pause_end__pause_gems_fit') ?? ''),
     ];
 
+    $form['thresholds']['pause_reason'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Why are you pausing?'),
+      '#description' => $this->t('Emails each new pauser one question with seven answers. Each answer is a link to a page where they confirm with one button (link scanners cannot answer for them). Sends without staff approval, once per pause. Answers show in the paused queue as "Why: …".'),
+    ];
+    $form['thresholds']['pause_reason']['pause_reason_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Ask new pausers why'),
+      '#default_value' => (bool) ($config->get('pause_reason_enabled') ?? FALSE),
+    ];
+    $form['thresholds']['pause_reason']['pause_reason_window_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Only ask if the pause began within this many days'),
+      '#default_value' => (int) ($config->get('pause_reason_window_days') ?? 7),
+      '#min' => 1,
+      '#required' => TRUE,
+    ];
+    $form['thresholds']['pause_reason']['template_pause_reason'] = [
+      '#type' => 'textarea',
+      '#rows' => 14,
+      '#title' => $this->t('Pause-reason email'),
+      '#description' => $this->t('First line "Subject: …" sets the subject. Tokens: {contact.first_name}, {pause.until} (" until Monday, November 3", or nothing if the end date is not known yet), {pause_reason.links} (required: the seven answer links).'),
+      '#default_value' => (string) ($config->get('template_pause_reason') ?? ''),
+    ];
+
     $form['thresholds']['holdout'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Comparison group (holdout)'),
@@ -602,6 +627,12 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
 
+    // Without the links the email asks a question nobody can answer.
+    if ($form_state->getValue('pause_reason_enabled')
+      && !str_contains((string) $form_state->getValue('template_pause_reason'), '{pause_reason.links}')) {
+      $form_state->setErrorByName('template_pause_reason', $this->t('The pause-reason email must include {pause_reason.links}.'));
+    }
+
     // A silently dropped address means a staff member believes they are being
     // copied on these sends when they are not, which is the exact failure this
     // setting exists to prevent.
@@ -660,6 +691,9 @@ class MemberSuccessSettingsForm extends ConfigFormBase {
       ->set('pause_end_gems_offer', trim((string) $form_state->getValue('pause_end_gems_offer')))
       ->set('template_pause_end', (string) $form_state->getValue('template_pause_end'))
       ->set('template_pause_end__pause_gems_fit', (string) $form_state->getValue('template_pause_end__pause_gems_fit'))
+      ->set('pause_reason_enabled', (bool) $form_state->getValue('pause_reason_enabled'))
+      ->set('pause_reason_window_days', (int) $form_state->getValue('pause_reason_window_days'))
+      ->set('template_pause_reason', (string) $form_state->getValue('template_pause_reason'))
       ->set('holdout_percent', (int) $form_state->getValue('holdout_percent'))
       ->set('holdout_window_days', (int) $form_state->getValue('holdout_window_days'))
       ->set('outreach_send_hour_local', (int) $form_state->getValue('outreach_send_hour_local'))

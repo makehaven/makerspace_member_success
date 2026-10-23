@@ -5,8 +5,10 @@ namespace Drupal\makerspace_member_success\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Site\Settings;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\makerspace_member_success\Support\OnboardingFunnel;
+use Drupal\makerspace_member_success\Support\PauseReason;
 use Drupal\makerspace_member_success\Support\PreparedMessage;
 
 /**
@@ -200,19 +202,30 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
       $tokens['badge.schedules_url'] = $base_url . '/facilitator/schedules';
     }
 
-    if ($stage === 'pause_end') {
-      $resume = $this->database->select('ms_member_success_snapshot', 'ms')
-        ->fields('ms', ['pause_resume_date'])
+    if ($stage === 'pause_end' || $stage === 'pause_reason') {
+      $pause = $this->database->select('ms_member_success_snapshot', 'ms')
+        ->fields('ms', ['pause_resume_date', 'pause_start_date'])
         ->condition('ms.uid', $uid)
         ->condition('ms.is_latest', 1)
         ->condition('ms.snapshot_type', 'daily')
         ->range(0, 1)
         ->execute()
-        ->fetchField();
+        ->fetchAssoc() ?: [];
+      $resume = $pause['pause_resume_date'] ?? NULL;
       $resume_ts = $resume ? strtotime($resume . ' 00:00:00') : FALSE;
       $tokens['pause.resume_date'] = $resume_ts ? date('l, F j', $resume_ts) : 'soon';
-      $tokens['pause_end.gems_offer'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('pause_end_gems_offer') ?? ''));
-      $tokens['gems.url'] = $base_url . '/gems';
+      // Reads naturally with or without a synced resume date: a new pause can
+      // reach the question before the daily Chargebee sync has its end date.
+      $tokens['pause.until'] = $resume_ts ? ' until ' . date('l, F j', $resume_ts) : '';
+      if ($stage === 'pause_end') {
+        $tokens['pause_end.gems_offer'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('pause_end_gems_offer') ?? ''));
+        $tokens['gems.url'] = $base_url . '/gems';
+      }
+      else {
+        $tokens['pause_reason.links'] = !empty($pause['pause_start_date'])
+          ? PauseReason::linkList($base_url, $uid, (string) $pause['pause_start_date'], Settings::getHashSalt())
+          : '';
+      }
     }
 
     if ($stage === 'reengage') {

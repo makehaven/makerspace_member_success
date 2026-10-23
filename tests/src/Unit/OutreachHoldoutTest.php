@@ -47,7 +47,7 @@ class OutreachHoldoutTest extends TestCase {
   }
 
   /**
-   * 100% holds everyone out; the bucket stays within 0-99.
+   * Holding out 100% holds out everyone; the bucket stays within 0-99.
    */
   public function testBounds(): void {
     for ($uid = 1; $uid <= 300; $uid++) {

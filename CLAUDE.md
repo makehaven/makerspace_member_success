@@ -118,6 +118,20 @@ compares arms intention-to-treat after `holdout_window_days` (60). Do not
 add a campaign to `holdout_stages` without wiring its generator to skip
 members who already have a row, or held-out members get re-evaluated forever.
 
+### Pause reason
+
+`pause_reason_enabled` (dark) emails members whose snapshot `pause_start_date`
+is within `pause_reason_window_days` (7) one question, stage `pause_reason`,
+auto-approved like the onboarding nudge. `{pause_reason.links}` lists the
+seven `PauseReason::REASONS`, each a signed link (`PauseReason::token()`,
+uid + pause start, hash salt) to `/membership/pause-reason/{uid}/{pause}/{token}?r=…`.
+That page (`PauseReasonForm`) preselects the answer and saves only on submit:
+mail scanners follow every link. Answers live in `ms_pause_reason`
+(`PauseReasonStore`), one row per uid + pause start. Staff see them in the
+lifecycle/overview lists' "Payment Risk" column (`PaymentRiskField`, which also
+shows "Resumes <date>"). Note: paused members appear ONLY in those lists; the
+action-link column and `StageContextField` never render for them.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

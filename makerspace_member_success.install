@@ -546,6 +546,7 @@ function makerspace_member_success_schema() {
 
   $schema['ms_onboarding_lead'] = _makerspace_member_success_lead_table_schema();
   $schema['ms_billing_mismatch'] = _makerspace_member_success_billing_mismatch_schema();
+  $schema['ms_pause_reason'] = _makerspace_member_success_pause_reason_schema();
 
   return $schema;
 }
@@ -2086,5 +2087,62 @@ function makerspace_member_success_update_9041(): string {
   }
   $config->save();
   $messages[] = $seeded ? 'Seeded settings: ' . implode(', ', $seeded) . '.' : 'Holdout settings already present.';
+  return implode(' ', $messages);
+}
+
+/**
+ * Schema for members' answers to "why are you pausing?", one row per pause.
+ */
+function _makerspace_member_success_pause_reason_schema(): array {
+  return [
+    'description' => 'Why a member paused: one answer per member per pause.',
+    'fields' => [
+      'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+      'pause_start_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => TRUE,
+        'description' => 'The snapshot pause_start_date (Y-m-d) the question was asked for.',
+      ],
+      'reason' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE],
+      'note' => ['type' => 'text', 'not null' => FALSE],
+      'answered_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+    ],
+    'primary key' => ['uid', 'pause_start_date'],
+    'indexes' => [
+      'idx_reason' => ['reason'],
+      'idx_answered_at' => ['answered_at'],
+    ],
+  ];
+}
+
+/**
+ * Adds the pause-reason question: ms_pause_reason table and its settings.
+ */
+function makerspace_member_success_update_9042(): string {
+  $schema = \Drupal::database()->schema();
+  $messages = [];
+  if (!$schema->tableExists('ms_pause_reason')) {
+    $schema->createTable('ms_pause_reason', _makerspace_member_success_pause_reason_schema());
+    $messages[] = 'Created ms_pause_reason.';
+  }
+  $config = \Drupal::configFactory()->getEditable('makerspace_member_success.settings');
+  $install = \Symfony\Component\Yaml\Yaml::parseFile(__DIR__ . '/config/install/makerspace_member_success.settings.yml');
+  $seeded = [];
+  foreach ([
+    'pause_reason_enabled',
+    'pause_reason_window_days',
+    'stage_pause_reason_cooldown_days',
+    'stage_pause_reason_max_attempts',
+    'stage_pause_reason_min_risk_to_contact',
+    'template_pause_reason',
+  ] as $key) {
+    if ($config->get($key) === NULL && array_key_exists($key, $install)) {
+      $config->set($key, $install[$key]);
+      $seeded[] = $key;
+    }
+  }
+  $config->save();
+  $messages[] = $seeded ? 'Seeded settings: ' . implode(', ', $seeded) . '.' : 'Pause-reason settings already present.';
   return implode(' ', $messages);
 }

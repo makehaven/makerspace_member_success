@@ -72,6 +72,15 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
       $status = 'approved';
     }
 
+    // The pause-reason question sends on its own switch the same way: it asks
+    // something rather than offering anything, and it is only useful near
+    // the moment of pausing, so waiting for a staff approval would spoil it.
+    if ($status === 'queued'
+      && $stage === 'pause_reason'
+      && (bool) $config->get('pause_reason_enabled')) {
+      $status = 'approved';
+    }
+
     // Policy gates. These override any earlier decision (including a
     // manual_only channel suppression) so the recorded reason is the gate
     // that actually blocked the send. Gate suppressions flow through the

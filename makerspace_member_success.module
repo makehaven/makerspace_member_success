@@ -292,7 +292,36 @@ function makerspace_member_success_cron(): void {
     \Drupal::logger('makerspace_member_success')->error('Pause-end outreach failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
-  // 2b'''. Expire queued rows nobody has worked or refreshed in
+  // 2b'''. Pause reason: one question to members whose pause began in the
+  // last pause_reason_window_days — why are you pausing? Nobody asks today,
+  // so the pause-end message cannot tell a planned trip from a member who
+  // has drifted away (retention brief move 1). Ships dark
+  // (pause_reason_enabled FALSE); when on it sends without approval (see
+  // OutreachQueueService::enqueueCandidate()).
+  try {
+    $pr_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $pr_config->get('pause_reason_enabled')) {
+      $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+      $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      $enqueued = 0;
+      foreach ($generator->generatePauseReasonCandidates(max(0, (int) ($pr_config->get('pause_reason_window_days') ?? 7))) as $candidate) {
+        $queue->enqueueCandidate((int) $candidate['uid'], 'pause_reason', $candidate);
+        $enqueued++;
+      }
+      $sent = $queue->processApprovedItems(['pause_reason']);
+      if ($enqueued || $sent) {
+        \Drupal::logger('makerspace_member_success')->notice(
+          'Pause reason: @enqueued new pauser(s) evaluated, @sent question(s) sent.',
+          ['@enqueued' => $enqueued, '@sent' => $sent],
+        );
+      }
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Pause-reason question failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
+  // 2b''''. Expire queued rows nobody has worked or refreshed in
   // queue_stale_days (30). Cron-fed stages refresh their rows on every run,
   // so this only touches rows nobody is working (0 = never expire).
   try {
