@@ -115,6 +115,39 @@ makerspace_member_success.settings:
     holdout_window_days:
       type: integer
       label: 'Days after assignment before a member counts in the holdout report'
+    first_month_enabled:
+      type: boolean
+      label: 'Send the "your first month" series (days 0/7/14/30 after the card serial)'
+    first_month_shadow_to:
+      type: string
+      label: 'Preview mode: send every first-month email here instead of the member (empty = send to members)'
+    first_month_since:
+      type: string
+      label: 'Only members whose day 0 is on or after this date (Y-m-d)'
+    first_month_reply_to:
+      type: email
+      label: 'Reply-To for the first-month emails'
+    stage_first_month_min_risk_to_contact:
+      type: integer
+      label: 'First month: minimum risk score'
+    stage_first_month_max_attempts:
+      type: integer
+      label: 'First month: maximum attempts (0 = no cap)'
+    stage_first_month_cooldown_days:
+      type: integer
+      label: 'First month: days after any outreach email before a step can send'
+    template_first_month_0:
+      type: text
+      label: 'First month day 0 email'
+    template_first_month_7:
+      type: text
+      label: 'First month day 7 email'
+    template_first_month_14:
+      type: text
+      label: 'First month day 14 email'
+    template_first_month_30:
+      type: text
+      label: 'First month day 30 email'
     pause_reason_enabled:
       type: boolean
       label: 'Email new pausers one question: why are you pausing?'

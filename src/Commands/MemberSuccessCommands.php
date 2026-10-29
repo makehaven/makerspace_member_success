@@ -2,6 +2,7 @@
 
 namespace Drupal\makerspace_member_success\Commands;
 
+use Drupal\makerspace_member_success\Support\FirstMonth;
 use Drush\Commands\DrushCommands;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Drupal\makerspace_member_success\Service\ChargebeeFollowupStatusSync;
@@ -206,6 +207,58 @@ class MemberSuccessCommands extends DrushCommands {
     }
     $this->io()->table(['Campaign', 'Arm', 'Assigned', 'Emailed', "Past {$window} days", 'Came in since', 'Member now'], $rows);
     $this->io()->note('Below about 30 members per arm, a difference between the arms is mostly noise.');
+  }
+
+  /**
+   * Previews the "your first month" series without sending or queueing.
+   *
+   * With no options, lists the members due a step today (as if
+   * first_month_since were --since) and what each would get. With --uid and
+   * --step, prints that member's email for that step in full.
+   *
+   * @command ms:first-month-preview
+   * @option uid Member to render.
+   * @option step Step day: 0, 7, 14 or 30.
+   * @option since Earliest day 0 to consider (Y-m-d); defaults to 45 days ago.
+   * @usage drush ms:first-month-preview
+   * @usage drush ms:first-month-preview --uid=5347 --step=7
+   */
+  public function firstMonthPreview(array $options = ['uid' => NULL, 'step' => NULL, 'since' => NULL]): void {
+    $builder = \Drupal::service('makerspace_member_success.outreach_message_builder');
+    if ($options['uid'] !== NULL) {
+      $step = (int) ($options['step'] ?? 0);
+      if (!in_array($step, FirstMonth::STEPS, TRUE)) {
+        $this->logger()->error(dt('Step must be one of 0, 7, 14, 30.'));
+        return;
+      }
+      $plan = \Drupal::service('makerspace_member_success.first_month_planner')->plan((int) $options['uid'], $step, 'https://www.makehaven.org');
+      [$subject, $body] = $builder->renderPreview((int) $options['uid'], FirstMonth::stage($step));
+      if ($plan['skip'] !== NULL) {
+        $this->io()->warning('Cron would skip this step: ' . $plan['skip']);
+      }
+      $this->io()->writeln('Subject: ' . $subject);
+      $this->io()->writeln('');
+      $this->io()->writeln($body);
+      return;
+    }
+    $since = (string) ($options['since'] ?? date('Y-m-d', strtotime('-45 days')));
+    $planner = \Drupal::service('makerspace_member_success.first_month_planner');
+    $rows = [];
+    foreach (\Drupal::service('makerspace_member_success.outreach_candidate_generator')->generateFirstMonthCandidates($since) as $c) {
+      $plan = $planner->plan((int) $c['uid'], (int) $c['first_month_step'], 'https://www.makehaven.org');
+      $rows[] = [
+        $c['uid'],
+        $c['first_month_day0'],
+        'day ' . $c['first_month_step'],
+        $plan['skip'] ?? 'send',
+        $plan['tokens']['first_month.tool'] ?: '-',
+      ];
+    }
+    if (!$rows) {
+      $this->logger()->notice(dt('Nobody is due a first-month step today with day 0 on or after @since.', ['@since' => $since]));
+      return;
+    }
+    $this->io()->table(['uid', 'Day 0 (serial)', 'Step', 'Outcome', 'Next tool'], $rows);
   }
 
   /**

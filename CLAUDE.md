@@ -153,6 +153,29 @@ stored with `source = cancel_offer`. The theme forces `btn-primary` with
 from `css/membership-choice.css`. Reading pause and cancel reasons together:
 `docs/reporting/recipes/why-members-pause-and-leave.md` in the site repo.
 
+### Your first month (days 0/7/14/30)
+
+`first_month_enabled` (dark) emails new members on days 0, 7, 14 and 30 after
+day 0 = the first daily snapshot with `serial_number_present = 1` (staff type
+the card serial at orientation; nothing else records when it was set). Each
+step is its own stage `first_month_<day>` (`Support/FirstMonth`), sharing the
+`stage_first_month_*` gates (cooldown 3 days after ANY outreach email) and one
+holdout arm (`holdout_stages` lists `first_month`). Content comes from
+`FirstMonthPlanner`: interests, `tool_favorite` stars, `want_to_make`
+projects, badge_request statuses, and real open facilitator shifts from
+`appointment_facilitator`'s `BadgeNextStepsController::getFacilitatorsForTerms()`.
+Day 7 is skipped when every starred tool is unlocked or the checkout is booked.
+Only members whose day 0 is on/after `first_month_since` qualify, the door
+badge must be active (the onboarding nudge owns everyone before that), and
+accounts older than 120 days at day 0 are returning members, not new.
+
+Shadow mode: while `first_month_shadow_to` is set, `processApprovedItems()`
+sends each email to that address with "[Preview for <name>]" and a header
+naming the member, marks the row sent with `actual_channel = shadow`, and
+records NO contact (no CiviCRM activity, cooldown or attempt). Replies go to
+`first_month_reply_to`. `drush ms:first-month-preview` lists who is due today;
+`--uid=N --step=7` prints one email.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

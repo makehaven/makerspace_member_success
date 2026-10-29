@@ -3,6 +3,7 @@
 namespace Drupal\makerspace_member_success\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\makerspace_member_success\Support\FirstMonth;
 use Drupal\makerspace_member_success\Support\SuppressionResult;
 
 /**
@@ -37,7 +38,8 @@ class OutreachSuppressionChecker implements OutreachSuppressionCheckerInterface 
     $stage = $context['stage'] ?? $snapshot['stage'] ?? NULL;
     if ($stage) {
       $config = \Drupal::config('makerspace_member_success.settings');
-      $min_risk = (int) ($config->get("stage_{$stage}_min_risk_to_contact") ?? 20);
+      $gate_stage = FirstMonth::settingsStage((string) $stage);
+      $min_risk = (int) ($config->get("stage_{$gate_stage}_min_risk_to_contact") ?? 20);
       $current_risk = (int) ($snapshot['risk_score'] ?? 0);
       if ($current_risk < $min_risk) {
         return new SuppressionResult(FALSE, 'suppressed_below_threshold');

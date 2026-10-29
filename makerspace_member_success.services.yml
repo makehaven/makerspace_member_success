@@ -198,6 +198,15 @@ services:
       - '@entity_type.manager'
       - '@request_stack'
       - '@makerspace_member_success.pending_badge_finder'
+      - '@makerspace_member_success.first_month_planner'
+
+  makerspace_member_success.first_month_planner:
+    class: Drupal\makerspace_member_success\Service\FirstMonthPlanner
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@date.formatter'
+      - '@class_resolver'
 
   makerspace_member_success.outreach_sender:
     class: Drupal\makerspace_member_success\Service\OutreachSender

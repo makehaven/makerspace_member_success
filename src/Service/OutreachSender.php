@@ -48,6 +48,7 @@ class OutreachSender implements OutreachSenderInterface {
       'body' => $message->body,
       'uid' => $message->uid,
       'queue_id' => $message->queueId,
+      'reply_to' => (string) ($message->tokens['reply_to'] ?? ''),
     ];
 
     $result = $this->mailManager->mail(

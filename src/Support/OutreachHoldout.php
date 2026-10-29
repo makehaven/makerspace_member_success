@@ -45,10 +45,12 @@ final class OutreachHoldout {
    *   Stages (campaigns) that run a holdout.
    */
   public static function arm(int $uid, string $stage, int $percent, array $stages): ?string {
-    if ($percent <= 0 || !in_array($stage, $stages, TRUE)) {
+    // The first-month steps are one campaign: the same arm for all four.
+    $campaign = FirstMonth::holdoutKey($stage);
+    if ($percent <= 0 || !in_array($campaign, $stages, TRUE)) {
       return NULL;
     }
-    return self::bucket($uid, $stage) < min(100, $percent) ? self::ARM_HOLDOUT : self::ARM_OFFER;
+    return self::bucket($uid, $campaign) < min(100, $percent) ? self::ARM_HOLDOUT : self::ARM_OFFER;
   }
 
 }

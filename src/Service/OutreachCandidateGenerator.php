@@ -4,6 +4,8 @@ namespace Drupal\makerspace_member_success\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\makerspace_member_success\Support\FirstMonth;
+use Drupal\makerspace_member_success\Support\OutreachHoldout;
 
 /**
  * Builds outreach candidate rows from the latest daily member snapshots.
@@ -263,6 +265,94 @@ class OutreachCandidateGenerator {
         continue;
       }
       $candidate['stage'] = 'pause_reason';
+      $candidates[] = $candidate;
+    }
+    return $candidates;
+  }
+
+  /**
+   * New members due a step of the "your first month" series.
+   *
+   * Day 0 is the first daily snapshot with a door card serial recorded (staff
+   * type it in at orientation, so it means the member was in the building).
+   * Nothing stores when a serial was first set, but snapshots are kept per
+   * day, so the earliest one showing it is accurate to the day.
+   *
+   * Only members whose day 0 is on or after $since are considered, so
+   * switching the series on never mails the members who joined before it.
+   * A member whose account is older than $maxAccountAgeDays is a returning
+   * member, not a new one, and is skipped. The door badge must be active at
+   * the time: until it is, the onboarding nudge owns the member and the two
+   * must not both write to them.
+   *
+   * Each step goes out once: a member with any row for the step's stage, in
+   * any status (sent, held out, suppressed), is not offered it again.
+   *
+   * @param string $since
+   *   Y-m-d; earliest day 0 considered.
+   * @param int $maxAccountAgeDays
+   *   Skip accounts created more than this many days before day 0.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Candidate rows with stage first_month_<step>, plus first_month_day0
+   *   (Y-m-d) and first_month_step (int).
+   */
+  public function generateFirstMonthCandidates(string $since, int $maxAccountAgeDays = 120): array {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $since)) {
+      return [];
+    }
+    $today = date('Y-m-d', $this->now());
+    // Nobody past the last step's window can be due anything.
+    $last = max(FirstMonth::STEPS) + FirstMonth::WINDOW_DAYS;
+    $floor = max($since, date('Y-m-d', strtotime($today . ' -' . $last . ' days')));
+
+    $first_serial = $this->database->select('ms_member_success_snapshot', 'fs');
+    $first_serial->addField('fs', 'uid');
+    $first_serial->addExpression('MIN(fs.snapshot_date)', 'day0');
+    $first_serial->condition('fs.snapshot_type', 'daily');
+    $first_serial->condition('fs.serial_number_present', 1);
+    $first_serial->groupBy('fs.uid');
+    $first_serial->having('MIN(fs.snapshot_date) >= :floor', [':floor' => $floor]);
+
+    $query = $this->baseQuery();
+    $query->innerJoin($first_serial, 'd0', 'd0.uid = ms.uid');
+    $query->addField('d0', 'day0', 'day0');
+    $query->addField('u', 'created', 'account_created');
+    $query->condition('ms.door_badge_status', 'active');
+    $query->condition('ms.serial_number_present', 1);
+    $query->orderBy('d0.day0', 'ASC');
+    $query->range(0, 500);
+    $rows = $query->execute()->fetchAll();
+
+    $candidates = [];
+    foreach ($this->mapRows($rows) as $i => $candidate) {
+      $day0 = (string) $rows[$i]->day0;
+      $day0_ts = strtotime($day0 . ' 00:00:00');
+      if ($day0_ts === FALSE) {
+        continue;
+      }
+      if ((int) $rows[$i]->account_created < $day0_ts - $maxAccountAgeDays * 86400) {
+        continue;
+      }
+      $age = (int) floor((strtotime($today . ' 00:00:00') - $day0_ts) / 86400);
+      $step = FirstMonth::stepForAge($age);
+      if ($step === NULL) {
+        continue;
+      }
+      $stage = FirstMonth::stage($step);
+      $already = $this->database->select('ms_member_outreach_queue', 'fq')
+        ->condition('fq.uid', $candidate['uid'])
+        ->condition('fq.stage', $stage)
+        ->condition('fq.status', ['sent', OutreachHoldout::STATUS_HELD_OUT], 'IN')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      if ((int) $already > 0) {
+        continue;
+      }
+      $candidate['stage'] = $stage;
+      $candidate['first_month_day0'] = $day0;
+      $candidate['first_month_step'] = $step;
       $candidates[] = $candidate;
     }
     return $candidates;

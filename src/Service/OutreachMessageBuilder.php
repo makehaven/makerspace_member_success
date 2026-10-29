@@ -7,6 +7,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Site\Settings;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Drupal\makerspace_member_success\Support\FirstMonth;
 use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\makerspace_member_success\Support\PauseReason;
 use Drupal\makerspace_member_success\Support\PreparedMessage;
@@ -25,6 +26,7 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
     protected EntityTypeManagerInterface $entityTypeManager,
     protected RequestStack $requestStack,
     protected ?PendingBadgeFinder $pendingBadgeFinder = NULL,
+    protected ?FirstMonthPlanner $firstMonthPlanner = NULL,
   ) {}
 
   /**
@@ -77,6 +79,21 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
       $tokens,
       $subject
     );
+  }
+
+  /**
+   * Renders a stage's config template for a member without a queue row.
+   *
+   * For previews (drush ms:first-month-preview): same template and tokens as
+   * a real send, nothing written.
+   *
+   * @return array{0: string, 1: string}
+   *   Subject and body.
+   */
+  public function renderPreview(int $uid, string $stage): array {
+    $content = $this->resolveTemplateContent('template_' . $stage, 'email');
+    $content = $this->replaceTokens($content, $this->buildTokens($uid, $stage, 0));
+    return $this->parseTemplate($content);
   }
 
   /**
@@ -226,6 +243,13 @@ class OutreachMessageBuilder implements OutreachMessageBuilderInterface {
           ? PauseReason::linkList($base_url, $uid, (string) $pause['pause_start_date'], Settings::getHashSalt())
           : '';
       }
+    }
+
+    // First-month series: everything comes from the member's own picks.
+    $first_month_step = FirstMonth::stepOf($stage);
+    if ($first_month_step !== NULL && $this->firstMonthPlanner !== NULL) {
+      $tokens += $this->firstMonthPlanner->plan($uid, $first_month_step, $base_url)['tokens'];
+      $tokens['reply_to'] = trim((string) ($this->configFactory->get('makerspace_member_success.settings')->get('first_month_reply_to') ?? ''));
     }
 
     if ($stage === 'reengage') {

@@ -280,6 +280,7 @@ holdout_percent: 25
 holdout_stages:
   - pause_end
   - reengage
+  - first_month
 holdout_window_days: 60
 
 # Pause reason. Ships DARK. When on, a member whose pause began in the last
@@ -356,5 +357,73 @@ template_pause_end__pause_gems_fit: |
   If you would like a seat, just reply to this email and a person will set it
   up. If you need more time on your pause, reply and we will help with that
   too.
+
+  The MakeHaven Team
+
+# --- Your first month (ships DARK) -------------------------------------------
+# Days 0/7/14/30 after a new member's door card serial is first recorded
+# (staff type it at orientation: proof they were in the building). Built from
+# their own picks: interests, starred tools, projects they want to make, and
+# real open facilitator checkout times. JR, 2026-10-29.
+# first_month_shadow_to set = every email goes to that address instead of the
+# member, subject "[Preview for <name>]" — nothing reaches members, nothing is
+# logged as contact. Empty it to send to members (Kate reviews first).
+# first_month_since: only members whose day 0 is on/after this date, so
+# switching on never mails people who joined before.
+first_month_enabled: false
+first_month_shadow_to: kate.cebik@makehaven.org
+first_month_since: '2026-11-01'
+first_month_reply_to: welcome@makehaven.org
+# The four steps share these gates. Cooldown 3: never within 3 days of any
+# other outreach email (onboarding nudge, badge nudge, staff-logged contact).
+stage_first_month_min_risk_to_contact: 0
+stage_first_month_max_attempts: 0
+stage_first_month_cooldown_days: 3
+template_first_month_0: |
+  Subject: Welcome to MakeHaven: your first steps
+
+  Hi {contact.first_name},
+
+  You're in. Your card opens the door, so here's how to make your first month count.
+
+  {first_month.picks}
+
+  {first_month.tool_heading}
+  {first_month.tool_steps}
+
+  Questions any time: ask Red, our assistant, on Member Resources:
+  {first_month.ask_red_url}
+  Or just reply to this email and a person will answer.
+
+  The MakeHaven Team
+template_first_month_7: |
+  Subject: {first_month.subject_tool}
+
+  Hi {contact.first_name},
+
+  {first_month.tool_steps}
+
+  Not the tool you want? Tell Red what you want to make and it will plan a different one:
+  {first_month.ask_red_url}
+
+  The MakeHaven Team
+template_first_month_14: |
+  Subject: Something to make this month
+
+  Hi {contact.first_name},
+
+  {first_month.project}
+
+  Classes and meetups coming up: {first_month.events_url}
+
+  The MakeHaven Team
+template_first_month_30: |
+  Subject: How's your first month going?
+
+  Hi {contact.first_name},
+
+  You've been a member for a month. How is it going?
+
+  Just reply to this email. A person reads every reply, and if something got in your way (a tool, a booking, finding help) we'd like to fix it.
 
   The MakeHaven Team

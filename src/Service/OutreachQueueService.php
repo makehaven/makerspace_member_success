@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\FirstMonth;
 use Drupal\makerspace_member_success\Support\OutreachHoldout;
 
 /**
@@ -38,9 +39,10 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     $now = $this->time->getCurrentTime();
     $config = $this->configFactory->get('makerspace_member_success.settings');
     $risk_score = (int) ($snapshot['risk_score'] ?? 0);
-    $min_risk = (int) ($config->get("stage_{$stage}_min_risk_to_contact") ?? 20);
-    $max_attempts = (int) ($config->get("stage_{$stage}_max_attempts") ?? 3);
-    $cooldown_days = (int) ($config->get("stage_{$stage}_cooldown_days") ?? 7);
+    $gate_stage = FirstMonth::settingsStage($stage);
+    $min_risk = (int) ($config->get("stage_{$gate_stage}_min_risk_to_contact") ?? 20);
+    $max_attempts = (int) ($config->get("stage_{$gate_stage}_max_attempts") ?? 3);
+    $cooldown_days = (int) ($config->get("stage_{$gate_stage}_cooldown_days") ?? 7);
 
     $last_contact_date = (string) ($snapshot['last_contact_date'] ?? '');
     $contact_count = (int) ($snapshot['contact_count'] ?? 0);
@@ -78,6 +80,16 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
     if ($status === 'queued'
       && $stage === 'pause_reason'
       && (bool) $config->get('pause_reason_enabled')) {
+      $status = 'approved';
+    }
+
+    // The first-month series sends on its own switch. While
+    // first_month_shadow_to is set every email goes to that staff address
+    // instead of the member (see processApprovedItems()), so there is nothing
+    // for a person to approve: the shadow copy is the review.
+    if ($status === 'queued'
+      && FirstMonth::isStage($stage)
+      && (bool) $config->get('first_month_enabled')) {
       $status = 'approved';
     }
 
@@ -341,6 +353,39 @@ class OutreachQueueService implements OutreachQueueServiceInterface {
         }
 
         $message = $this->messageBuilder->build($id);
+
+        // First-month shadow mode: the email a member would get goes to a
+        // staff reviewer instead, marked with who it was for. The row is
+        // marked sent (so the step is not offered again) but nothing is
+        // recorded as contact with the member: no CiviCRM activity, no
+        // cooldown, no attempt count.
+        $shadow_to = FirstMonth::isStage($stage)
+          ? trim((string) $this->configFactory->get('makerspace_member_success.settings')->get('first_month_shadow_to'))
+          : '';
+        if ($shadow_to !== '') {
+          $member_name = (string) ($message->tokens['contact.first_name'] ?? '');
+          $message->body = "PREVIEW. Nothing was sent to the member.\n"
+            . 'This would have gone to ' . $member_name . ' <' . $message->destination . '> (user ' . $uid
+            . '), day ' . FirstMonth::stepOf($stage) . " of their first month.\n"
+            . "----------------------------------------------------\n\n"
+            . $message->body;
+          $message->subject = '[Preview for ' . $member_name . '] ' . $message->subject;
+          $message->destination = $shadow_to;
+          $result = $this->sender->send($message);
+          if ($result->success) {
+            $this->markSent($id, ['provider_message_id' => 'shadow:' . ($result->providerMessageId ?? '')]);
+            $this->database->update('ms_member_outreach_queue')
+              ->fields(['actual_channel' => 'shadow'])
+              ->condition('id', $id)
+              ->execute();
+            $processed++;
+          }
+          else {
+            $this->markFailed($id, $result->failureCode, $result->failureMessage);
+          }
+          continue;
+        }
+
         $result = $this->sender->send($message);
         if ($result->success) {
           $this->markSent($id, ['provider_message_id' => $result->providerMessageId]);

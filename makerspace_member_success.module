@@ -55,6 +55,11 @@ function makerspace_member_success_mail(string $key, array &$message, array $par
     if (!empty($params['bcc'])) {
       $message['headers']['Bcc'] = $params['bcc'];
     }
+    // Replies go to a person (the first-month series: welcome@).
+    if (!empty($params['reply_to'])) {
+      $message['reply-to'] = $params['reply_to'];
+      $message['headers']['Reply-To'] = $params['reply_to'];
+    }
     return;
   }
 
@@ -217,6 +222,51 @@ function makerspace_member_success_cron(): void {
   }
   catch (\Throwable $e) {
     \Drupal::logger('makerspace_member_success')->error('Badge nudge failed: @msg', ['@msg' => $e->getMessage()]);
+  }
+
+  // 2c. "Your first month": days 0/7/14/30 after the door card serial is
+  // first recorded (JR, 2026-10-29). Ships dark (first_month_enabled FALSE).
+  // While first_month_shadow_to is set every email goes to that staff address
+  // instead of the member, so staff read the real series for real new members
+  // before any member gets one. Only members whose day 0 is on or after
+  // first_month_since are considered, so switching it on never mails the
+  // members who joined before. A step with nothing to say (every starred
+  // tool unlocked, checkout already booked) is skipped, and the queue's
+  // stage_first_month_* gates keep it from landing within days of any other
+  // outreach email.
+  try {
+    $fm_config = \Drupal::config('makerspace_member_success.settings');
+    if ((bool) $fm_config->get('first_month_enabled')) {
+      $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
+      $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
+      $planner = \Drupal::service('makerspace_member_success.first_month_planner');
+      $since = (string) ($fm_config->get('first_month_since') ?? '');
+      $enqueued = 0;
+      $skipped = 0;
+      foreach ($generator->generateFirstMonthCandidates($since) as $candidate) {
+        $plan = $planner->plan((int) $candidate['uid'], (int) $candidate['first_month_step'], 'https://www.makehaven.org');
+        if ($plan['skip'] !== NULL) {
+          $skipped++;
+          continue;
+        }
+        $queue->enqueueCandidate((int) $candidate['uid'], (string) $candidate['stage'], $candidate);
+        $enqueued++;
+      }
+      $stages = array_map([\Drupal\makerspace_member_success\Support\FirstMonth::class, 'stage'], \Drupal\makerspace_member_success\Support\FirstMonth::STEPS);
+      $sent = $queue->processApprovedItems($stages);
+      \Drupal::logger('makerspace_member_success')->notice(
+        'First month: @enqueued step(s) queued, @skipped skipped (nothing to say), @sent sent@shadow.',
+        [
+          '@enqueued' => $enqueued,
+          '@skipped' => $skipped,
+          '@sent' => $sent,
+          '@shadow' => trim((string) $fm_config->get('first_month_shadow_to')) !== '' ? ' (preview copies to staff)' : '',
+        ],
+      );
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('First month series failed: @msg', ['@msg' => $e->getMessage()]);
   }
 
   // 2b'. Re-engagement offer: members past the settled-dormancy threshold.
