@@ -2166,9 +2166,12 @@ function makerspace_member_success_menu_local_tasks_alter(array &$data, string $
 /**
  * Implements hook_chargebee_portal_membership_actions().
  *
- * Active members get "Pause my membership", which asks why on
- * /membership/pause before opening the Chargebee portal. chargebee_portal's
- * own primary button drops "pause" from its label when this route exists.
+ * Active members get "Pause my membership" (filled: about half of pausers
+ * resume against about a quarter of cancellers who come back), which asks
+ * why on /membership/pause before the Chargebee portal, and "Cancel
+ * membership", which offers a pause first on /membership/cancel.
+ * chargebee_portal turns its own portal button into an outlined "Manage
+ * billing" when these routes exist.
  */
 function makerspace_member_success_chargebee_portal_membership_actions(\Drupal\user\UserInterface $user, string $status, \Drupal\Core\Session\AccountInterface $viewer): array {
   if ($status !== \Drupal\chargebee_portal\Service\MembershipStatusResolver::STATUS_ACTIVE) {
@@ -2181,6 +2184,14 @@ function makerspace_member_success_chargebee_portal_membership_actions(\Drupal\u
       'url' => Url::fromRoute('makerspace_member_success.pause_before'),
       'category' => 'secondary',
       'weight' => 0,
+      'attributes' => ['class' => ['chargebee-portal-banner__btn', 'chargebee-portal-banner__btn--primary']],
+    ],
+    [
+      'id' => 'cancel_membership',
+      'title' => t('Cancel membership'),
+      'url' => Url::fromRoute('makerspace_member_success.cancel_offer'),
+      'category' => 'secondary',
+      'weight' => 10,
       'attributes' => ['class' => ['chargebee-portal-banner__btn', 'chargebee-portal-banner__btn--secondary']],
     ],
   ];

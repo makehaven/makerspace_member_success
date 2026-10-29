@@ -403,6 +403,9 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
     $this->assertSame(0, $store->adoptPending(45));
     $source = $db->query('SELECT source FROM {ms_pause_reason} WHERE uid = 702')->fetchField();
     $this->assertSame('before_pause', $source);
+    // A member who chose "Pause instead" on the cancel page is tagged.
+    $this->assertTrue($store->recordBeforePause(706, 'cost', '', TRUE));
+    $this->assertSame('cancel_offer', $db->query('SELECT source FROM {ms_pause_reason} WHERE uid = 706')->fetchField());
   }
 
   /**

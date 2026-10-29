@@ -547,6 +547,7 @@ function makerspace_member_success_schema() {
   $schema['ms_onboarding_lead'] = _makerspace_member_success_lead_table_schema();
   $schema['ms_billing_mismatch'] = _makerspace_member_success_billing_mismatch_schema();
   $schema['ms_pause_reason'] = _makerspace_member_success_pause_reason_schema();
+  $schema['ms_cancel_offer'] = _makerspace_member_success_cancel_offer_schema();
 
   return $schema;
 }
@@ -2158,7 +2159,7 @@ function _makerspace_member_success_pause_reason_source_field(): array {
     'length' => 16,
     'not null' => TRUE,
     'default' => 'email',
-    'description' => 'email (asked after the pause) | before_pause (/membership/pause).',
+    'description' => 'email (asked after the pause) | before_pause (/membership/pause) | cancel_offer (chose pause on /membership/cancel).',
   ];
 }
 
@@ -2193,4 +2194,41 @@ function makerspace_member_success_update_9043(): string {
     $added[] = 'pending';
   }
   return $added ? 'Added ms_pause_reason.' . implode(', ', $added) . '.' : 'ms_pause_reason already has source and pending.';
+}
+
+/**
+ * Schema for the "before you cancel" choice: pause instead, or cancel.
+ */
+function _makerspace_member_success_cancel_offer_schema(): array {
+  return [
+    'description' => 'What active members chose on /membership/cancel.',
+    'fields' => [
+      'id' => ['type' => 'serial', 'unsigned' => TRUE, 'not null' => TRUE],
+      'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+      'choice' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'description' => 'pause | cancel.',
+      ],
+      'created' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'uid' => ['uid'],
+      'created' => ['created'],
+    ],
+  ];
+}
+
+/**
+ * Offers a pause before cancelling: creates ms_cancel_offer.
+ */
+function makerspace_member_success_update_9044(): string {
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('ms_cancel_offer')) {
+    return 'ms_cancel_offer already exists.';
+  }
+  $schema->createTable('ms_cancel_offer', _makerspace_member_success_cancel_offer_schema());
+  return 'Created ms_cancel_offer.';
 }

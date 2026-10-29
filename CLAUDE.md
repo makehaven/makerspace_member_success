@@ -144,6 +144,15 @@ starting within 45 days, so the email skips them and the queue badge shows
 them. Answers that never get a pause stay pending: members who considered
 pausing and stayed.
 
+"Before you cancel" (`/membership/cancel`, `CancelOfferForm`): the box's
+"Cancel membership" link offers a pause first (no reason question; Chargebee
+asks one at cancel). Each choice goes to `ms_cancel_offer` (pause | cancel).
+"Pause instead" leads to `/membership/pause?from=cancel`, whose answer is
+stored with `source = cancel_offer`. The theme forces `btn-primary` with
+`!important` on every submit, so the quiet "Continue to cancel" outline comes
+from `css/membership-choice.css`. Reading pause and cancel reasons together:
+`docs/reporting/recipes/why-members-pause-and-leave.md` in the site repo.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

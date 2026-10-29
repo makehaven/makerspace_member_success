@@ -38,11 +38,14 @@ class PauseReasonStore {
   /**
    * Records an answer given before pausing, filed under today until adopted.
    *
+   * $fromCancel marks a member who came from "Before you cancel" and chose
+   * to pause instead (source cancel_offer).
+   *
    * Returns FALSE for an unknown answer code.
    */
-  public function recordBeforePause(int $uid, string $reason, string $note = ''): bool {
+  public function recordBeforePause(int $uid, string $reason, string $note = '', bool $fromCancel = FALSE): bool {
     $today = date('Y-m-d', $this->time->getCurrentTime());
-    return $this->write($uid, $today, $reason, $note, 'before_pause', 1);
+    return $this->write($uid, $today, $reason, $note, $fromCancel ? 'cancel_offer' : 'before_pause', 1);
   }
 
   /**

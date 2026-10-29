@@ -216,6 +216,19 @@ makerspace_member_success.pause_before:
   options:
     no_cache: TRUE
 
+# "Before you cancel": offers a pause first, records which way the member
+# went (ms_cancel_offer), then /membership/pause or the Chargebee portal.
+makerspace_member_success.cancel_offer:
+  path: '/membership/cancel'
+  defaults:
+    _form: '\Drupal\makerspace_member_success\Form\CancelOfferForm'
+    _title: 'Before you cancel'
+  requirements:
+    # Open route: CancelOfferForm sends logged-out visitors to log in and back.
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
 # Signed link from the pause-reason email. No login: the token is the access
 # check (PauseReason::validToken). A form, not a one-click GET — mail scanners
 # follow every link.

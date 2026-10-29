@@ -1,0 +1,13 @@
+/* "Before you cancel": the theme draws every submit as btn-primary (with
+   !important, components/buttons.css); the cancel path is the quieter,
+   outlined choice next to "Pause instead". */
+.ms-membership-choice .btn.ms-choice-quiet {
+  background-color: transparent !important;
+  color: var(--mh-color-brand-primary) !important;
+  border: 1px solid var(--mh-color-brand-primary) !important;
+}
+.ms-membership-choice .btn.ms-choice-quiet:hover,
+.ms-membership-choice .btn.ms-choice-quiet:focus {
+  background-color: var(--mh-color-brand-primary) !important;
+  color: var(--mh-color-surface) !important;
+}

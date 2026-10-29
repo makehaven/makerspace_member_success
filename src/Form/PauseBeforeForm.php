@@ -46,6 +46,7 @@ class PauseBeforeForm extends FormBase {
     }
 
     $pending = \Drupal::service('makerspace_member_success.pause_reason_store')->getPending((int) $this->currentUser()->id());
+    $form_state->set('from_cancel', $this->getRequest()->query->get('from') === 'cancel');
 
     $form['intro'] = [
       '#markup' => '<p>' . $this->t('What is the main reason? It helps us plan, and it takes a few seconds. Next you will choose 30, 60 or 90 days in the payment portal. Your profile, badges and training records stay as they are.') . '</p>',
@@ -88,6 +89,7 @@ class PauseBeforeForm extends FormBase {
       (int) $this->currentUser()->id(),
       (string) $form_state->getValue('reason'),
       (string) $form_state->getValue('note'),
+      (bool) $form_state->get('from_cancel'),
     );
     $form_state->setRedirect('chargebee_portal.payment_portal');
   }

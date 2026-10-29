@@ -35,3 +35,9 @@ duplicates:
   css:
     theme:
       css/duplicates.css: {}
+
+membership_choice:
+  version: 1.x
+  css:
+    theme:
+      css/membership-choice.css: {}
