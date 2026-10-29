@@ -2107,6 +2107,8 @@ function _makerspace_member_success_pause_reason_schema(): array {
       'reason' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE],
       'note' => ['type' => 'text', 'not null' => FALSE],
       'answered_at' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+      'source' => _makerspace_member_success_pause_reason_source_field(),
+      'pending' => _makerspace_member_success_pause_reason_pending_field(),
     ],
     'primary key' => ['uid', 'pause_start_date'],
     'indexes' => [
@@ -2145,4 +2147,50 @@ function makerspace_member_success_update_9042(): string {
   $config->save();
   $messages[] = $seeded ? 'Seeded settings: ' . implode(', ', $seeded) . '.' : 'Pause-reason settings already present.';
   return implode(' ', $messages);
+}
+
+/**
+ * Where a pause-reason answer came from.
+ */
+function _makerspace_member_success_pause_reason_source_field(): array {
+  return [
+    'type' => 'varchar',
+    'length' => 16,
+    'not null' => TRUE,
+    'default' => 'email',
+    'description' => 'email (asked after the pause) | before_pause (/membership/pause).',
+  ];
+}
+
+/**
+ * Whether a pause-reason answer still waits for its pause.
+ */
+function _makerspace_member_success_pause_reason_pending_field(): array {
+  return [
+    'type' => 'int',
+    'size' => 'tiny',
+    'not null' => TRUE,
+    'default' => 0,
+    'description' => '1 = given before pausing; pause_start_date is the answer day until adopted.',
+  ];
+}
+
+/**
+ * Asks why before the pause: ms_pause_reason gains source and pending.
+ */
+function makerspace_member_success_update_9043(): string {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ms_pause_reason')) {
+    return 'ms_pause_reason missing; run update 9042 first.';
+  }
+  $added = [];
+  if (!$schema->fieldExists('ms_pause_reason', 'source')) {
+    $schema->addField('ms_pause_reason', 'source', _makerspace_member_success_pause_reason_source_field());
+    $added[] = 'source';
+  }
+  if (!$schema->fieldExists('ms_pause_reason', 'pending')) {
+    $schema->addField('ms_pause_reason', 'pending', _makerspace_member_success_pause_reason_pending_field());
+    $added[] = 'pending';
+  }
+  return $added ? 'Added ms_pause_reason.' . implode(', ', $added) . '.' : 'ms_pause_reason already has source and pending.';
 }

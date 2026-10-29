@@ -298,6 +298,18 @@ function makerspace_member_success_cron(): void {
   // has drifted away (retention brief move 1). Ships dark
   // (pause_reason_enabled FALSE); when on it sends without approval (see
   // OutreachQueueService::enqueueCandidate()).
+  // Answers given on /membership/pause before the member paused join their
+  // pause first (always, flag or not), so the email skips anyone who already
+  // told us and the queue's "Why:" badge shows their answer.
+  try {
+    $adopted = \Drupal::service('makerspace_member_success.pause_reason_store')->adoptPending();
+    if ($adopted) {
+      \Drupal::logger('makerspace_member_success')->notice('Pause reason: @n answer(s) given before pausing joined their pause.', ['@n' => $adopted]);
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Pause-reason adoption failed: @msg', ['@msg' => $e->getMessage()]);
+  }
   try {
     $pr_config = \Drupal::config('makerspace_member_success.settings');
     if ((bool) $pr_config->get('pause_reason_enabled')) {
@@ -2149,4 +2161,27 @@ function makerspace_member_success_menu_local_tasks_alter(array &$data, string $
   if (_makerspace_member_success_onboarding_focus_active()) {
     $data['tabs'] = [];
   }
+}
+
+/**
+ * Implements hook_chargebee_portal_membership_actions().
+ *
+ * Active members get "Pause my membership", which asks why on
+ * /membership/pause before opening the Chargebee portal. chargebee_portal's
+ * own primary button drops "pause" from its label when this route exists.
+ */
+function makerspace_member_success_chargebee_portal_membership_actions(\Drupal\user\UserInterface $user, string $status, \Drupal\Core\Session\AccountInterface $viewer): array {
+  if ($status !== \Drupal\chargebee_portal\Service\MembershipStatusResolver::STATUS_ACTIVE) {
+    return [];
+  }
+  return [
+    [
+      'id' => 'pause_membership',
+      'title' => t('Pause my membership'),
+      'url' => Url::fromRoute('makerspace_member_success.pause_before'),
+      'category' => 'secondary',
+      'weight' => 0,
+      'attributes' => ['class' => ['chargebee-portal-banner__btn', 'chargebee-portal-banner__btn--secondary']],
+    ],
+  ];
 }

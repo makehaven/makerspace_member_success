@@ -349,6 +349,63 @@ class OutreachQueueServiceKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tests answers given before pausing join the pause that follows.
+   */
+  public function testPauseReasonBeforePauseAdoption(): void {
+    $this->installSchema('makerspace_member_success', ['ms_pause_reason', 'ms_member_success_snapshot']);
+    $db = $this->container->get('database');
+    // hook_schema() lacks this column; an update hook adds it on real sites.
+    if (!$db->schema()->fieldExists('ms_member_success_snapshot', 'pause_start_date')) {
+      $db->schema()->addField('ms_member_success_snapshot', 'pause_start_date', ['type' => 'varchar', 'length' => 10, 'not null' => FALSE]);
+    }
+    $store = new PauseReasonStore($db, $this->container->get('datetime.time'));
+    $today = date('Y-m-d');
+    $in20 = date('Y-m-d', strtotime('+20 days'));
+    $in60 = date('Y-m-d', strtotime('+60 days'));
+    $snapshot = static function (int $uid, ?string $pauseStart) use ($db, $today): void {
+      $db->insert('ms_member_success_snapshot')->fields([
+        'uid' => $uid,
+        'snapshot_date' => $today,
+        'snapshot_type' => 'daily',
+        'is_latest' => 1,
+        'stage' => $pauseStart ? 'paused' : 'retention',
+        'payment_pause' => $pauseStart ? 1 : 0,
+        'pause_start_date' => $pauseStart,
+      ])->execute();
+    };
+
+    $this->assertFalse($store->recordBeforePause(701, 'bogus'));
+    // 701 pauses the same day; 702 at the end of the term, 20 days on;
+    // 703 also answered the after-pause email (later answer wins);
+    // 704 never pauses; 705's pause is too far out to be this answer's.
+    foreach ([701 => 'away', 702 => 'cost', 703 => 'busy', 704 => 'school', 705 => 'other'] as $uid => $reason) {
+      $this->assertTrue($store->recordBeforePause($uid, $reason, 'note ' . $uid));
+    }
+    $this->assertSame('cost', $store->getPending(702)['reason']);
+    $store->record(703, $in20, 'not_using');
+    $snapshot(701, $today);
+    $snapshot(702, $in20);
+    $snapshot(703, $in20);
+    $snapshot(704, NULL);
+    $snapshot(705, $in60);
+
+    $this->assertSame(2, $store->adoptPending(45));
+    $this->assertSame('away', $store->get(701, $today)['reason']);
+    $this->assertNull($store->getPending(701));
+    $this->assertSame('cost', $store->get(702, $in20)['reason']);
+    $this->assertSame('note 702', $store->get(702, $in20)['note']);
+    $this->assertNull($store->get(702, $today));
+    $this->assertSame('not_using', $store->get(703, $in20)['reason']);
+    $this->assertNull($store->get(703, $today));
+    $this->assertSame('school', $store->getPending(704)['reason']);
+    $this->assertSame('other', $store->getPending(705)['reason']);
+    // Idempotent.
+    $this->assertSame(0, $store->adoptPending(45));
+    $source = $db->query('SELECT source FROM {ms_pause_reason} WHERE uid = 702')->fetchField();
+    $this->assertSame('before_pause', $source);
+  }
+
+  /**
    * Tests gate suppressions reuse the member's open row instead of inserting.
    *
    * Regression test: the max-attempts/cooldown/below-threshold gates used to

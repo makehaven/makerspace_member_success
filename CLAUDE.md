@@ -132,6 +132,18 @@ lifecycle/overview lists' "Payment Risk" column (`PaymentRiskField`, which also
 shows "Resumes <date>"). Note: paused members appear ONLY in those lists; the
 action-link column and `StageContextField` never render for them.
 
+Asking before the pause (always on): Chargebee's portal has no reason step
+for pause, so the membership box's "Pause my membership" button (this module's
+`hook_chargebee_portal_membership_actions()`) and the FAQ link go to
+`/membership/pause` (`PauseBeforeForm`), which asks the same seven answers and
+then redirects to `/payment-portal`. Skipping is allowed. Those answers are
+stored with `source = before_pause`, `pending = 1` and the answer day as
+`pause_start_date`; cron (`PauseReasonStore::adoptPending()`, before the
+email step) moves each onto the member's pause once the snapshot sees one
+starting within 45 days, so the email skips them and the queue badge shows
+them. Answers that never get a pause stay pending: members who considered
+pausing and stayed.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

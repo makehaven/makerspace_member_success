@@ -14,6 +14,12 @@ use Drupal\makerspace_member_success\Support\PauseReason;
  * twice has two answers rather than the second overwriting the first. A
  * second submit for the same pause replaces the answer: the member changed
  * their mind.
+ *
+ * An answer given on our page before the member opens the Chargebee portal
+ * (/membership/pause) has no pause yet. It is filed under the day it was
+ * given with pending = 1, and adoptPending() moves it onto the pause once the
+ * snapshot sees one. A pause can start weeks after the answer (Chargebee can
+ * pause at the end of the billing term), hence the adoption window.
  */
 class PauseReasonStore {
 
@@ -26,6 +32,84 @@ class PauseReasonStore {
    * Records an answer. Returns FALSE for an unknown answer code.
    */
   public function record(int $uid, string $pauseStart, string $reason, string $note = ''): bool {
+    return $this->write($uid, $pauseStart, $reason, $note, 'email', 0);
+  }
+
+  /**
+   * Records an answer given before pausing, filed under today until adopted.
+   *
+   * Returns FALSE for an unknown answer code.
+   */
+  public function recordBeforePause(int $uid, string $reason, string $note = ''): bool {
+    $today = date('Y-m-d', $this->time->getCurrentTime());
+    return $this->write($uid, $today, $reason, $note, 'before_pause', 1);
+  }
+
+  /**
+   * Moves pending before-pause answers onto the pause that followed them.
+   *
+   * A pending answer is adopted by the member's current pause when that pause
+   * started between the day before the answer (a pause the snapshot dated
+   * across midnight) and $windowDays after it. An answer for a pause that
+   * already has one (the member also answered the email) is dropped: the
+   * later answer stands. Answers whose member never paused stay pending —
+   * they are members who considered pausing and stayed.
+   *
+   * @return int
+   *   Answers adopted.
+   */
+  public function adoptPending(int $windowDays = 45): int {
+    $query = $this->database->select('ms_pause_reason', 'pr');
+    $query->fields('pr', ['uid', 'pause_start_date', 'answered_at']);
+    $query->innerJoin('ms_member_success_snapshot', 'ms', 'ms.uid = pr.uid AND ms.is_latest = 1 AND ms.snapshot_type = :daily', [':daily' => 'daily']);
+    $query->addField('ms', 'pause_start_date', 'actual_start');
+    $query->condition('pr.pending', 1);
+    $query->condition('ms.payment_pause', 1);
+    $query->isNotNull('ms.pause_start_date');
+
+    $adopted = 0;
+    foreach ($query->execute()->fetchAll() as $row) {
+      $answered = (string) $row->pause_start_date;
+      $actual = (string) $row->actual_start;
+      $earliest = date('Y-m-d', strtotime($answered . ' -1 day'));
+      $latest = date('Y-m-d', strtotime($answered . ' +' . $windowDays . ' days'));
+      if ($actual < $earliest || $actual > $latest) {
+        continue;
+      }
+      $key = ['uid' => (int) $row->uid, 'pause_start_date' => $answered];
+      if ($actual === $answered) {
+        $this->database->update('ms_pause_reason')->fields(['pending' => 0])
+          ->condition('uid', $key['uid'])->condition('pause_start_date', $answered)->execute();
+        $adopted++;
+        continue;
+      }
+      $existing = $this->database->select('ms_pause_reason', 'x')
+        ->fields('x', ['answered_at'])
+        ->condition('x.uid', $key['uid'])
+        ->condition('x.pause_start_date', $actual)
+        ->execute()
+        ->fetchField();
+      if ($existing !== FALSE && (int) $existing >= (int) $row->answered_at) {
+        $this->database->delete('ms_pause_reason')
+          ->condition('uid', $key['uid'])->condition('pause_start_date', $answered)->execute();
+        continue;
+      }
+      if ($existing !== FALSE) {
+        $this->database->delete('ms_pause_reason')
+          ->condition('uid', $key['uid'])->condition('pause_start_date', $actual)->execute();
+      }
+      $this->database->update('ms_pause_reason')
+        ->fields(['pause_start_date' => $actual, 'pending' => 0])
+        ->condition('uid', $key['uid'])->condition('pause_start_date', $answered)->execute();
+      $adopted++;
+    }
+    return $adopted;
+  }
+
+  /**
+   * Writes one answer row.
+   */
+  protected function write(int $uid, string $pauseStart, string $reason, string $note, string $source, int $pending): bool {
     if (PauseReason::label($reason) === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $pauseStart)) {
       return FALSE;
     }
@@ -35,9 +119,29 @@ class PauseReasonStore {
         'reason' => $reason,
         'note' => mb_substr(trim($note), 0, 2000) ?: NULL,
         'answered_at' => $this->time->getCurrentTime(),
+        'source' => $source,
+        'pending' => $pending,
       ])
       ->execute();
     return TRUE;
+  }
+
+  /**
+   * The member's latest answer still waiting for a pause, or NULL.
+   *
+   * @return array{reason: string, note: ?string, answered_at: int}|null
+   *   The stored answer.
+   */
+  public function getPending(int $uid): ?array {
+    $row = $this->database->select('ms_pause_reason', 'pr')
+      ->fields('pr', ['pause_start_date'])
+      ->condition('pr.uid', $uid)
+      ->condition('pr.pending', 1)
+      ->orderBy('pr.answered_at', 'DESC')
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+    return $row === FALSE ? NULL : $this->get($uid, (string) $row);
   }
 
   /**
