@@ -172,6 +172,14 @@ function makerspace_member_success_schema() {
         'not null' => FALSE,
         'description' => 'Chargebee scheduled resume date of the current pause (YYYY-MM-DD), NULL when unknown.',
       ],
+      // Was only ever added by update 9017, so a fresh install lacked it and
+      // every pause query failed. Same definition as 9017.
+      'pause_start_date' => [
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => FALSE,
+        'description' => 'Date member\'s payment pause began (YYYY-MM-DD)',
+      ],
       'payment_pause' => [
         'type' => 'int',
         'size' => 'tiny',
