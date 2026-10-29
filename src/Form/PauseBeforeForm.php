@@ -48,7 +48,7 @@ class PauseBeforeForm extends FormBase {
     $pending = \Drupal::service('makerspace_member_success.pause_reason_store')->getPending((int) $this->currentUser()->id());
 
     $form['intro'] = [
-      '#markup' => '<p>' . $this->t('Before you pause: what is the main reason? It helps us plan, and it takes a few seconds. Next you will choose 30, 60 or 90 days in the payment portal. Your profile, badges and training records stay as they are.') . '</p>',
+      '#markup' => '<p>' . $this->t('What is the main reason? It helps us plan, and it takes a few seconds. Next you will choose 30, 60 or 90 days in the payment portal. Your profile, badges and training records stay as they are.') . '</p>',
     ];
     $form['reason'] = [
       '#type' => 'radios',
@@ -74,7 +74,7 @@ class PauseBeforeForm extends FormBase {
       '#type' => 'link',
       '#title' => $this->t('Skip this question'),
       '#url' => $portal,
-      '#attributes' => ['class' => ['button', 'button--secondary']],
+      '#attributes' => ['class' => ['ms-3', 'align-self-center']],
     ];
     $form['#cache'] = ['max-age' => 0];
     return $form;
