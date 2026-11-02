@@ -45,6 +45,11 @@ final class MemberCardPdf {
   private const LAST_NAME_MAX = 12.0;
 
   /**
+   * Below this size a hyphenated name breaks onto two lines.
+   */
+  private const MIN_ONE_LINE = 9.0;
+
+  /**
    * Photo raster size: 300 dpi across the photo area.
    */
   private const PHOTO_PX_WIDTH = 640;
@@ -129,13 +134,13 @@ HTML
     $first = mb_strtoupper(trim($card['first'] ?? ''));
     $last = mb_strtoupper(trim($card['last'] ?? ''));
 
-    $firstSize = $this->fitSize($first, $fontDir . '/Montserrat-ExtraBold.ttf', self::FIRST_NAME_MAX);
-    $lastSize = $this->fitSize($last, $fontDir . '/Montserrat-Bold.ttf', self::LAST_NAME_MAX);
+    [$first, $firstSize, $firstRows] = $this->layoutName($first, $fontDir . '/Montserrat-ExtraBold.ttf', self::FIRST_NAME_MAX);
+    [$last, $lastSize, $lastRows] = $this->layoutName($last, $fontDir . '/Montserrat-Bold.ttf', self::LAST_NAME_MAX);
 
-    // Center the two lines vertically in the band.
+    // Center the name block vertically in the band.
     $band = self::PAGE_HEIGHT - self::PHOTO_HEIGHT;
-    $firstLine = $first === '' ? 0.0 : $firstSize * 1.05;
-    $lastLine = $last === '' ? 0.0 : $lastSize * 1.15;
+    $firstLine = $first === '' ? 0.0 : $firstSize * 1.05 * $firstRows;
+    $lastLine = $last === '' ? 0.0 : $lastSize * 1.15 * $lastRows;
     $gap = ($first !== '' && $last !== '') ? 1.0 : 0.0;
     $top = max(2.0, ($band - $firstLine - $gap - $lastLine) / 2);
 
@@ -148,16 +153,41 @@ HTML
     if ($first !== '') {
       $html .= sprintf(
         '<div class="first" style="position:absolute;left:0;width:%1$.2fpt;top:%2$.2fpt;font-size:%3$.2fpt;line-height:%4$.2fpt;">%5$s</div>',
-        self::PAGE_WIDTH, $top, $firstSize, $firstLine, htmlspecialchars($first, ENT_QUOTES, 'UTF-8')
+        self::PAGE_WIDTH, $top, $firstSize, $firstLine / $firstRows, $first
       );
     }
     if ($last !== '') {
       $html .= sprintf(
         '<div class="last" style="position:absolute;left:0;width:%1$.2fpt;top:%2$.2fpt;font-size:%3$.2fpt;line-height:%4$.2fpt;">%5$s</div>',
-        self::PAGE_WIDTH, $top + $firstLine + $gap, $lastSize, $lastLine, htmlspecialchars($last, ENT_QUOTES, 'UTF-8')
+        self::PAGE_WIDTH, $top + $firstLine + $gap, $lastSize, $lastLine / $lastRows, $last
       );
     }
     return $html . '</div></div>';
+  }
+
+  /**
+   * Escaped HTML, font size and row count for one name.
+   *
+   * A hyphenated name that would print below MIN_ONE_LINE on one line
+   * breaks after its first hyphen instead, both rows set at the size the
+   * wider one allows.
+   *
+   * @return array{0: string, 1: float, 2: int}
+   */
+  private function layoutName(string $text, string $fontFile, float $max): array {
+    $escape = static fn (string $t): string => htmlspecialchars($t, ENT_QUOTES, 'UTF-8');
+    $size = $this->fitSize($text, $fontFile, $max);
+    $hyphen = mb_strpos($text, '-');
+    if ($size >= self::MIN_ONE_LINE || $hyphen === FALSE || $hyphen === 0) {
+      return [$escape($text), $size, 1];
+    }
+    $top = mb_substr($text, 0, $hyphen + 1);
+    $bottom = mb_substr($text, $hyphen + 1);
+    $split = min($this->fitSize($top, $fontFile, $max), $this->fitSize($bottom, $fontFile, $max));
+    if ($split <= $size) {
+      return [$escape($text), $size, 1];
+    }
+    return [$escape($top) . '<br>' . $escape($bottom), $split, 2];
   }
 
   /**

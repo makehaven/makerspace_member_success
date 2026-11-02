@@ -48,4 +48,15 @@ final class MemberCardPdfTest extends UnitTestCase {
     $this->assertStringContainsString('class="nophoto"', $html);
   }
 
+  /**
+   * A long hyphenated name breaks after the hyphen; short ones never do.
+   */
+  public function testLongHyphenatedNameBreaksAtHyphen(): void {
+    $html = $this->pdf->html([['first' => 'Hubert', 'last' => 'Wolfeschlegelsteinhausen-Bergerdorff', 'photo' => NULL]], $this->fonts);
+    $this->assertStringContainsString('WOLFESCHLEGELSTEINHAUSEN-<br>BERGERDORFF', $html);
+    $html = $this->pdf->html([['first' => 'Ana', 'last' => 'Smith-Jones', 'photo' => NULL]], $this->fonts);
+    $this->assertStringContainsString('SMITH-JONES', $html);
+    $this->assertStringNotContainsString('<br>', $html);
+  }
+
 }
