@@ -176,6 +176,20 @@ records NO contact (no CiviCRM activity, cooldown or attempt). Replies go to
 `first_month_reply_to`. `drush ms:first-month-preview` lists who is due today;
 `--uid=N --step=7` prints one email.
 
+### Member ID cards (/onboard)
+
+`/onboard/card/{uid}` returns a one-page PDF of the member's ID card, and
+`/onboard/cards?uids=1,2,3` returns one page per member (up to 50). Both are
+limited to the administrator and manager roles, the same as the /onboard view, whose
+"Card PDF" button links to the single card. `MemberCardPdf` (dompdf, which ships
+with CiviCRM) draws a CR80 portrait page (153x243pt, full bleed). The member photo
+(`field_member_photo` on the main profile) is cropped to the top 176pt, biased
+toward its top third. A `BAND_COLOR` band holds the first name in Montserrat
+ExtraBold and the last name in Bold, uppercase, sized to fit. Fonts are bundled in
+`fonts/` (OFL). dompdf font metrics are cached in the Drupal temp dir. A member
+with no photo, or whose photo file is missing, gets a warning back on /onboard
+instead of a blank card.
+
 ## Configuration
 
 Settings at `/admin/config/makerspace/member-success` (`makerspace_member_success.settings`):

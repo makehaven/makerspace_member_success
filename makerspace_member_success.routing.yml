@@ -243,3 +243,26 @@ makerspace_member_success.pause_reason:
     pause: \d{4}-\d{2}-\d{2}
   options:
     no_cache: TRUE
+
+makerspace_member_success.member_card_pdf:
+  path: '/onboard/card/{user}'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberCardController::single'
+  requirements:
+    # Same audience as the /onboard view (views.view.onboard_list).
+    _role: 'administrator+manager'
+    user: \d+
+  options:
+    parameters:
+      user:
+        type: entity:user
+    no_cache: TRUE
+
+makerspace_member_success.member_cards_pdf:
+  path: '/onboard/cards'
+  defaults:
+    _controller: '\Drupal\makerspace_member_success\Controller\MemberCardController::batch'
+  requirements:
+    _role: 'administrator+manager'
+  options:
+    no_cache: TRUE

@@ -260,3 +260,9 @@ services:
     arguments:
       - '@database'
       - '@datetime.time'
+
+  makerspace_member_success.member_card_pdf:
+    class: Drupal\makerspace_member_success\Service\MemberCardPdf
+    arguments:
+      - '@file_system'
+      - '@extension.list.module'
