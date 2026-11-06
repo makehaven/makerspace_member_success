@@ -62,4 +62,16 @@ class ChargebeeAccountReconcilerTest extends UnitTestCase {
     $this->assertStringContainsString('Chargebee ID', ChargebeeAccountReconciler::describe(ChargebeeAccountReconciler::KIND_RELINK, NULL));
   }
 
+  /**
+   * @covers ::describe
+   */
+  public function testDescribeSeparatesPendingApprovalFromMissingRole(): void {
+    $pending = ChargebeeAccountReconciler::describe(ChargebeeAccountReconciler::KIND_NO_ROLE, 'membership-2024-update', TRUE);
+    $this->assertStringContainsString('waiting for member approval', $pending);
+    $this->assertStringNotContainsString('missing the member role', $pending);
+    $this->assertStringContainsString('missing the member role', ChargebeeAccountReconciler::describe(ChargebeeAccountReconciler::KIND_NO_ROLE, 'membership-2024-update'));
+    // The flag only changes the wording for a missing member role.
+    $this->assertStringContainsString('Chargebee ID', ChargebeeAccountReconciler::describe(ChargebeeAccountReconciler::KIND_RELINK, NULL, TRUE));
+  }
+
 }

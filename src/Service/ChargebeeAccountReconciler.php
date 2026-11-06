@@ -274,8 +274,20 @@ class ChargebeeAccountReconciler {
 
   /**
    * Says what staff should do about a row, in plain words.
+   *
+   * @param string $kind
+   *   A KIND_* constant.
+   * @param string|null $plan_id
+   *   The subscription's plan.
+   * @param bool $pending_approval
+   *   The account holds the pending member role, so it exists and is waiting
+   *   on staff. "Missing the member role" read as a false alarm to the person
+   *   looking at a set-up account (Ryannie Cardenas, 2026-11-05).
    */
-  public static function describe(string $kind, ?string $plan_id): string {
+  public static function describe(string $kind, ?string $plan_id, bool $pending_approval = FALSE): string {
+    if ($kind === self::KIND_NO_ROLE && $pending_approval) {
+      return 'Account is set up and has been waiting for member approval for more than ' . self::PENDING_BUSINESS_DAYS . ' business days. Approve the member, or note why not.';
+    }
     $household = $plan_id !== NULL && str_contains($plan_id, 'household');
     return match ($kind) {
       self::KIND_NO_ACCOUNT => $household
@@ -593,7 +605,7 @@ class ChargebeeAccountReconciler {
     ];
     foreach ($rows as $row) {
       $body[] = sprintf('- %s <%s>, plan %s', $row['name'] ?? '(no name)', $row['email'] ?? 'no email', $row['plan_id'] ?? '?');
-      $body[] = '  ' . static::describe($row['kind'], $row['plan_id']);
+      $body[] = '  ' . static::describe($row['kind'], $row['plan_id'], $this->isPendingApproval(isset($row['uid']) ? (int) $row['uid'] : NULL));
     }
     $body[] = '';
     $body[] = 'Queue: ' . $base . '/admin/makerspace/member-success/billing';
@@ -718,6 +730,13 @@ class ChargebeeAccountReconciler {
       ->execute()
       ->fetchField();
     return $uid !== FALSE ? (int) $uid : NULL;
+  }
+
+  /**
+   * Whether an account is waiting for staff to approve it as a member.
+   */
+  public function isPendingApproval(?int $uid): bool {
+    return $uid !== NULL && $uid > 0 && $this->hasRole($uid, self::PENDING_ROLE);
   }
 
   /**

@@ -77,7 +77,7 @@ class BillingMismatchQueueController extends ControllerBase {
         $row['email'] ?? '—',
         $row['plan_id'] ?? '—',
         $row['sub_created'] ? date('Y-m-d', (int) $row['sub_created']) : '—',
-        ChargebeeAccountReconciler::describe($row['kind'], $row['plan_id']),
+        ChargebeeAccountReconciler::describe($row['kind'], $row['plan_id'], $this->reconciler->isPendingApproval(isset($row['uid']) ? (int) $row['uid'] : NULL)),
         $account,
         $suggested,
         [
