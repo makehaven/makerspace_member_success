@@ -2217,7 +2217,7 @@ function _makerspace_member_success_cancel_offer_schema(): array {
         'type' => 'varchar',
         'length' => 16,
         'not null' => TRUE,
-        'description' => 'pause | cancel.',
+        'description' => 'pause | cancel | repeat (paused in the last year, offer skipped).',
       ],
       'created' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
     ],

@@ -7,6 +7,7 @@ use Drupal\Core\Form\EnforcedResponseException;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
@@ -17,6 +18,10 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
  * pause first. No reason question here: the Chargebee portal already asks a
  * cancel reason (field_chargebee_cancel_reason). Each choice is stored in
  * ms_cancel_offer so the share who pause instead can be measured.
+ *
+ * A member who already paused in the last 12 months is not offered another
+ * pause (Kate 11-10: repeat pausers who really meant to cancel). They go
+ * straight to the portal, logged as 'repeat' so the skip can be counted.
  */
 class CancelOfferForm extends FormBase {
 
@@ -40,9 +45,14 @@ class CancelOfferForm extends FormBase {
     if ($status !== MembershipStatusResolver::STATUS_ACTIVE) {
       throw new EnforcedResponseException(new RedirectResponse(Url::fromRoute('chargebee_portal.payment_portal')->toString()));
     }
+    $uid = (int) $this->currentUser()->id();
+    if (static::pausedWithinYear($uid)) {
+      static::logChoice($uid, 'repeat');
+      throw new EnforcedResponseException(new RedirectResponse(Url::fromRoute('chargebee_portal.payment_portal')->toString()));
+    }
 
     $form['intro'] = [
-      '#markup' => '<p>' . $this->t('Would a pause work instead? A pause stops your membership billing for 30, 60 or 90 days, and you can come back without signing up again. Your profile, badges and training records stay as they are either way.') . '</p>',
+      '#markup' => '<p>' . $this->t('Would a pause work instead? A pause stops your membership billing for 30, 60 or 90 days. When it ends, your membership and billing restart automatically; to stop for good, cancel instead. Your profile, badges and training records stay as they are either way.') . '</p>',
     ];
     $form['actions'] = ['#type' => 'actions'];
     $form['actions']['pause'] = [
@@ -67,18 +77,40 @@ class CancelOfferForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $choice = ($form_state->getTriggeringElement()['#name'] ?? '') === 'pause' ? 'pause' : 'cancel';
-    \Drupal::database()->insert('ms_cancel_offer')
-      ->fields([
-        'uid' => (int) $this->currentUser()->id(),
-        'choice' => $choice,
-        'created' => \Drupal::time()->getCurrentTime(),
-      ])
-      ->execute();
+    static::logChoice((int) $this->currentUser()->id(), $choice);
     if ($choice === 'pause') {
       $form_state->setRedirect('makerspace_member_success.pause_before', [], ['query' => ['from' => 'cancel']]);
       return;
     }
     $form_state->setRedirect('chargebee_portal.payment_portal');
+  }
+
+  /**
+   * Whether the member was paused on any snapshot in the last 12 months.
+   */
+  protected static function pausedWithinYear(int $uid): bool {
+    $since = date('Y-m-d', strtotime('-12 months', \Drupal::time()->getRequestTime()));
+    return (bool) \Drupal::database()->select('ms_member_success_snapshot', 's')
+      ->condition('s.uid', $uid)
+      ->condition('s.stage', MemberSuccessLifecycle::STAGE_PAUSED)
+      ->condition('s.snapshot_date', $since, '>=')
+      ->range(0, 1)
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+  }
+
+  /**
+   * Records one visit's outcome: pause, cancel, or repeat (offer skipped).
+   */
+  protected static function logChoice(int $uid, string $choice): void {
+    \Drupal::database()->insert('ms_cancel_offer')
+      ->fields([
+        'uid' => $uid,
+        'choice' => $choice,
+        'created' => \Drupal::time()->getCurrentTime(),
+      ])
+      ->execute();
   }
 
 }

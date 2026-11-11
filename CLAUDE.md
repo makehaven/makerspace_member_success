@@ -147,6 +147,10 @@ pausing and stayed.
 "Before you cancel" (`/membership/cancel`, `CancelOfferForm`): the box's
 "Cancel membership" link offers a pause first (no reason question; Chargebee
 asks one at cancel). Each choice goes to `ms_cancel_offer` (pause | cancel).
+A member with any `paused` snapshot in the last 12 months is not offered
+another pause: they go straight to the portal, logged as `repeat` (Kate
+11-10). Both pages say the pause restarts membership and billing
+automatically.
 "Pause instead" leads to `/membership/pause?from=cancel`, whose answer is
 stored with `source = cancel_offer`. The theme forces `btn-primary` with
 `!important` on every submit, so the quiet "Continue to cancel" outline comes

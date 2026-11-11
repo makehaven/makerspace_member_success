@@ -60,6 +60,11 @@ function makerspace_member_success_mail(string $key, array &$message, array $par
       $message['reply-to'] = $params['reply_to'];
       $message['headers']['Reply-To'] = $params['reply_to'];
     }
+    // Postmark rewrites every link through track.pstmrk.it unless told not
+    // to. In a personal note those long links read as suspicious (Kate 11-10)
+    // and about half the clicks they count are mail scanners anyway, so the
+    // member sees the real makehaven.org address.
+    $message['headers']['X-PM-TrackLinks'] = 'None';
     return;
   }
 
