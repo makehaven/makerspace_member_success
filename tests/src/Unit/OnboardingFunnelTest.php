@@ -273,21 +273,27 @@ class OnboardingFunnelTest extends UnitTestCase {
   }
 
   /**
-   * A due setup reminder goes now in the daytime, else at 8am.
+   * A due setup reminder goes at once; a narrower window defers it.
    */
   public function testNudgeSendAt(): void {
     $tz = new \DateTimeZone('America/New_York');
     $at = static fn (string $local) => (new \DateTimeImmutable($local, $tz))->getTimestamp();
 
+    // Default (live): all day. Nancy, stalled since 11:58pm, at 1am: now.
+    $this->assertSame($at('2026-11-12 01:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 01:00'), $tz));
+    $this->assertSame($at('2026-11-12 23:30'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 23:30'), $tz));
+
+    // An 8am-8pm window, if staff ever set one:
+
     // 11am: send now (not tomorrow's 10am batch).
-    $this->assertSame($at('2026-11-12 11:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 11:00'), $tz));
+    $this->assertSame($at('2026-11-12 11:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 11:00'), $tz, 8, 20));
     // 2am (Nancy, two hours after joining at 11:58pm): wait for 8am.
-    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 02:00'), $tz));
+    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 02:00'), $tz, 8, 20));
     // 9pm: after the window, so 8am tomorrow.
-    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 21:00'), $tz));
+    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 21:00'), $tz, 8, 20));
     // 8:00 exactly is inside; 20:00 exactly is outside.
-    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 08:00'), $tz));
-    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 20:00'), $tz));
+    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 08:00'), $tz, 8, 20));
+    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 20:00'), $tz, 8, 20));
   }
 
 }

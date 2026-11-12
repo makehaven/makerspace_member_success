@@ -171,7 +171,7 @@ function makerspace_member_success_cron(): void {
       // nudges every onboarding-stalled member. The candidate's stuck step is
       // derived from its risk reasons (e.g. "stuck_at_profile").
       $nudge_steps = array_values(array_filter((array) ($nudge_config->get('onboarding_auto_nudge_steps') ?? [])));
-      $min_stall_hours = (int) ($nudge_config->get('onboarding_nudge_min_stall_hours') ?? 2);
+      $min_stall_hours = (int) ($nudge_config->get('onboarding_nudge_min_stall_hours') ?? 1);
       $now = \Drupal::time()->getRequestTime();
       $enqueued = 0;
       foreach ($generator->generate(['onboarding']) as $candidate) {
@@ -181,13 +181,14 @@ function makerspace_member_success_cron(): void {
         if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::nudgeEligible($candidate, $nudge_steps, $min_stall_hours, $now)) {
           continue;
         }
-        // Send as soon as it is due during the day, not at the next 10am
-        // batch: the reminder works when it is fast (JR 11-12).
+        // Send as soon as it is due, not at the next 10am batch: the
+        // reminder works when it is fast. JR 11-12: "if they are up they
+        // can get an email an hour later" — so the window defaults to all day.
         $candidate['scheduled_at'] = \Drupal\makerspace_member_success\Support\OnboardingFunnel::nudgeSendAt(
           $now,
           new \DateTimeZone(date_default_timezone_get() ?: 'UTC'),
-          (int) ($nudge_config->get('onboarding_nudge_send_start_hour') ?? 8),
-          (int) ($nudge_config->get('onboarding_nudge_send_end_hour') ?? 20),
+          (int) ($nudge_config->get('onboarding_nudge_send_start_hour') ?? 0),
+          (int) ($nudge_config->get('onboarding_nudge_send_end_hour') ?? 24),
         );
         $queue->enqueueCandidate((int) $candidate['uid'], 'onboarding', $candidate);
         $enqueued++;

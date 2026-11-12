@@ -272,7 +272,7 @@ final class OnboardingFunnel {
    *   onboarding_auto_nudge_steps; empty = any step.
    * @param int $min_stall_hours
    *   Hours the member must have sat on the current step
-   *   (onboarding_nudge_min_stall_hours, 2: JR 11-12 wants members caught
+   *   (onboarding_nudge_min_stall_hours, 1: JR 11-12 wants members caught
    *   early; an extra reminder costs little).
    * @param int $now
    *   Current unix time.
@@ -302,8 +302,8 @@ final class OnboardingFunnel {
    * When an onboarding nudge that is due now should go out.
    *
    * Other outreach waits for the daily 10am send. The setup reminder does
-   * not: catching a new member early is the point, so it goes now when now
-   * is daytime, otherwise at the start of the next day's window.
+   * not: catching a new member early is the point. Live sends at any hour
+   * (window 0-24, JR 11-12); a narrower window defers to its start hour.
    *
    * @param int $now
    *   Current unix time.
@@ -314,7 +314,7 @@ final class OnboardingFunnel {
    * @param int $end_hour
    *   Local hour sends stop (exclusive).
    */
-  public static function nudgeSendAt(int $now, \DateTimeZone $tz, int $start_hour = 8, int $end_hour = 20): int {
+  public static function nudgeSendAt(int $now, \DateTimeZone $tz, int $start_hour = 0, int $end_hour = 24): int {
     $start_hour = max(0, min(23, $start_hour));
     $end_hour = max($start_hour + 1, min(24, $end_hour));
     $local = (new \DateTimeImmutable('@' . $now))->setTimezone($tz);
