@@ -242,9 +242,8 @@ class OnboardingFunnelTest extends UnitTestCase {
   /**
    * The nudge rule shared by cron and drush ms:nudge-preview.
    *
-   * Nancy Walker (11-11 11:58pm) is the case: stalled at profile, an hourly
-   * refresh sees her at 1am, but she should not be emailed before she has sat
-   * there 12 hours.
+   * Nancy Walker (11-11 11:58pm) is the case: stalled at profile, the
+   * hourly refresh sees her, and she is due two hours after she stopped.
    */
   public function testNudgeEligible(): void {
     $joined = 1_000_000;
@@ -256,10 +255,10 @@ class OnboardingFunnelTest extends UnitTestCase {
     ];
     $steps = ['profile', 'video', 'quiz', 'schedule'];
 
-    // Two hours in: flagged as stalled, but too soon to email.
-    $this->assertFalse(OnboardingFunnel::nudgeEligible($candidate, $steps, 12, $joined + 2 * 3600));
-    // Twelve hours in: due.
-    $this->assertTrue(OnboardingFunnel::nudgeEligible($candidate, $steps, 12, $joined + 12 * 3600));
+    // One hour in: too soon.
+    $this->assertFalse(OnboardingFunnel::nudgeEligible($candidate, $steps, 2, $joined + 3600));
+    // Two hours in: due.
+    $this->assertTrue(OnboardingFunnel::nudgeEligible($candidate, $steps, 2, $joined + 2 * 3600));
     // A 0-hour minimum restores the old behaviour.
     $this->assertTrue(OnboardingFunnel::nudgeEligible($candidate, $steps, 0, $joined + 3600));
 
@@ -271,6 +270,24 @@ class OnboardingFunnelTest extends UnitTestCase {
     $this->assertTrue(OnboardingFunnel::nudgeEligible(['risk_reasons' => ['stuck_at_profile']] + $candidate, $steps, 12, $joined + 86400));
     // No step timestamp (legacy row): the time gate does not hold it back.
     $this->assertTrue(OnboardingFunnel::nudgeEligible(['onboarding_step_ts' => NULL] + $candidate, $steps, 12, $joined + 3600));
+  }
+
+  /**
+   * A due setup reminder goes now in the daytime, else at 8am.
+   */
+  public function testNudgeSendAt(): void {
+    $tz = new \DateTimeZone('America/New_York');
+    $at = static fn (string $local) => (new \DateTimeImmutable($local, $tz))->getTimestamp();
+
+    // 11am: send now (not tomorrow's 10am batch).
+    $this->assertSame($at('2026-11-12 11:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 11:00'), $tz));
+    // 2am (Nancy, two hours after joining at 11:58pm): wait for 8am.
+    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 02:00'), $tz));
+    // 9pm: after the window, so 8am tomorrow.
+    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 21:00'), $tz));
+    // 8:00 exactly is inside; 20:00 exactly is outside.
+    $this->assertSame($at('2026-11-12 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 08:00'), $tz));
+    $this->assertSame($at('2026-11-13 08:00'), OnboardingFunnel::nudgeSendAt($at('2026-11-12 20:00'), $tz));
   }
 
 }

@@ -310,7 +310,7 @@ class MemberSuccessCommands extends DrushCommands {
     $would_send = 0;
     $transaction = $database->startTransaction();
     try {
-      $min_stall_hours = (int) ($config->get('onboarding_nudge_min_stall_hours') ?? 12);
+      $min_stall_hours = (int) ($config->get('onboarding_nudge_min_stall_hours') ?? 2);
       $now = \Drupal::time()->getRequestTime();
       foreach ($candidates as $c) {
         if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::nudgeEligible($c, $nudge_steps, $min_stall_hours, $now)) {

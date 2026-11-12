@@ -322,6 +322,12 @@ makerspace_member_success.settings:
     onboarding_nudge_min_stall_hours:
       type: integer
       label: 'Hours a member must sit on one setup step before the auto-nudge emails them'
+    onboarding_nudge_send_start_hour:
+      type: integer
+      label: 'Local hour the setup reminder may start sending (inclusive)'
+    onboarding_nudge_send_end_hour:
+      type: integer
+      label: 'Local hour the setup reminder stops sending (exclusive)'
     onboarding_hourly_refresh:
       type: boolean
       label: 'Re-snapshot recent onboarding members every hour before the nudge runs'

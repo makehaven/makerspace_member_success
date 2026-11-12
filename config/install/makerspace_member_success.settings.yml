@@ -159,10 +159,13 @@ onboarding_auto_nudge_enabled: false
 recovery_candidates_enabled: true
 # Hourly: re-snapshot members in their first 21 days who have no door badge
 # yet, so the nudge sees a stall the same day instead of after the nightly
-# pass. The nudge then waits until a member has sat on one step 12 hours.
+# pass. The nudge goes once a member has sat on one step 2 hours, sent right
+# away between 8am and 8pm local (not at the 10am outreach batch).
 onboarding_hourly_refresh: true
 onboarding_refresh_max_age_days: 21
-onboarding_nudge_min_stall_hours: 12
+onboarding_nudge_min_stall_hours: 2
+onboarding_nudge_send_start_hour: 8
+onboarding_nudge_send_end_hour: 20
 onboarding_auto_nudge_steps:
   - profile
   - video
