@@ -319,6 +319,15 @@ makerspace_member_success.settings:
     recovery_candidates_enabled:
       type: boolean
       label: 'Queue payment-failed members for staff approval on every cron'
+    onboarding_nudge_min_stall_hours:
+      type: integer
+      label: 'Hours a member must sit on one setup step before the auto-nudge emails them'
+    onboarding_hourly_refresh:
+      type: boolean
+      label: 'Re-snapshot recent onboarding members every hour before the nudge runs'
+    onboarding_refresh_max_age_days:
+      type: integer
+      label: 'Days since joining that a member counts as recent for the hourly refresh'
     onboarding_auto_nudge_steps:
       type: sequence
       label: 'Funnel steps the auto-nudge targets (empty = every onboarding-stalled member)'

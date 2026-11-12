@@ -378,6 +378,7 @@ class OutreachCandidateGenerator {
       'last_contact_date',
       'contact_count',
       'door_badge_status',
+      'onboarding_step_ts',
     ]);
     $query->innerJoin('users_field_data', 'u', 'u.uid = ms.uid');
     $query->addField('u', 'mail', 'email');

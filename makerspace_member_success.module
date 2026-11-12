@@ -153,31 +153,32 @@ function makerspace_member_success_cron(): void {
 
   // 2. Onboarding auto-nudge: email paid members stalled at a join-funnel step.
   // Reuses the existing candidate generator + outreach queue, so cooldown,
-  // max-attempts, and suppression are all enforced there. Off by default; the
-  // onboarding-only stage scoping keeps the blast radius to the join funnel.
+  // max-attempts, and suppression are all enforced there. The onboarding-only
+  // stage scoping keeps the blast radius to the join funnel.
   try {
     $nudge_config = \Drupal::config('makerspace_member_success.settings');
     if ((bool) $nudge_config->get('onboarding_auto_nudge_enabled')) {
+      // 2-pre. Re-snapshot members still in their first weeks before choosing
+      // whom to nudge. The full roster is snapshotted once a night, so a
+      // member who stalled just after that waited a day and a half for the
+      // first reminder (Nancy Walker, joined 11-11 11:58pm, missed the
+      // midnight pass by one hour). Cheap: only recent onboarding members.
+      _makerspace_member_success_refresh_recent_onboarding($nudge_config);
+
       $generator = \Drupal::service('makerspace_member_success.outreach_candidate_generator');
       $queue = \Drupal::service('makerspace_member_success.outreach_queue_service');
-      // Optionally scope the nudge to specific funnel steps. Default is
-      // profile-only — the biggest recent drop-out (funnel review 2026-07-17).
-      // An empty list nudges every onboarding-stalled member (the original
-      // stage-only behaviour). The candidate's stuck step is derived from its
-      // risk reasons (e.g. "stuck_at_profile").
+      // Optionally scope the nudge to specific funnel steps. An empty list
+      // nudges every onboarding-stalled member. The candidate's stuck step is
+      // derived from its risk reasons (e.g. "stuck_at_profile").
       $nudge_steps = array_values(array_filter((array) ($nudge_config->get('onboarding_auto_nudge_steps') ?? [])));
+      $min_stall_hours = (int) ($nudge_config->get('onboarding_nudge_min_stall_hours') ?? 12);
+      $now = \Drupal::time()->getRequestTime();
       $enqueued = 0;
       foreach ($generator->generate(['onboarding']) as $candidate) {
-        // Never nudge a member who already has an active door badge: they've
-        // been to orientation and are in the building, so a "finish your setup"
-        // / "book your orientation" email would be wrong. The snapshot can
-        // briefly label a door-active member as onboarding-stalled (stage vs
-        // door-status lag), and that must not turn into an outbound email.
-        if (($candidate['door_badge_status'] ?? '') === 'active') {
-          continue;
-        }
-        $reasons = @unserialize((string) ($candidate['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]);
-        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::stuckStepAllowed(is_array($reasons) ? $reasons : [], $nudge_steps, (int) $candidate['uid'])) {
+        // Door-active members, steps out of scope, and anyone on their step
+        // for less than onboarding_nudge_min_stall_hours are skipped. Same
+        // rule as drush ms:nudge-preview.
+        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::nudgeEligible($candidate, $nudge_steps, $min_stall_hours, $now)) {
           continue;
         }
         $queue->enqueueCandidate((int) $candidate['uid'], 'onboarding', $candidate);
@@ -605,6 +606,34 @@ function makerspace_member_success_cron(): void {
       '@reasons' => empty($reason_summary) ? 'none' : implode(', ', $reason_summary),
     ]
   );
+}
+
+/**
+ * Re-snapshots recent onboarding members at most once every 50 minutes.
+ *
+ * Called by the onboarding nudge stage of hook_cron(). Pantheon cron is
+ * hourly; the state guard keeps a manual `drush cron` from repeating it.
+ */
+function _makerspace_member_success_refresh_recent_onboarding($config): void {
+  if (!(bool) ($config->get('onboarding_hourly_refresh') ?? TRUE)) {
+    return;
+  }
+  $state = \Drupal::state();
+  $key = 'makerspace_member_success.onboarding_refresh_last';
+  $now = \Drupal::time()->getRequestTime();
+  if ($now - (int) $state->get($key, 0) < 50 * 60) {
+    return;
+  }
+  $state->set($key, $now);
+  try {
+    \Drupal::service('makerspace_member_success.snapshot_builder')->refreshRecentOnboarding(
+      (int) ($config->get('onboarding_refresh_max_age_days') ?? 21),
+      20,
+    );
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_member_success')->error('Onboarding snapshot refresh failed: @msg', ['@msg' => $e->getMessage()]);
+  }
 }
 
 /**

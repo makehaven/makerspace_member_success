@@ -310,9 +310,10 @@ class MemberSuccessCommands extends DrushCommands {
     $would_send = 0;
     $transaction = $database->startTransaction();
     try {
+      $min_stall_hours = (int) ($config->get('onboarding_nudge_min_stall_hours') ?? 12);
+      $now = \Drupal::time()->getRequestTime();
       foreach ($candidates as $c) {
-        $reasons_scope = @unserialize((string) ($c['risk_reasons'] ?? ''), ['allowed_classes' => FALSE]);
-        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::stuckStepAllowed(is_array($reasons_scope) ? $reasons_scope : [], $nudge_steps, (int) $c['uid'])) {
+        if (!\Drupal\makerspace_member_success\Support\OnboardingFunnel::nudgeEligible($c, $nudge_steps, $min_stall_hours, $now)) {
           continue;
         }
         $id = $queue->enqueueCandidate((int) $c['uid'], 'onboarding', $c);

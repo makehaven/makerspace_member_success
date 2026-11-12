@@ -157,6 +157,12 @@ onboarding_auto_nudge_enabled: false
 # automation_enabled is on. ON by default: a member whose card failed and who
 # nobody contacts is the one case where waiting costs a membership.
 recovery_candidates_enabled: true
+# Hourly: re-snapshot members in their first 21 days who have no door badge
+# yet, so the nudge sees a stall the same day instead of after the nightly
+# pass. The nudge then waits until a member has sat on one step 12 hours.
+onboarding_hourly_refresh: true
+onboarding_refresh_max_age_days: 21
+onboarding_nudge_min_stall_hours: 12
 onboarding_auto_nudge_steps:
   - profile
   - video

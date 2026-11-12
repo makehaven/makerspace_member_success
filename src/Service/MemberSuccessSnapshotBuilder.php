@@ -238,6 +238,85 @@ class MemberSuccessSnapshotBuilder {
   }
 
   /**
+   * Re-snapshots members who are still in their first weeks of onboarding.
+   *
+   * Runs hourly from cron, before the onboarding nudge picks its candidates.
+   * The nightly pass alone meant a member who stalled just after midnight was
+   * not seen as stalled until the next night. Members already door-active,
+   * and members past $max_age_days, wait for the nightly pass as before.
+   *
+   * Rebuilding today's row is the same operation `drush ms-build <uid>` does:
+   * outreach tracking is carried from the current is_latest row, so it is
+   * safe to repeat. The nightly pass then skips these members for today.
+   *
+   * @param int $max_age_days
+   *   Only members whose join date is within this many days (or unknown).
+   * @param int $time_budget_seconds
+   *   Wall-clock budget; 0 = no limit.
+   *
+   * @return int
+   *   Number of snapshots rebuilt.
+   */
+  public function refreshRecentOnboarding(int $max_age_days = 21, int $time_budget_seconds = 20): int {
+    $active = $this->loadActiveMemberIds();
+    if (empty($active)) {
+      return 0;
+    }
+    $tz = new \DateTimeZone(date_default_timezone_get());
+    $today = new \DateTimeImmutable('now', $tz);
+    $cutoff = $today->modify('-' . max(1, $max_age_days) . ' days')->format('Y-m-d');
+
+    // Members with a current row that says they are still onboarding, have
+    // no active door badge, and joined recently.
+    $query = $this->database->select('ms_member_success_snapshot', 'ms');
+    $query->addField('ms', 'uid');
+    $query->condition('ms.is_latest', 1);
+    $query->condition('ms.snapshot_type', 'daily');
+    $query->condition('ms.stage', MemberSuccessLifecycle::STAGE_ONBOARDING);
+    $query->condition($query->orConditionGroup()
+      ->isNull('ms.door_badge_status')
+      ->condition('ms.door_badge_status', 'active', '<>'));
+    $query->condition($query->orConditionGroup()
+      ->isNull('ms.join_date')
+      ->condition('ms.join_date', $cutoff, '>='));
+    $recent = array_map('intval', $query->execute()->fetchCol());
+
+    // Members with no current row at all: joined since the last pass.
+    $has_row = $this->database->select('ms_member_success_snapshot', 'ms')
+      ->fields('ms', ['uid'])
+      ->condition('ms.is_latest', 1)
+      ->condition('ms.snapshot_type', 'daily')
+      ->execute()
+      ->fetchCol();
+    $brand_new = array_diff($active, array_map('intval', $has_row));
+
+    $todo = array_values(array_intersect($active, array_unique(array_merge($recent, $brand_new))));
+    $snapshot_date = $today->format('Y-m-d');
+    $now_ts = (int) $this->time->getRequestTime();
+    $deadline = $time_budget_seconds > 0 ? microtime(TRUE) + $time_budget_seconds : NULL;
+    $count = 0;
+    foreach ($todo as $uid) {
+      if ($deadline !== NULL && microtime(TRUE) >= $deadline) {
+        break;
+      }
+      try {
+        $row = $this->buildSnapshotForUser($uid, $snapshot_date, 'daily', $now_ts);
+        $row['is_latest'] = 1;
+        $this->upsertSnapshot($row);
+        $count++;
+      }
+      catch (\Throwable $e) {
+        $this->logger->error('Onboarding snapshot refresh failed for uid @uid (@type: @msg).', [
+          '@uid' => $uid,
+          '@type' => get_class($e),
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+    }
+    return $count;
+  }
+
+  /**
    * Returns the snapshot date of the last completed full pass, if any.
    */
   protected function lastCompletedDate(): ?string {

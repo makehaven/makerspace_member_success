@@ -259,6 +259,46 @@ final class OnboardingFunnel {
   }
 
   /**
+   * Whether an onboarding outreach candidate should get the auto-nudge now.
+   *
+   * One rule for cron and for `drush ms:nudge-preview`, so the preview cannot
+   * list people cron would skip (it used to show door-active members as
+   * "WOULD SEND").
+   *
+   * @param array $candidate
+   *   Candidate row from OutreachCandidateGenerator: door_badge_status,
+   *   risk_reasons (serialized or array), onboarding_step_ts, uid.
+   * @param string[] $allowed_steps
+   *   onboarding_auto_nudge_steps; empty = any step.
+   * @param int $min_stall_hours
+   *   Hours the member must have sat on the current step. Since snapshots of
+   *   new members refresh hourly (2026-11-12), the 2-hour stall flag would
+   *   otherwise email someone the same morning they joined.
+   * @param int $now
+   *   Current unix time.
+   */
+  public static function nudgeEligible(array $candidate, array $allowed_steps, int $min_stall_hours, int $now): bool {
+    // Never nudge a member who already has an active door badge: they have
+    // been to orientation. The snapshot can lag the door status.
+    if (($candidate['door_badge_status'] ?? '') === 'active') {
+      return FALSE;
+    }
+    $reasons = $candidate['risk_reasons'] ?? [];
+    if (is_string($reasons)) {
+      $reasons = @unserialize($reasons, ['allowed_classes' => FALSE]);
+    }
+    if (!self::stuckStepAllowed(is_array($reasons) ? $reasons : [], $allowed_steps, (int) ($candidate['uid'] ?? 0))) {
+      return FALSE;
+    }
+    $since = (int) ($candidate['onboarding_step_ts'] ?? 0);
+    // No timestamp = legacy row, already long past any grace window.
+    if ($since > 0 && $min_stall_hours > 0 && ($now - $since) < $min_stall_hours * 3600) {
+      return FALSE;
+    }
+    return TRUE;
+  }
+
+  /**
    * Unix timestamp the member reached their current position in the funnel.
    *
    * This is the most recent timestamp among completed steps that carry one

@@ -239,4 +239,38 @@ class OnboardingFunnelTest extends UnitTestCase {
     $this->assertNull(OnboardingFunnel::stepFromRiskReasons(['missing_serial', 'foo']));
   }
 
+  /**
+   * The nudge rule shared by cron and drush ms:nudge-preview.
+   *
+   * Nancy Walker (11-11 11:58pm) is the case: stalled at profile, an hourly
+   * refresh sees her at 1am, but she should not be emailed before she has sat
+   * there 12 hours.
+   */
+  public function testNudgeEligible(): void {
+    $joined = 1_000_000;
+    $candidate = [
+      'uid' => 5865,
+      'door_badge_status' => NULL,
+      'risk_reasons' => serialize(['stuck_at_profile']),
+      'onboarding_step_ts' => $joined,
+    ];
+    $steps = ['profile', 'video', 'quiz', 'schedule'];
+
+    // Two hours in: flagged as stalled, but too soon to email.
+    $this->assertFalse(OnboardingFunnel::nudgeEligible($candidate, $steps, 12, $joined + 2 * 3600));
+    // Twelve hours in: due.
+    $this->assertTrue(OnboardingFunnel::nudgeEligible($candidate, $steps, 12, $joined + 12 * 3600));
+    // A 0-hour minimum restores the old behaviour.
+    $this->assertTrue(OnboardingFunnel::nudgeEligible($candidate, $steps, 0, $joined + 3600));
+
+    // Door already active: never, however long the step has sat.
+    $this->assertFalse(OnboardingFunnel::nudgeEligible(['door_badge_status' => 'active'] + $candidate, $steps, 12, $joined + 30 * 86400));
+    // Step out of scope.
+    $this->assertFalse(OnboardingFunnel::nudgeEligible($candidate, ['schedule'], 12, $joined + 86400));
+    // Unserialized reasons are accepted too.
+    $this->assertTrue(OnboardingFunnel::nudgeEligible(['risk_reasons' => ['stuck_at_profile']] + $candidate, $steps, 12, $joined + 86400));
+    // No step timestamp (legacy row): the time gate does not hold it back.
+    $this->assertTrue(OnboardingFunnel::nudgeEligible(['onboarding_step_ts' => NULL] + $candidate, $steps, 12, $joined + 3600));
+  }
+
 }
