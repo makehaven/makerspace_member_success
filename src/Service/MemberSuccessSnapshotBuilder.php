@@ -1318,31 +1318,92 @@ class MemberSuccessSnapshotBuilder {
   }
 
   /**
-   * Returns the date of the next scheduled orientation for a CiviCRM contact, or NULL.
+   * Activity types that mean "a key pickup / orientation is booked".
    *
-   * Looks for an "Attended Orientation" activity with status "Scheduled" and a
-   * future activity date. Returns the date string (YYYY-MM-DD) if found.
+   * Calendly bookings arrive as "Orientation" (calendly_to_civicrm). The
+   * original lookup asked for "Attended Orientation" with status "Scheduled",
+   * which nothing on this site ever creates, so the queue never saw a booking
+   * and listed booked members as stuck (found 2026-11-16: zero snapshots had
+   * ever recorded one).
+   *
+   * @return string[]
+   *   Activity type labels.
+   */
+  protected function orientationBookingTypes(): array {
+    $types = \Drupal::config('makerspace_member_success.settings')->get('orientation_booking_activity_types');
+    return is_array($types) && $types ? array_values(array_map('strval', $types)) : ['Orientation', 'Attended Orientation'];
+  }
+
+  /**
+   * The date of the earliest booking still ahead. Pure, so it is tested.
+   *
+   * @param array<int, array{activity_date_time?: string, type?: string, status?: string}> $activities
+   *   The contact's activities, with type and status as labels.
+   * @param string[] $types
+   *   Activity type labels that count as an orientation booking.
+   * @param string $today
+   *   Y-m-d.
+   *
+   * @return string|null
+   *   Y-m-d of the earliest booking today or later that is not cancelled.
+   */
+  public static function earliestOrientationBooking(array $activities, array $types, string $today): ?string {
+    $types = array_map('mb_strtolower', $types);
+    $best = NULL;
+    foreach ($activities as $activity) {
+      $date = substr((string) ($activity['activity_date_time'] ?? ''), 0, 10);
+      // A booking is recorded as Completed or Scheduled depending on who
+      // wrote it; only a cancelled (or no-show) one stops counting.
+      $status = mb_strtolower((string) ($activity['status'] ?? ''));
+      if ($date === '' || strcmp($date, $today) < 0
+        || !in_array(mb_strtolower((string) ($activity['type'] ?? '')), $types, TRUE)
+        || in_array($status, ['cancelled', 'canceled', 'no-show', 'not required'], TRUE)) {
+        continue;
+      }
+      if ($best === NULL || strcmp($date, $best) < 0) {
+        $best = $date;
+      }
+    }
+    return $best;
+  }
+
+  /**
+   * Returns the date of the next booked orientation for a CiviCRM contact, or NULL.
+   *
+   * Reads the contact's activities from today on and keeps the earliest one
+   * whose type is an orientation booking and that is not cancelled. Once the
+   * date has passed the booking no longer counts, so a no-show comes back
+   * into the queue the next day.
    */
   protected function loadOrientationScheduled(int $contactId): ?string {
     try {
+      static $labels = NULL;
+      if ($labels === NULL) {
+        $labels = [
+          'type' => (array) (civicrm_api3('Activity', 'getoptions', ['field' => 'activity_type_id'])['values'] ?? []),
+          'status' => (array) (civicrm_api3('Activity', 'getoptions', ['field' => 'status_id'])['values'] ?? []),
+        ];
+      }
       $result = civicrm_api3('Activity', 'get', [
         'target_contact_id' => $contactId,
-        'activity_type_id' => 'Attended Orientation',
-        'status_id' => 'Scheduled',
-        'return' => ['activity_date_time'],
+        'activity_date_time' => ['>=' => date('Y-m-d') . ' 00:00:00'],
+        'is_deleted' => 0,
+        'return' => ['activity_date_time', 'activity_type_id', 'status_id'],
         'sequential' => 1,
-        'options' => ['limit' => 1, 'sort' => 'activity_date_time ASC'],
+        'options' => ['limit' => 50, 'sort' => 'activity_date_time ASC'],
       ]);
-      if (!empty($result['values'][0]['activity_date_time'])) {
-        $date_str = substr($result['values'][0]['activity_date_time'], 0, 10);
-        // Only return if today or in the future.
-        if ($date_str >= date('Y-m-d')) {
-          return $date_str;
-        }
+      $activities = [];
+      foreach ((array) ($result['values'] ?? []) as $row) {
+        $activities[] = [
+          'activity_date_time' => (string) ($row['activity_date_time'] ?? ''),
+          'type' => (string) ($labels['type'][$row['activity_type_id'] ?? ''] ?? ''),
+          'status' => (string) ($labels['status'][$row['status_id'] ?? ''] ?? ''),
+        ];
       }
+      return self::earliestOrientationBooking($activities, $this->orientationBookingTypes(), date('Y-m-d'));
     }
     catch (\Exception $e) {
-      // Activity type may not exist in all environments; silently continue.
+      \Drupal::logger('makerspace_member_success')->warning('Could not read orientation bookings for contact @c: @m', ['@c' => $contactId, '@m' => $e->getMessage()]);
     }
     return NULL;
   }

@@ -20,6 +20,11 @@ makerspace_member_success.settings:
     onboarding_stall_hours:
       type: integer
       label: 'Hours on one onboarding step before flagging'
+    orientation_booking_activity_types:
+      type: sequence
+      label: 'CiviCRM activity types that mean a key pickup or orientation is booked'
+      sequence:
+        type: string
     orientation_quiz_nid:
       type: integer
       label: 'Safety quiz node ID'
