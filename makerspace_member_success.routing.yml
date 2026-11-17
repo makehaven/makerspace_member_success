@@ -10,7 +10,7 @@ makerspace_member_success.dashboard:
   path: '/admin/makerspace/member-success/dashboard'
   defaults:
     _controller: '\Drupal\makerspace_member_success\Controller\MemberSuccessDashboardController::build'
-    _title: 'Member Success Dashboard'
+    _title: 'Member Success Console'
   requirements:
     _permission: 'access makerspace member success queues'
 
