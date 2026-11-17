@@ -20,6 +20,9 @@ makerspace_member_success.settings:
     onboarding_stall_hours:
       type: integer
       label: 'Hours on one onboarding step before flagging'
+    onboarding_actionable_hours:
+      type: integer
+      label: 'Hours on one onboarding step before staff see the member as Actionable (0 = at the stall)'
     orientation_booking_activity_types:
       type: sequence
       label: 'CiviCRM activity types that mean a key pickup or orientation is booked'

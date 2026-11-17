@@ -8,6 +8,16 @@ namespace Drupal\makerspace_member_success\Support;
 final class MemberSuccessRiskScorer {
 
   /**
+   * Score for a new member stalled on a step, before it is staff-actionable.
+   *
+   * Below the Actionable bucket (20), at the onboarding contact threshold
+   * (stage_onboarding_min_risk_to_contact, 15), so the setup reminder still
+   * sends while staff are not yet asked to act.
+   */
+  public const EARLY_STALL_SCORE = 15;
+
+
+  /**
    * Reason recorded for a member past the settled-dormancy threshold.
    */
   public const REASON_SETTLED_DORMANT = 'settled_dormant';
@@ -200,6 +210,13 @@ final class MemberSuccessRiskScorer {
       // members just fail to move forward on one step, and a two-week wait was
       // far too late to intervene.
       $stall_hours = (int) ($data['onboarding_stall_hours'] ?? 48);
+      // Staff see a stalled new member in "Actionable" only after this many
+      // hours on the step (Kate 2026-11-16: a week). Before that the stall
+      // still scores (EARLY_STALL_SCORE, "Watch"), so the member's own setup
+      // reminder, which needs a stuck_at_ reason and the onboarding contact
+      // threshold, keeps going out about an hour after they stop. 0 = no
+      // early tier (the old behaviour).
+      $actionable_hours = (int) ($data['onboarding_actionable_hours'] ?? 0);
       $step = $data['onboarding_step'] ?? NULL;
       $step_ts = (int) ($data['onboarding_step_ts'] ?? 0);
 
@@ -226,7 +243,7 @@ final class MemberSuccessRiskScorer {
               $suffix = '_aging';
             }
             else {
-              $score += 20;
+              $score += ($actionable_hours > 0 && $hours < $actionable_hours) ? self::EARLY_STALL_SCORE : 20;
               $suffix = '';
             }
             $reasons[] = 'stuck_at_' . $step . $suffix;

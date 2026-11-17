@@ -3,6 +3,7 @@
 namespace Drupal\Tests\makerspace_member_success\Unit;
 
 use Drupal\makerspace_member_success\Support\MemberSuccessLifecycle;
+use Drupal\makerspace_member_success\Support\MemberSuccessBuckets;
 use Drupal\makerspace_member_success\Support\MemberSuccessRiskScorer;
 use Drupal\makerspace_member_success\Support\OnboardingFunnel;
 use Drupal\Tests\UnitTestCase;
@@ -210,6 +211,30 @@ class MemberSuccessRiskScorerTest extends UnitTestCase {
     [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
     $this->assertSame(20, $score);
     $this->assertContains('stuck_at_schedule', $reasons);
+  }
+
+  public function testFirstWeekStallIsWatchNotActionable(): void {
+    // Kate 2026-11-16: a week before staff are asked to act. The reason is
+    // still recorded so the member's own setup reminder goes out.
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_SCHEDULE, 72, 3);
+    $data['onboarding_stall_hours'] = 1;
+    $data['onboarding_actionable_hours'] = 168;
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertSame(MemberSuccessRiskScorer::EARLY_STALL_SCORE, $score);
+    $this->assertContains('stuck_at_schedule', $reasons);
+    $this->assertFalse(MemberSuccessBuckets::matches(MemberSuccessBuckets::ACTIONABLE, $score));
+  }
+
+  public function testAfterAWeekTheStallIsActionable(): void {
+    $now_ts = mktime(12, 0, 0, 6, 1, 2026);
+    $data = $this->onboardingStalledBase($now_ts, OnboardingFunnel::STEP_SCHEDULE, 8 * 24, 8);
+    $data['onboarding_stall_hours'] = 1;
+    $data['onboarding_actionable_hours'] = 168;
+    [$score, $reasons] = MemberSuccessRiskScorer::calculate($data, 28, 180, [30, 60, 90], $now_ts);
+    $this->assertSame(25, $score);
+    $this->assertContains('stuck_at_schedule_aging', $reasons);
+    $this->assertTrue(MemberSuccessBuckets::matches(MemberSuccessBuckets::ACTIONABLE, $score));
   }
 
   public function testStuckStepEscalatesWhenAging(): void {
